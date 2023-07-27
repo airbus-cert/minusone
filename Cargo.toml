@@ -1,0 +1,28 @@
+[package]
+name = "minusone"
+version = "0.1.0"
+authors = ["Sylvain Peyrefitte <citronneur@gmail.com>"]
+description = "A script deobfuscator"
+repository = "https://github.com/citronneur/minusone"
+readme = "README.md"
+license = "MIT"
+
+[lib]
+name = "minusone"
+path = "src/lib.rs"
+
+[[bin]]
+name = "minusone-cli"
+path = "src/bin/minusone-cli.rs"
+required-features = ["minusone-cli"]
+
+[features]
+# The reason we do this is because doctests don't get cfg(test)
+# See: https://github.com/rust-lang/cargo/issues/4669
+integration = []
+minusone-cli = ["clap"]
+
+[dependencies]
+tree-sitter = "0.20.10"
+tree-sitter-powershell = { path = "c:/work/dev/new/tree-sitter-powershell", version = "0.0.1" }
+clap = { version = "^2.33", optional = true}
