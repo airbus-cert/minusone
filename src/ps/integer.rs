@@ -1,26 +1,23 @@
 use core::rule::RuleMut;
-use ps::inferred::InferredType;
 use tree_sitter::Node;
 use core::tree::ComponentDb;
+use ps::inferred::InferredType;
 
-pub struct CharConcatRule;
+#[derive(Default)]
+pub struct ParseInt;
 
-impl CharConcatRule {
-   pub fn new() -> Self {
-        CharConcatRule {
-            
-        }
-    }
-}
-
-impl RuleMut for CharConcatRule {
+impl RuleMut for ParseInt {
     type Language = InferredType;
 
     fn enter(&mut self, node: Node, component: &mut dyn ComponentDb<Self::Language>) {
-        unimplemented!()
     }
 
     fn leave(&mut self, node: Node, component: &mut dyn ComponentDb<Self::Language>) {
-        unimplemented!()
+        if node.kind() != "integer_literal" {
+            return
+        }
+
+        let mut data = component.get_node_data_mut(node);
+        *data = Some(InferredType::Number(4));
     }
 }

@@ -1,2 +1,3 @@
-pub mod entity;
+pub mod tree;
 pub mod rule;
+pub mod debug;

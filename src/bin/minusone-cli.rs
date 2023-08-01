@@ -6,10 +6,13 @@ extern crate minusone;
 use clap::{Arg, App, ArgMatches};
 use tree_sitter::{Parser, Language};
 use tree_sitter_powershell::language as powershell_language;
-use minusone::core::rule::{Rule};
-use minusone::core::entity::{Entity};
+use minusone::core::rule::{RuleMut, RuleEngineMut, RuleEngine};
 use minusone::ps::inferred::InferredType;
+use minusone::core::tree::{ComponentHashMap, ComponentDb};
 use minusone::ps::charconcat::CharConcatRule;
+use minusone::core::debug::DebugView;
+use minusone::ps::integer::ParseInt;
+use minusone::ps::forward::Forward;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -26,10 +29,13 @@ fn main() {
     let mut parser = Parser::new();
     parser.set_language(powershell_language()).unwrap();
 
-    let tree = parser.parse("foo", None).unwrap();
-    println!("{}", tree.root_node().to_sexp());
+    let tree = parser.parse("4+5", None).unwrap();
 
-    let mut toto = (CharConcatRule::new(),);
-    let mut entity = Entity::<InferredType>::new();
-    toto.enter(&mut entity);
+    let mut db = ComponentHashMap::<InferredType>::new();
+    db.init_from(tree.root_node());
+
+    let mut rules = (ParseInt::default(), Forward::default());
+    tree.root_node().apply_mut(&mut rules, &mut db);
+
+    tree.root_node().apply(&mut DebugView::new(), &mut db);
 }
