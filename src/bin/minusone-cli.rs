@@ -8,7 +8,7 @@ use tree_sitter::{Parser, Language};
 use tree_sitter_powershell::language as powershell_language;
 use minusone::core::rule::{RuleMut, RuleEngineMut, RuleEngine};
 use minusone::ps::inferred::InferredType;
-use minusone::core::tree::{ComponentHashMap, ComponentDb};
+use minusone::core::tree::{ComponentHashMap, ComponentDb, NodeView, NodeMut};
 use minusone::ps::charconcat::CharConcatRule;
 use minusone::core::debug::DebugView;
 use minusone::ps::integer::ParseInt;
@@ -34,8 +34,16 @@ fn main() {
     let mut db = ComponentHashMap::<InferredType>::new();
     db.init_from(tree.root_node());
 
-    let mut rules = (ParseInt::default(), Forward::default());
-    tree.root_node().apply_mut(&mut rules, &mut db);
+    let mut l = NodeMut::new(tree.root_node(), &mut db);
 
-    tree.root_node().apply(&mut DebugView::new(), &mut db);
+
+    let mut k = l.borrow_for(tree.root_node().child(0).unwrap());
+
+    let node_view = k.view();
+    println!("{:?}", node_view.child(0).as_ref());
+
+    *(k.as_mut()) = None;
+
+    let mut rules = (ParseInt::default(), Forward::default());
+    //rules.apply(k);
 }
