@@ -1,59 +1,30 @@
-use tree_sitter::{Node, Language};
-use core::tree::ComponentDb;
+use core::tree::{NodeMut, Node};
 
-pub trait RuleMut {
+
+pub trait RuleMut<'a> {
     type Language;
-    fn enter(&mut self, node : Node, component: &mut ComponentDb<Self::Language>);
-    fn leave(&mut self, node : Node, component: &mut ComponentDb<Self::Language>);
+    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>);
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>);
 }
 
-impl<U, T: RuleMut<Language = U>, R: RuleMut<Language = U>> RuleMut for (T, R) {
+impl<'a, U, T: RuleMut<'a, Language = U>, R: RuleMut<'a, Language = U>> RuleMut<'a> for (T, R) {
     type Language = U;
 
-    fn enter(&mut self, node : Node, component: &mut ComponentDb<Self::Language>) {
-        self.0.enter(node, component);
-        self.1.enter(node, component);
+    fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>) {
+        self.0.enter(node);
+        self.1.enter(node);
 
     }
 
-    fn leave(&mut self, node : Node, component: &mut ComponentDb<Self::Language>) {
-        self.0.leave(node, component);
-        self.1.leave(node, component);
+    fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>) {
+        self.0.leave(node);
+        self.1.leave(node);
     }
 }
 
-pub trait RuleEngineMut<T> {
-    fn apply_mut(&self, rule: &mut impl RuleMut<Language=T>, db: &mut ComponentDb<T>);
-}
-
-impl<T> RuleEngineMut<T> for Node<'_> {
-    fn apply_mut(&self, rule: &mut impl RuleMut<Language=T>, db: &mut dyn ComponentDb<T>) {
-        rule.enter(*self, db);
-        let mut cursor = self.walk();
-        for child in self.children(&mut cursor) {
-            child.apply_mut(rule, db);
-        }
-        rule.leave(*self, db);
-    }
-}
-
-pub trait Rule {
+pub trait Rule<'a> {
     type Language;
-    fn enter(&mut self, node : Node, component: &ComponentDb<Self::Language>);
-    fn leave(&mut self, node : Node, component: &ComponentDb<Self::Language>);
+    fn enter(&mut self, node : &Node<'a, Self::Language>);
+    fn leave(&mut self, node : &Node<'a, Self::Language>);
 }
 
-pub trait RuleEngine<T> {
-    fn apply(&self, rule: &mut impl Rule<Language=T>, db: &ComponentDb<T>);
-}
-
-impl<T> RuleEngine<T> for Node<'_> {
-    fn apply(&self, rule: &mut impl Rule<Language=T>, db: &dyn ComponentDb<T>) {
-        rule.enter(*self, db);
-        let mut cursor = self.walk();
-        for child in self.children(&mut cursor) {
-            child.apply(rule, db);
-        }
-        rule.leave(*self, db);
-    }
-}

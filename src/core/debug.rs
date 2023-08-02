@@ -1,6 +1,5 @@
 use core::rule::Rule;
-use tree_sitter::Node;
-use core::tree::ComponentDb;
+use core::tree::{Node};
 use std::fmt::Debug;
 use ps::inferred::InferredType;
 
@@ -16,22 +15,22 @@ impl DebugView {
     }
 }
 
-impl Rule for DebugView {
+impl<'a> Rule<'a> for DebugView {
     type Language = InferredType;
 
-    fn enter(&mut self, node: Node, component: &dyn ComponentDb<Self::Language>) {
+    fn enter(&mut self, node: &Node<'a, Self::Language>) {
         println!();
 
         for i in 0..self.tab_space {
             print!(" ");
         }
 
-        print!("({} inferred_type: {:?}", node.kind(), component.get_node_data(node).as_ref());
+        print!("({} inferred_type: {:?}", node.kind(), node.as_ref());
 
         self.tab_space += 1;
     }
 
-    fn leave(&mut self, node: Node, component: &dyn ComponentDb<Self::Language>) {
+    fn leave(&mut self, node: &Node<'a, Self::Language>) {
 
         print!(")");
         self.tab_space -= 1;

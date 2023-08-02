@@ -1,23 +1,21 @@
 use core::rule::RuleMut;
-use tree_sitter::Node;
-use core::tree::ComponentDb;
 use ps::inferred::InferredType;
+use core::tree::NodeMut;
 
 #[derive(Default)]
 pub struct ParseInt;
 
-impl RuleMut for ParseInt {
+impl<'a> RuleMut<'a> for ParseInt {
     type Language = InferredType;
 
-    fn enter(&mut self, node: Node, component: &mut dyn ComponentDb<Self::Language>) {
+    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) {
     }
 
-    fn leave(&mut self, node: Node, component: &mut dyn ComponentDb<Self::Language>) {
-        if node.kind() != "integer_literal" {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) {
+        if node.view().kind() != "integer_literal" {
             return
         }
 
-        let mut data = component.get_node_data_mut(node);
-        *data = Some(InferredType::Number(4));
+        *node.as_mut() = Some(InferredType::Number(4));
     }
 }
