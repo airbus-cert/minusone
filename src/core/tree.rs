@@ -1,8 +1,6 @@
-use tree_sitter::{Node as TreeNode, TreeCursor};
+use tree_sitter::{Node as TreeNode};
 use std::collections::HashMap;
 use core::rule::{RuleMut, Rule};
-use std::marker::PhantomData;
-use std::hash::Hash;
 
 /// Node components are stored following
 /// a storage pattern
@@ -107,19 +105,54 @@ impl<T> Storage for HashMapStorage<T> {
     }
 }
 
+/// An interface to manage mutablility of one Node
+///
+/// The idea is to visit the entire tree, allow view any nodes
+/// But only change value of the current one
 pub struct NodeMut<'a, T> {
+    /// The current tree-sitter node
     inner: TreeNode<'a>,
-    storage: &'a mut Storage<Component=T>
+
+    /// Reference to the storage
+    storage: &'a mut dyn Storage<Component=T>
 }
 
+/// NodeMut methods
 impl<'a, T> NodeMut<'a, T> {
-    pub fn new(root: TreeNode<'a>, data: &'a mut Storage<Component=T>) -> Self {
+    pub fn new(root: TreeNode<'a>, data: &'a mut dyn Storage<Component=T>) -> Self {
         Self {
             inner: root,
             storage: data
         }
     }
 
+    /// A const view of the mutable node
+    /// Use to read and navigate over the tree
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::core::tree::{Storage, HashMapStorage, NodeMut};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let ts_tree = parser.parse("4+5", None).unwrap();
+    ///
+    /// let mut storage = HashMapStorage::<u32>::default();
+    /// storage.reserve(ts_tree.root_node());
+    ///
+    /// let mut node = NodeMut::new(ts_tree.root_node(), &mut storage);
+    ///
+    /// let node_view = node.view();
+    ///
+    /// assert_eq!(node_view.kind(), "program");
+    /// ```
     pub fn view(&self) -> Node<T> {
         Node::new(self.inner, self.storage)
     }
@@ -152,11 +185,11 @@ impl<'a, T, X> VisitMut<'a, T> for X where X : RuleMut<'a, Language = T>{
 
 pub struct Node<'a, T> {
     node: TreeNode<'a>,
-    data: &'a Storage<Component=T>
+    data: &'a dyn Storage<Component=T>
 }
 
 impl<'a, T> Node<'a, T> {
-    pub fn new(node: TreeNode<'a>, data: &'a Storage<Component=T>) -> Self {
+    pub fn new(node: TreeNode<'a>, data: &'a dyn Storage<Component=T>) -> Self {
         Self {
             node,
             data

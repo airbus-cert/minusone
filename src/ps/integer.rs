@@ -8,7 +8,7 @@ pub struct ParseInt;
 impl<'a> RuleMut<'a> for ParseInt {
     type Language = InferredType;
 
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) {
     }
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) {

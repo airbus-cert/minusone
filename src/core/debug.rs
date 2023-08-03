@@ -1,6 +1,5 @@
 use core::rule::Rule;
 use core::tree::{Node};
-use std::fmt::Debug;
 use ps::inferred::InferredType;
 
 pub struct DebugView {
@@ -21,7 +20,7 @@ impl<'a> Rule<'a> for DebugView {
     fn enter(&mut self, node: &Node<'a, Self::Language>) {
         println!();
 
-        for i in 0..self.tab_space {
+        for _ in 0..self.tab_space {
             print!(" ");
         }
 
@@ -30,8 +29,7 @@ impl<'a> Rule<'a> for DebugView {
         self.tab_space += 1;
     }
 
-    fn leave(&mut self, node: &Node<'a, Self::Language>) {
-
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) {
         print!(")");
         self.tab_space -= 1;
     }
