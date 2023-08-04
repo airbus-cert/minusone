@@ -1,6 +1,6 @@
 use tree_sitter::{Node as TreeNode};
 use std::collections::HashMap;
-use core::rule::{RuleMut, Rule};
+use rule::{RuleMut, Rule};
 
 /// Node components are stored following
 /// a storage pattern
@@ -62,7 +62,7 @@ impl<T> Storage for HashMapStorage<T> {
     ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::language as powershell_language;
-    /// use minusone::core::tree::{Storage, HashMapStorage};
+    /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
     /// parser.set_language(powershell_language()).unwrap();
@@ -87,7 +87,7 @@ impl<T> Storage for HashMapStorage<T> {
     ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::language as powershell_language;
-    /// use minusone::core::tree::{Storage, HashMapStorage};
+    /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
     /// parser.set_language(powershell_language()).unwrap();
@@ -137,7 +137,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::language as powershell_language;
-    /// use minusone::core::tree::{Storage, HashMapStorage, NodeMut};
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
     /// parser.set_language(powershell_language()).unwrap();
@@ -211,6 +211,10 @@ impl<'a, T> Node<'a, T> {
     pub fn child_count(&self) -> usize {
         self.node.child_count()
     }
+
+    pub fn text(&self) {
+
+    }
 }
 
 pub struct NodeIterator<'a, T> {
@@ -265,16 +269,18 @@ impl<'a, T, X> Visit<'a, T> for X where X : Rule<'a, Language = T>{
 pub struct Tree<'a, S : Storage> {
     storage: S,
     root: TreeNode<'a>,
+    source: &'a[u8]
 }
 
 impl<'a, S> Tree<'a, S> where S : Storage + Default {
-    pub fn new(root: TreeNode<'a>) -> Self {
+    pub fn new(source: &'a[u8], root: TreeNode<'a>) -> Self {
         let mut storage = S::default();
         storage.reserve(root);
 
         Self {
             storage,
-            root
+            root,
+            source
         }
     }
 

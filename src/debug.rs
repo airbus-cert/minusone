@@ -1,6 +1,6 @@
-use core::rule::Rule;
-use core::tree::{Node};
-use ps::inferred::InferredType;
+use rule::Rule;
+use tree::{Node};
+use ps::InferredValue;
 
 pub struct DebugView {
     tab_space: u32
@@ -15,7 +15,7 @@ impl DebugView {
 }
 
 impl<'a> Rule<'a> for DebugView {
-    type Language = InferredType;
+    type Language = InferredValue;
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) {
         println!();

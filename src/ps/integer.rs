@@ -1,12 +1,12 @@
-use core::rule::RuleMut;
-use ps::inferred::InferredType;
-use core::tree::NodeMut;
+use rule::RuleMut;
+use ps::InferredValue;
+use tree::NodeMut;
 
 #[derive(Default)]
 pub struct ParseInt;
 
 impl<'a> RuleMut<'a> for ParseInt {
-    type Language = InferredType;
+    type Language = InferredValue;
 
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) {
     }
@@ -16,6 +16,6 @@ impl<'a> RuleMut<'a> for ParseInt {
             return
         }
 
-        *node.as_mut() = Some(InferredType::Number(4));
+        *node.as_mut() = Some(InferredValue::Number(4));
     }
 }

@@ -1,12 +1,12 @@
-use core::rule::RuleMut;
-use ps::inferred::InferredType;
-use core::tree::NodeMut;
+use rule::RuleMut;
+use ps::InferredValue;
+use tree::NodeMut;
 
 #[derive(Default)]
 pub struct Forward;
 
 impl<'a> RuleMut<'a> for Forward {
-    type Language = InferredType;
+    type Language = InferredValue;
 
     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) {
     }

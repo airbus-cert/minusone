@@ -1,6 +1,6 @@
-use core::rule::RuleMut;
-use ps::inferred::InferredType;
-use core::tree::{NodeMut};
+use rule::RuleMut;
+use ps::InferredValue;
+use tree::{NodeMut};
 
 pub struct CharConcatRule;
 
@@ -13,7 +13,7 @@ impl CharConcatRule {
 }
 
 impl<'a> RuleMut<'a> for CharConcatRule {
-    type Language = InferredType;
+    type Language = InferredValue;
 
     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) {
         unimplemented!()
