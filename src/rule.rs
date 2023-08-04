@@ -1,19 +1,18 @@
 use tree::{NodeMut, Node};
-use ps::integer::ParseInt;
-use ps::forward::Forward;
+use error::MinusOneResult;
 
 
 pub trait RuleMut<'a> {
     type Language;
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>);
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>);
+    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>;
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>;
 }
 
 
 pub trait Rule<'a> {
     type Language;
-    fn enter(&mut self, node : &Node<'a, Self::Language>);
-    fn leave(&mut self, node : &Node<'a, Self::Language>);
+    fn enter(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<()>;
+    fn leave(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<()>;
 }
 
 
@@ -24,18 +23,20 @@ macro_rules! impl_data {
             {
                 type Language = Data;
 
-                fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>) {
+                fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
                     $(
                         ${ignore(ty)}
-                        self.${index()}.enter(node);
+                        self.${index()}.enter(node)?;
                     )*
+                    Ok(())
                 }
 
-                fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>) {
+                fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
                     $(
                         ${ignore(ty)}
-                        self.${index()}.leave(node);
+                        self.${index()}.leave(node)?;
                     )*
+                    Ok(())
                 }
             }
     };

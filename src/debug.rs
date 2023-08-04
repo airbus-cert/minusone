@@ -1,6 +1,7 @@
 use rule::Rule;
 use tree::{Node};
 use ps::InferredValue;
+use error::MinusOneResult;
 
 pub struct DebugView {
     tab_space: u32
@@ -17,7 +18,7 @@ impl DebugView {
 impl<'a> Rule<'a> for DebugView {
     type Language = InferredValue;
 
-    fn enter(&mut self, node: &Node<'a, Self::Language>) {
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()>{
         println!();
 
         for _ in 0..self.tab_space {
@@ -27,10 +28,12 @@ impl<'a> Rule<'a> for DebugView {
         print!("({} inferred_type: {:?}", node.kind(), node.data());
 
         self.tab_space += 1;
+        Ok(())
     }
 
-    fn leave(&mut self, _node: &Node<'a, Self::Language>) {
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()>{
         print!(")");
         self.tab_space -= 1;
+        Ok(())
     }
 }

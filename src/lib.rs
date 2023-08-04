@@ -7,3 +7,4 @@ pub mod ps;
 pub mod tree;
 pub mod rule;
 pub mod debug;
+pub mod error;

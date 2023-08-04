@@ -2,6 +2,7 @@ use tree_sitter::{Node as TreeNode};
 use std::collections::HashMap;
 use rule::{RuleMut, Rule};
 use std::str::Utf8Error;
+use error::{MinusOneResult, Error, MinusOneErrorKind, MinusOneError};
 
 /// Node components are stored following
 /// a storage pattern
@@ -154,21 +155,22 @@ impl<'a, T> NodeMut<'a, T> {
 }
 
 pub trait VisitMut<'a, T> {
-    fn visit(&mut self, node: &mut NodeMut<'a, T>);
+    fn visit(&mut self, node: &mut NodeMut<'a, T>) -> MinusOneResult<()>;
 }
 
 impl<'a, T, X> VisitMut<'a, T> for X where X : RuleMut<'a, Language = T>{
-    fn visit(&mut self, node: &mut NodeMut<'a, T>) {
-        self.enter(node);
+    fn visit(&mut self, node: &mut NodeMut<'a, T>) -> MinusOneResult<()> {
+        self.enter(node)?;
         let mut cursor = node.inner.walk();
         let current_node = node.inner;
         for child in node.inner.children(&mut cursor) {
             node.inner = child;
-            self.visit(node);
+            self.visit(node)?;
         }
 
         node.inner = current_node;
-        self.leave(node);
+        self.leave(node)?;
+        Ok(())
     }
 }
 
@@ -187,8 +189,13 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
-    pub fn child(&self, index: usize) -> Node<'a, T> {
-        Self::new(self.node.child(index).unwrap(), self.source, self.storage)
+    pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
+        if let Some(node) = self.node.child(index) {
+            Some(Self::new(node, self.source, self.storage))
+        }
+        else {
+            None
+        }
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
@@ -213,14 +220,14 @@ impl<'a, T> Node<'a, T> {
 }
 
 pub struct NodeIterator<'a, T> {
-    node: Node<'a, T>,
+    inner: Node<'a, T>,
     index: usize
 }
 
 impl<'a, T> NodeIterator<'a, T> {
     fn new(node: Node<'a, T>) -> Self{
         Self {
-            node,
+            inner: node,
             index : 0
         }
     }
@@ -230,27 +237,28 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     type Item = Node<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let current_index = self.index;
-        self.index += 1;
-
-        if current_index >= self.node.node.child_count() {
-            return None;
+        match self.inner.child(self.index) {
+            Some(node) => {
+                self.index += 1;
+                Some(node)
+            },
+            None => None
         }
-        Some(self.node.child(current_index))
     }
 }
 
 pub trait Visit<'a, T> {
-    fn visit(&mut self, node: Node<'a, T>);
+    fn visit(&mut self, node: Node<'a, T>) -> MinusOneResult<()>;
 }
 
 impl<'a, T, X> Visit<'a, T> for X where X : Rule<'a, Language = T>{
-    fn visit(&mut self, node: Node<'a, T>) {
-        self.enter(&node);
+    fn visit(&mut self, node: Node<'a, T>) -> MinusOneResult<()> {
+        self.enter(&node)?;
         for child in node.iter() {
-            self.visit(child);
+            self.visit(child)?;
         }
-        self.leave(&node);
+        self.leave(&node)?;
+        Ok(())
     }
 }
 
@@ -269,12 +277,12 @@ impl<'a, S> Tree<'a, S> where S : Storage + Default {
         }
     }
 
-    pub fn apply_mut<'b>(&'b mut self, mut rule: (impl RuleMut<'b, Language=S::Component> + Sized)) {
+    pub fn apply_mut<'b>(&'b mut self, mut rule: (impl RuleMut<'b, Language=S::Component> + Sized)) -> MinusOneResult<()>{
         let mut node = NodeMut::new(self.root, self.source, &mut self.storage);
-        rule.visit(&mut node);
+        rule.visit(&mut node)
     }
 
-    pub fn apply<'b>(&'b self, mut rule: (impl Rule<'b, Language=S::Component> + Sized)) {
-        rule.visit(Node::new(self.root, self.source, &self.storage));
+    pub fn apply<'b>(&'b self, mut rule: (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
+        rule.visit(Node::new(self.root, self.source, &self.storage))
     }
 }

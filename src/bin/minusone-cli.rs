@@ -3,12 +3,13 @@ extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 extern crate minusone;
 
-use clap::{Arg, App, ArgMatches};
-use tree_sitter::{Parser, Language};
+use clap::{Arg, App};
+use tree_sitter::{Parser};
 use tree_sitter_powershell::language as powershell_language;
 use minusone::tree::{HashMapStorage, Tree};
 use minusone::debug::DebugView;
 use minusone::ps::{InferredValue, InferredValueRules};
+use minusone::ps::integer::AddInt;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -31,8 +32,8 @@ fn main() {
     let tree = parser.parse("4+5", None).unwrap();
 
     let mut t = Tree::<HashMapStorage<InferredValue>>::new(source.as_bytes(), tree.root_node());
-    t.apply_mut(InferredValueRules::default());
+    t.apply_mut(InferredValueRules::default()).unwrap();
 
-    let mut debub_view = DebugView::new();
+    let debub_view = DebugView::new();
     t.apply(debub_view);
 }

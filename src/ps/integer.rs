@@ -1,6 +1,7 @@
 use rule::RuleMut;
 use ps::InferredValue;
 use tree::NodeMut;
+use error::MinusOneResult;
 
 #[derive(Default)]
 pub struct ParseInt;
@@ -8,18 +9,19 @@ pub struct ParseInt;
 impl<'a> RuleMut<'a> for ParseInt {
     type Language = InferredValue;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) {
-        if node.view().kind() != "integer_literal" {
-            return
-        }
-        if let Ok(integer) = node.view().text() {
-            if let Ok(number) = integer.parse::<i32>() {
-                node.set(InferredValue::Number(number));
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        if node.view().kind() == "integer_literal" {
+            if let Ok(integer) = node.view().text() {
+                if let Ok(number) = integer.parse::<i32>() {
+                    node.set(InferredValue::Number(number));
+                }
             }
         }
+        Ok(())
     }
 }
 
@@ -29,19 +31,20 @@ pub struct AddInt;
 impl<'a> RuleMut<'a> for AddInt {
     type Language = InferredValue;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) {
-        if node.view().kind() != "additive_expression" {
-            return
-        }
-
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let node_view = node.view();
-
-        match (node_view.child(0).data(), node_view.child(1).text().unwrap(), node_view.child(2).data()) {
-            (Some(InferredValue::Number(number_left)), "+", Some(InferredValue::Number(number_right))) => node.set(InferredValue::Number(number_left + number_right)),
-            _ => {}
+        if node_view.kind() == "additive_expression"  {
+            if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
+                match (left_op.data(), operator.text()?, right_op.data()) {
+                    (Some(InferredValue::Number(number_left)), "+", Some(InferredValue::Number(number_right))) => node.set(InferredValue::Number(number_left + number_right)),
+                    _ => {}
+                }
+            }
         }
+        Ok(())
     }
 }
