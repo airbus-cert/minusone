@@ -24,7 +24,7 @@ impl<'a> Rule<'a> for DebugView {
             print!(" ");
         }
 
-        print!("({} inferred_type: {:?}", node.kind(), node.as_ref());
+        print!("({} inferred_type: {:?}", node.kind(), node.data());
 
         self.tab_space += 1;
     }

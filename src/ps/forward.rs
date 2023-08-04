@@ -12,11 +12,16 @@ impl<'a> RuleMut<'a> for Forward {
     }
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) {
-        if node.view().kind() == "unary_expression" {
-            if node.view().child_count() == 1 {
-                if let Some(child_data) = node.view().child(0).as_ref() {
-                    *(node.as_mut()) = Some(child_data.clone());
+        if node.view().child_count() == 1 {
+            match node.view().kind() {
+                "unary_expression" | "array_literal_expression" |
+                "range_expression" | "format_expression" |
+                "multiplicative_expression" => {
+                    if let Some(child_data) = node.view().child(0).data() {
+                        node.set(child_data.clone());
+                    }
                 }
+                _ => {}
             }
         }
     }

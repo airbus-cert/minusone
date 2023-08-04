@@ -1,32 +1,28 @@
 use tree_sitter::{Node as TreeNode};
 use std::collections::HashMap;
 use rule::{RuleMut, Rule};
+use std::str::Utf8Error;
 
 /// Node components are stored following
 /// a storage pattern
 pub trait Storage {
     type Component;
 
-    /// Reserve component data for each node
-    ///
-    /// The parameter is usually the root node of the tree
-    fn reserve(&mut self, root: TreeNode);
-
     /// Retrieve the associated data for a node
     ///
     /// This is the non mutable interface
     /// The date is optional
-    fn get(&self, node: TreeNode) -> &Option<Self::Component>;
+    fn get(&self, node: TreeNode) -> Option<&Self::Component>;
 
     /// Retrieve the associated date for a node, and allow update
     ///
     /// This is the mutable version
-    fn get_mut(&mut self, node: TreeNode) -> &mut Option<Self::Component>;
+    fn set(&mut self, node: TreeNode, data: Self::Component);
 }
 
 /// A possible implementation of storage that
 /// use Hash map as link between node id and data
-pub struct HashMapStorage<T>(HashMap<usize, Option<T>>);
+pub struct HashMapStorage<T>(HashMap<usize, T>);
 
 /// Default trait is used for the tree implementation
 impl<T> Default for HashMapStorage<T> {
@@ -42,14 +38,31 @@ impl<T> Default for HashMapStorage<T> {
 impl<T> Storage for HashMapStorage<T> {
     type Component = T;
 
-    /// It will crate an entry for each node
-    /// into the hashmap
-    fn reserve(&mut self, root: TreeNode) {
-        self.0.insert(root.id(), None);
-        let mut cursor = root.walk();
-        for child in root.children(&mut cursor) {
-            self.reserve(child);
+    /// It will get a reference to the associated data of the node
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let ts_tree = parser.parse("4+5", None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// assert_eq!(storage.get(ts_tree.root_node()), None)
+    /// ```
+    fn get(&self, node: TreeNode) -> Option<&Self::Component> {
+        if ! self.0.contains_key(&node.id()) {
+            return None;
         }
+        Some(self.0.get(&node.id()).unwrap())
     }
 
     /// It will get a reference to the associated data of the node
@@ -69,39 +82,13 @@ impl<T> Storage for HashMapStorage<T> {
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
-    /// storage.reserve(ts_tree.root_node());
     ///
-    /// assert_eq!(*storage.get(ts_tree.root_node()), None)
+    /// storage.set(ts_tree.root_node(), 42);
+    ///
+    /// assert_eq!(storage.get(ts_tree.root_node()), Some(&42))
     /// ```
-    fn get(&self, node: TreeNode) -> &Option<Self::Component> {
-        self.0.get(&node.id()).unwrap()
-    }
-
-    /// It will get a reference to the associated data of the node
-    ///
-    /// # Example
-    /// ```
-    /// extern crate tree_sitter;
-    /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
-    /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
-    /// use minusone::tree::{Storage, HashMapStorage};
-    ///
-    /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
-    ///
-    /// let ts_tree = parser.parse("4+5", None).unwrap();
-    /// let mut storage = HashMapStorage::<u32>::default();
-    /// storage.reserve(ts_tree.root_node());
-    ///
-    /// *storage.get_mut(ts_tree.root_node()) = Some(42);
-    ///
-    /// assert_eq!(*storage.get(ts_tree.root_node()), Some(42))
-    /// ```
-    fn get_mut(&mut self, node: TreeNode) -> &mut Option<Self::Component> {
-        self.0.get_mut(&node.id()).unwrap()
+    fn set(&mut self, node: TreeNode, data: Self::Component) {
+        self.0.insert(node.id(), data);
     }
 }
 
@@ -113,16 +100,20 @@ pub struct NodeMut<'a, T> {
     /// The current tree-sitter node
     inner: TreeNode<'a>,
 
+    /// reference to the original source code
+    source: &'a [u8],
+
     /// Reference to the storage
     storage: &'a mut dyn Storage<Component=T>
 }
 
 /// NodeMut methods
 impl<'a, T> NodeMut<'a, T> {
-    pub fn new(root: TreeNode<'a>, data: &'a mut dyn Storage<Component=T>) -> Self {
+    pub fn new(root: TreeNode<'a>, source: &'a [u8], storage: &'a mut dyn Storage<Component=T>) -> Self {
         Self {
             inner: root,
-            storage: data
+            source,
+            storage
         }
     }
 
@@ -142,25 +133,23 @@ impl<'a, T> NodeMut<'a, T> {
     /// let mut parser = Parser::new();
     /// parser.set_language(powershell_language()).unwrap();
     ///
-    /// let ts_tree = parser.parse("4+5", None).unwrap();
+    /// let source = "4+5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
     ///
     /// let mut storage = HashMapStorage::<u32>::default();
-    /// storage.reserve(ts_tree.root_node());
     ///
-    /// let mut node = NodeMut::new(ts_tree.root_node(), &mut storage);
+    /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
     ///
     /// let node_view = node.view();
     ///
     /// assert_eq!(node_view.kind(), "program");
     /// ```
     pub fn view(&self) -> Node<T> {
-        Node::new(self.inner, self.storage)
+        Node::new(self.inner, self.source, self.storage)
     }
-}
 
-impl<'a, T> AsMut<Option<T>> for NodeMut<'a, T> {
-    fn as_mut(&mut self) -> &mut Option<T> {
-        self.storage.get_mut(self.inner)
+    pub fn set(&mut self, data: T) {
+        self.storage.set(self.inner, data)
     }
 }
 
@@ -185,23 +174,25 @@ impl<'a, T, X> VisitMut<'a, T> for X where X : RuleMut<'a, Language = T>{
 
 pub struct Node<'a, T> {
     node: TreeNode<'a>,
-    data: &'a dyn Storage<Component=T>
+    source: &'a [u8],
+    storage: &'a dyn Storage<Component=T>
 }
 
 impl<'a, T> Node<'a, T> {
-    pub fn new(node: TreeNode<'a>, data: &'a dyn Storage<Component=T>) -> Self {
+    pub fn new(node: TreeNode<'a>, source: &'a [u8], storage: &'a dyn Storage<Component=T>) -> Self {
         Self {
             node,
-            data
+            source,
+            storage
         }
     }
 
     pub fn child(&self, index: usize) -> Node<'a, T> {
-        Self::new(self.node.child(index).unwrap(), self.data)
+        Self::new(self.node.child(index).unwrap(), self.source, self.storage)
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
-        NodeIterator::new(Self::new(self.node, self.data))
+        NodeIterator::new(Self::new(self.node, self.source, self.storage))
     }
 
     pub fn kind(&self) -> &'static str {
@@ -212,8 +203,12 @@ impl<'a, T> Node<'a, T> {
         self.node.child_count()
     }
 
-    pub fn text(&self) {
+    pub fn data(&self) -> Option<&T>{
+        self.storage.get(self.node)
+    }
 
+    pub fn text(&self) -> Result<&str, Utf8Error>{
+        self.node.utf8_text(self.source)
     }
 }
 
@@ -245,13 +240,6 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     }
 }
 
-
-impl<'a, T>  AsRef<Option<T>> for Node<'a, T>{
-    fn as_ref(&self) -> &Option<T> {
-        self.data.get(self.node)
-    }
-}
-
 pub trait Visit<'a, T> {
     fn visit(&mut self, node: Node<'a, T>);
 }
@@ -274,22 +262,19 @@ pub struct Tree<'a, S : Storage> {
 
 impl<'a, S> Tree<'a, S> where S : Storage + Default {
     pub fn new(source: &'a[u8], root: TreeNode<'a>) -> Self {
-        let mut storage = S::default();
-        storage.reserve(root);
-
         Self {
-            storage,
+            storage: S::default(),
             root,
             source
         }
     }
 
     pub fn apply_mut<'b>(&'b mut self, mut rule: (impl RuleMut<'b, Language=S::Component> + Sized)) {
-        let mut node = NodeMut::new(self.root, &mut self.storage);
+        let mut node = NodeMut::new(self.root, self.source, &mut self.storage);
         rule.visit(&mut node);
     }
 
     pub fn apply<'b>(&'b self, mut rule: (impl Rule<'b, Language=S::Component> + Sized)) {
-        rule.visit(Node::new(self.root, &self.storage));
+        rule.visit(Node::new(self.root, self.source, &self.storage));
     }
 }

@@ -1,4 +1,4 @@
-use ps::integer::ParseInt;
+use ps::integer::{ParseInt, AddInt};
 use ps::forward::Forward;
 
 pub mod charconcat;
@@ -12,4 +12,4 @@ pub enum InferredValue {
     String(String)
 }
 
-pub type InferredValueRules = (ParseInt, Forward);
+pub type InferredValueRules = (ParseInt, Forward, AddInt);
