@@ -18,7 +18,9 @@ impl<'a> RuleMut<'a> for Forward {
             match node.view().kind() {
                 "unary_expression" | "array_literal_expression" |
                 "range_expression" | "format_expression" |
-                "multiplicative_expression" => {
+                "multiplicative_expression" | "additive_expression" |
+                "comparison_expression" | "bitwise_expression" |
+                "logical_expression" => {
                     if let Some(child_data) = node.view().child(0).unwrap().data() {
                         node.set(child_data.clone());
                     }

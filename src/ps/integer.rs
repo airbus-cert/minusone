@@ -2,6 +2,7 @@ use rule::RuleMut;
 use ps::InferredValue;
 use tree::NodeMut;
 use error::MinusOneResult;
+use ps::InferredValue::Number;
 
 #[derive(Default)]
 pub struct ParseInt;
@@ -17,7 +18,7 @@ impl<'a> RuleMut<'a> for ParseInt {
         if node.view().kind() == "integer_literal" {
             if let Ok(integer) = node.view().text() {
                 if let Ok(number) = integer.parse::<i32>() {
-                    node.set(InferredValue::Number(number));
+                    node.set(Number(number));
                 }
             }
         }
@@ -40,7 +41,8 @@ impl<'a> RuleMut<'a> for AddInt {
         if node_view.kind() == "additive_expression"  {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(InferredValue::Number(number_left)), "+", Some(InferredValue::Number(number_right))) => node.set(InferredValue::Number(number_left + number_right)),
+                    (Some(Number(number_left)), "+", Some(Number(number_right))) => node.set(Number(number_left + number_right)),
+                    (Some(Number(number_left)), "-", Some(Number(number_right))) => node.set(Number(number_left - number_right)),
                     _ => {}
                 }
             }

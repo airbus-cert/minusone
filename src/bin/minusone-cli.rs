@@ -27,9 +27,9 @@ fn main() {
     let mut parser = Parser::new();
     parser.set_language(powershell_language()).unwrap();
 
-    let source = "4+5";
+    let source = "\"4\"+\"5\"+\"\"";
 
-    let tree = parser.parse("4+5", None).unwrap();
+    let tree = parser.parse(source, None).unwrap();
 
     let mut t = Tree::<HashMapStorage<InferredValue>>::new(source.as_bytes(), tree.root_node());
     t.apply_mut(InferredValueRules::default()).unwrap();
