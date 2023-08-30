@@ -4,6 +4,7 @@ use tree::NodeMut;
 use error::MinusOneResult;
 use ps::InferredValue::Number;
 
+/// Parse int will interpret integer node into Rust world
 #[derive(Default)]
 pub struct ParseInt;
 
@@ -14,6 +15,37 @@ impl<'a> RuleMut<'a> for ParseInt {
         Ok(())
     }
 
+    /// We will infer parse integer operation during down to top traveling of the tree
+    /// We will manage to import numbers in normal format (ex: 123), hex (0x42),
+    /// with unary operation (ex: -5)
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use minusone::tree::{HashMapStorage, Tree};
+    /// use minusone::ps::from_powershell_src;
+    /// use minusone::ps::forward::Forward;
+    /// use minusone::ps::InferredValue::Number;
+    /// use minusone::ps::integer::{ParseInt, AddInt};
+    ///
+    /// let mut test1 = from_powershell_src("4").unwrap();
+    /// test1.apply_mut((ParseInt::default(), Forward::default())).unwrap();
+    ///
+    /// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
+    ///
+    /// let mut test2 = from_powershell_src("0x42").unwrap();
+    /// test2.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    ///
+    /// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(0x42));
+    ///
+    /// let mut test3 = from_powershell_src("-5").unwrap();
+    /// test3.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    ///
+    /// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-5));
+    /// ```
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let view = node.view();
         let token = view.text()?;

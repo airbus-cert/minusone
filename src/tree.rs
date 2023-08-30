@@ -206,6 +206,12 @@ pub struct Node<'a, T> {
     storage: &'a dyn Storage<Component=T>
 }
 
+impl<'a, T> PartialEq for Node<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node.id() == other.node.id()
+    }
+}
+
 impl<'a, T> Node<'a, T> {
     pub fn new(node: TreeNode<'a>, source: &'a [u8], storage: &'a dyn Storage<Component=T>) -> Self {
         Self {
@@ -216,12 +222,7 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
-        if let Some(node) = self.node.child(index) {
-            Some(Self::new(node, self.source, self.storage))
-        }
-        else {
-            None
-        }
+        self.node.child(index).map(|node| Self::new(node, self.source, self.storage))
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
@@ -242,6 +243,10 @@ impl<'a, T> Node<'a, T> {
 
     pub fn text(&self) -> Result<&str, Utf8Error>{
         self.node.utf8_text(self.source)
+    }
+
+    pub fn parent(&self) -> Option<Node<'a, T>> {
+        self.node.parent().map(|node| Self::new(node, self.source, self.storage))
     }
 }
 
