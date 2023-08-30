@@ -19,7 +19,9 @@ impl MinusOneError {
     /// create a new MinusOne error
     /// # Example
     /// ```
-    /// use error::{MinusOneError, MinusOneErrorKind};
+    /// extern crate minusone;
+    ///
+    /// use minusone::error::{MinusOneError, MinusOneErrorKind};
     /// let error = MinusOneError::new(MinusOneErrorKind::Unknown, "Unknown");
     /// ```
     pub fn new (kind: MinusOneErrorKind, message: &str) -> Self {
@@ -33,7 +35,9 @@ impl MinusOneError {
     ///
     /// # Example
     /// ```
-    /// use error::{MinusOneError, MinusOneErrorKind};
+    /// extern crate minusone;
+    ///
+    /// use minusone::error::{MinusOneError, MinusOneErrorKind};
     /// let error = MinusOneError::new(MinusOneErrorKind::Unknown, "unknown");
     /// assert_eq!(error.kind(), MinusOneErrorKind::Unknown)
     /// ```

@@ -15,17 +15,36 @@ impl<'a> RuleMut<'a> for ParseInt {
     }
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
-        if node.view().kind() == "integer_literal" {
-            if let Ok(integer) = node.view().text() {
-                if let Ok(number) = integer.parse::<i32>() {
+        let view = node.view();
+        let token = view.text()?;
+        match view.kind() {
+            "hexadecimal_integer_literal" => {
+                if let Ok(number) = u32::from_str_radix(&token[2..], 16) {
+                    node.set(Number(number as i32));
+                }
+            },
+            "decimal_integer_literal" => {
+                if let Ok(number) = token.parse::<i32>() {
                     node.set(Number(number));
                 }
+            },
+            "expression_with_unary_operator" => {
+                if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
+                    match (operator.text()?, expression.data()) {
+                        ("-", Some(Number(num))) => node.set(Number(-num)),
+                        ("+", Some(Number(num))) => node.set(Number(*num)),
+                        _ => ()
+                    }
+                }
             }
+            _ => ()
         }
+
         Ok(())
     }
 }
 
+/// This rule will infer integer operation + -
 #[derive(Default)]
 pub struct AddInt;
 
@@ -36,6 +55,36 @@ impl<'a> RuleMut<'a> for AddInt {
         Ok(())
     }
 
+    /// We will infer integer operation during down to top traveling of the tree
+    /// We will manage basic operation + and -
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use minusone::tree::{HashMapStorage, Tree};
+    /// use minusone::ps::from_powershell_src;
+    /// use minusone::ps::forward::Forward;
+    /// use minusone::ps::InferredValue::Number;
+    /// use minusone::ps::integer::{ParseInt, AddInt};
+    ///
+    /// let mut test1 = from_powershell_src("4 + 5").unwrap();
+    /// test1.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    ///
+    /// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(9));
+    ///
+    /// let mut test2 = from_powershell_src("4 - 5").unwrap();
+    /// test2.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    ///
+    /// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-1));
+    ///
+    /// let mut test3 = from_powershell_src("4 + -5").unwrap();
+    /// test3.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    ///
+    /// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-1));
+    /// ```
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let node_view = node.view();
         if node_view.kind() == "additive_expression"  {

@@ -1,8 +1,8 @@
-use tree_sitter::{Node as TreeNode};
+use tree_sitter::{Node as TreeNode, Tree as TreeSitter};
 use std::collections::HashMap;
 use rule::{RuleMut, Rule};
 use std::str::Utf8Error;
-use error::{MinusOneResult, Error, MinusOneErrorKind, MinusOneError};
+use error::{MinusOneResult};
 
 /// Node components are stored following
 /// a storage pattern
@@ -149,6 +149,32 @@ impl<'a, T> NodeMut<'a, T> {
         Node::new(self.inner, self.source, self.storage)
     }
 
+    /// Set a data to a node
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let source = "4+5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
+    ///
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+    ///
+    /// node.set(42);
+    ///
+    /// assert_eq!(node.view().data(), Some(&42));
+    /// ```
     pub fn set(&mut self, data: T) {
         self.storage.set(self.inner, data)
     }
@@ -264,25 +290,29 @@ impl<'a, T, X> Visit<'a, T> for X where X : Rule<'a, Language = T>{
 
 pub struct Tree<'a, S : Storage> {
     storage: S,
-    root: TreeNode<'a>,
+    tree_sitter: TreeSitter,
     source: &'a[u8]
 }
 
 impl<'a, S> Tree<'a, S> where S : Storage + Default {
-    pub fn new(source: &'a[u8], root: TreeNode<'a>) -> Self {
+    pub fn new(source: &'a[u8], tree_sitter: TreeSitter) -> Self {
         Self {
             storage: S::default(),
-            root,
+            tree_sitter,
             source
         }
     }
 
     pub fn apply_mut<'b>(&'b mut self, mut rule: (impl RuleMut<'b, Language=S::Component> + Sized)) -> MinusOneResult<()>{
-        let mut node = NodeMut::new(self.root, self.source, &mut self.storage);
+        let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
         rule.visit(&mut node)
     }
 
     pub fn apply<'b>(&'b self, mut rule: (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
-        rule.visit(Node::new(self.root, self.source, &self.storage))
+        rule.visit(Node::new(self.tree_sitter.root_node(), self.source, &self.storage))
+    }
+
+    pub fn root(&self) -> MinusOneResult<Node<S::Component>> {
+        Ok(Node::new(self.tree_sitter.root_node(), self.source, &self.storage))
     }
 }
