@@ -9,9 +9,13 @@ pub trait RuleMut<'a> {
 }
 
 
+/// Rule that will not change the node component
+/// Use for displaying or statistic
+/// The top down exploring is handling by the enter function
+/// te down to top exploring is handling by the leave function
 pub trait Rule<'a> {
     type Language;
-    fn enter(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<()>;
+    fn enter(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<bool>;
     fn leave(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<()>;
 }
 

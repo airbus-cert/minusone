@@ -16,12 +16,12 @@ impl Default for Var {
     }
 }
 
+/// This function
 fn is_left<T>(node: Node<T>) -> bool {
     let mut current = node;
     loop {
         if let Some(parent_node) = current.parent() {
-            if parent_node.kind() == "assignment_expression"
-                && parent_node.child(0).unwrap() == current {
+            if parent_node.kind() == "left_assignment_expression" {
                 return true;
             }
             current = parent_node;
@@ -58,14 +58,14 @@ impl<'a> RuleMut<'a> for Var {
             "assignment_expression" => {
                 // Assign var value if it's possible
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
-                    self.scope_manager.current().assign(&left, &right);
+                    self.scope_manager.current().assign(&left, &right)?;
                 }
             },
             "variable" => {
                 // check if we are not on the left part of an assignment expression
                 // The powershell grammar doesn't have a different node name for each part
                 if !is_left(view) {
-                    self.scope_manager.current().attach(node);
+                    self.scope_manager.current().attach(node)?;
                 }
             }
             _ => ()

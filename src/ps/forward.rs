@@ -8,32 +8,35 @@ use error::MinusOneResult;
 #[derive(Default)]
 pub struct Forward;
 
+/// Forward will just forward inferred type in case of very simple
+/// tree exploring
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::InferredValue::Number;
+/// use minusone::ps::integer::ParseInt;
+///
+/// let mut tree = from_powershell_src("4").unwrap();
+/// tree.apply_mut((ParseInt::default(), Forward::default())).unwrap();
+///
+/// assert_eq!(*(tree.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
+/// ```
 impl<'a> RuleMut<'a> for Forward {
     type Language = InferredValue;
 
+    /// Nothing to do during top down exploration
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         Ok(())
     }
 
-    /// Frward the infered type to the top node
-    ///
-    /// # Example
-    /// ```
-    /// extern crate tree_sitter;
-    /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
-    /// use minusone::tree::{HashMapStorage, Tree};
-    /// use minusone::ps::from_powershell_src;
-    /// use minusone::ps::forward::Forward;
-    /// use minusone::ps::InferredValue::Number;
-    /// use minusone::ps::integer::ParseInt;
-    ///
-    /// let mut tree = from_powershell_src("4").unwrap();
-    /// tree.apply_mut((ParseInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(tree.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
-    /// ```
+    /// Forward the inferred type to the top node
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()> {
         if node.view().child_count() == 1 {
             match node.view().kind() {

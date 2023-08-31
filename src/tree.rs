@@ -200,12 +200,18 @@ impl<'a, T, X> VisitMut<'a, T> for X where X : RuleMut<'a, Language = T>{
     }
 }
 
+/// A node view use to explore the tree
+/// without mutability
 pub struct Node<'a, T> {
+    /// The inner tree-sitter node
     node: TreeNode<'a>,
+    /// Source reference
     source: &'a [u8],
+    /// The associate component storage
     storage: &'a dyn Storage<Component=T>
 }
 
+/// Two nodes are equals if they have the same node id
 impl<'a, T> PartialEq for Node<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         self.node.id() == other.node.id()
@@ -222,7 +228,18 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
-        self.node.child(index).map(|node| Self::new(node, self.source, self.storage))
+        let mut current = 0;
+        for child in self.iter() {
+            // ignore extra node when requesting child at particumar index
+            if child.is_extra() {
+                continue;
+            }
+            if current == index {
+                return Some(child);
+            }
+            current += 1;
+        }
+        return None;
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
@@ -231,6 +248,10 @@ impl<'a, T> Node<'a, T> {
 
     pub fn kind(&self) -> &'static str {
         self.node.kind()
+    }
+
+    pub fn is_extra(&self) -> bool {
+        self.node.is_extra()
     }
 
     pub fn child_count(&self) -> usize {
@@ -268,10 +289,10 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     type Item = Node<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.child(self.index) {
+        match self.inner.node.child(self.index) {
             Some(node) => {
                 self.index += 1;
-                Some(node)
+                Some(Node::new(node, self.inner.source, self.inner.storage))
             },
             None => None
         }
@@ -284,11 +305,12 @@ pub trait Visit<'a, T> {
 
 impl<'a, T, X> Visit<'a, T> for X where X : Rule<'a, Language = T>{
     fn visit(&mut self, node: Node<'a, T>) -> MinusOneResult<()> {
-        self.enter(&node)?;
-        for child in node.iter() {
-            self.visit(child)?;
+        if self.enter(&node)? {
+            for child in node.iter() {
+                self.visit(child)?;
+            }
+            self.leave(&node)?;
         }
-        self.leave(&node)?;
         Ok(())
     }
 }
@@ -308,12 +330,12 @@ impl<'a, S> Tree<'a, S> where S : Storage + Default {
         }
     }
 
-    pub fn apply_mut<'b>(&'b mut self, mut rule: (impl RuleMut<'b, Language=S::Component> + Sized)) -> MinusOneResult<()>{
+    pub fn apply_mut<'b>(&'b mut self, rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized)) -> MinusOneResult<()>{
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
         rule.visit(&mut node)
     }
 
-    pub fn apply<'b>(&'b self, mut rule: (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
+    pub fn apply<'b>(&'b self, rule: &mut (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
         rule.visit(Node::new(self.tree_sitter.root_node(), self.source, &self.storage))
     }
 

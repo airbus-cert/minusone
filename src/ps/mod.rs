@@ -11,6 +11,7 @@ pub mod string;
 pub mod integer;
 pub mod forward;
 pub mod var;
+pub mod litter;
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
