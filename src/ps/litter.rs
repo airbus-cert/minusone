@@ -1,7 +1,7 @@
 use rule::Rule;
 use ps::InferredValue;
 use tree::Node;
-use error::MinusOneResult;
+use error::{MinusOneResult, Error};
 use std::ops::Add;
 
 pub struct PowershellLitter {
@@ -35,7 +35,7 @@ impl PowershellLitter {
 
         match node.kind() {
             // Statement separated rule
-            "program" => self.statement_sep(node),
+            "program" => self.statement_sep(node)?,
 
             // Space separated token
             "pipeline" | "command" |
@@ -45,9 +45,12 @@ impl PowershellLitter {
             "multiplicative_expression" | "format_expression" |
             "range_expression" | "array_literal_expression" |
             "unary_expression"
-            => self.space_sep(node),
+            => self.space_sep(node)?,
 
-            // Tokens
+            "statement_block" => self.statement_block(node)?,
+            "if_statement" => self.if_statement(node)?,
+
+            // Un modified tokens
             _ => {
                 self.output += node.text()?
             }
@@ -57,7 +60,7 @@ impl PowershellLitter {
     }
 
 
-    fn space_sep(&mut self, node: &Node<InferredValue>) {
+    fn space_sep(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()>{
         let mut nb_childs = node.child_count();
         for child in node.iter() {
             self.print(&child);
@@ -66,27 +69,72 @@ impl PowershellLitter {
                 self.output += " ";
             }
         }
+
+        Ok(())
     }
 
-    fn statement_sep(&mut self, node: &Node<InferredValue>) {
+    fn statement_sep(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
         for child in node.iter() {
+            self.output += &self.tab;
+            self.print(&child)?;
+            self.output += "\n";
+        }
+
+        Ok(())
+    }
+
+    fn explore(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+        for child in node.iter() {
+            self.print(&child);
+        }
+
+        Ok(())
+    }
+
+    fn statement_block(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+        let old_tab = self.tab.clone();
+        self.tab.push_str(" ");
+
+        self.output += &old_tab;
+        self.output += "{\n";
+
+        // all statement seperated by a line
+        for child in node.range(Some(1), Some(node.child_count() - 1), None) {
+            self.output += &self.tab;
             self.print(&child);
             self.output += "\n";
         }
-    }
 
-    fn explore(&mut self, node: &Node<InferredValue>) {
-        for child in node.iter() {
-            self.print(&child);
-        }
-    }
+        self.output += &old_tab;
+        self.output += "}\n";
 
-    fn statement_block(&mut self, node: &Node<InferredValue>) {
-        self.output += "{";
-        let old_tab = self.tab.clone();
-        self.tab += " ";
         self.tab = old_tab;
-        self.output += self.tab.as_str();
-        self.output += "}";
+        Ok(())
+    }
+
+    fn if_statement(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+        self.output += &self.tab;
+        self.output += "if (";
+        self.print(&node.child(2).ok_or(Error::invalid_child())?)?;
+        self.output += ")\n";
+        self.print(&node.child(4).ok_or(Error::invalid_child())?)?;
+
+        if let Some(elseif_clauses) = node.named_child("elseif_clauses") {
+            for elseif_clause in elseif_clauses.iter() {
+                self.output += &self.tab;
+                self.output += "elseif (";
+                self.print(&elseif_clause.child(2).ok_or(Error::invalid_child())?)?;
+                self.output += ")\n";
+                self.print(&elseif_clause.child(4).ok_or(Error::invalid_child())?)?;
+            }
+        }
+
+        if let Some(else_clause) = node.named_child("else_clause") {
+            self.output += &self.tab;
+            self.output += "else\n";
+            self.print(&else_clause.child(1).ok_or(Error::invalid_child())?)?;
+        }
+
+        Ok(())
     }
 }

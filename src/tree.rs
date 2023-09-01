@@ -19,17 +19,27 @@ pub trait Storage {
     ///
     /// This is the mutable version
     fn set(&mut self, node: TreeNode, data: Self::Component);
+
+    /// Start a update round
+    fn start(&mut self);
+
+    /// End an update round
+    fn end(&mut self) -> bool;
 }
 
 /// A possible implementation of storage that
 /// use Hash map as link between node id and data
-pub struct HashMapStorage<T>(HashMap<usize, T>);
+pub struct HashMapStorage<T> {
+    map : HashMap<usize, T>,
+    is_updated : bool
+}
 
 /// Default trait is used for the tree implementation
 impl<T> Default for HashMapStorage<T> {
     fn default() -> Self {
         Self {
-            0: HashMap::new()
+            map : HashMap::new(),
+            is_updated: false
         }
     }
 }
@@ -60,10 +70,10 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(ts_tree.root_node()), None)
     /// ```
     fn get(&self, node: TreeNode) -> Option<&Self::Component> {
-        if ! self.0.contains_key(&node.id()) {
+        if ! self.map.contains_key(&node.id()) {
             return None;
         }
-        Some(self.0.get(&node.id()).unwrap())
+        Some(self.map.get(&node.id()).unwrap())
     }
 
     /// It will get a reference to the associated data of the node
@@ -89,7 +99,40 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(ts_tree.root_node()), Some(&42))
     /// ```
     fn set(&mut self, node: TreeNode, data: Self::Component) {
-        self.0.insert(node.id(), data);
+        self.map.insert(node.id(), data);
+        self.is_updated = true;
+    }
+
+    /// use to monitor if the storage was updated
+    /// between the start and the end function
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let ts_tree = parser.parse("4+5", None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// storage.start();
+    /// storage.set(ts_tree.root_node(), 42);
+    ///
+    /// assert_eq!(storage.end(), true)
+    /// ```
+    fn start(&mut self) {
+        self.is_updated = false;
+    }
+
+    fn end(&mut self) -> bool {
+        self.is_updated
     }
 }
 
@@ -180,10 +223,59 @@ impl<'a, T> NodeMut<'a, T> {
     }
 }
 
+/// Interface use to visit a tree
+/// with mutability capability on node component (not on the node itself)
 pub trait VisitMut<'a, T> {
     fn visit(&mut self, node: &mut NodeMut<'a, T>) -> MinusOneResult<()>;
 }
 
+
+/// We implement the VisitMut Trait for RuleMut (Rule that want mutability)
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use tree_sitter::{Parser, Language};
+/// use tree_sitter_powershell::language as powershell_language;
+/// use minusone::tree::{Storage, HashMapStorage, NodeMut, VisitMut};
+/// use minusone::rule::RuleMut;
+/// use minusone::ps::InferredValue;
+/// use minusone::error::MinusOneResult;
+///
+/// #[derive(Default)]
+/// pub struct LazzyRule;
+///
+/// impl<'a> RuleMut<'a> for LazzyRule {
+///     type Language = u32;
+///
+///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+///         if node.view().kind() == "program" {
+///             node.set(42)
+///         }
+///         Ok(())
+///     }
+///
+///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+///         Ok(())
+///     }
+/// }
+///
+/// let mut parser = Parser::new();
+/// parser.set_language(powershell_language()).unwrap();
+///
+/// let source = "4";
+/// let ts_tree = parser.parse(source, None).unwrap();
+///
+/// let mut storage = HashMapStorage::<u32>::default();
+///
+/// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+///
+/// LazzyRule::default().visit(&mut node);
+/// assert_eq!(node.view().data(), Some(&42));
+/// ```
 impl<'a, T, X> VisitMut<'a, T> for X where X : RuleMut<'a, Language = T>{
     fn visit(&mut self, node: &mut NodeMut<'a, T>) -> MinusOneResult<()> {
         self.enter(node)?;
@@ -242,8 +334,26 @@ impl<'a, T> Node<'a, T> {
         return None;
     }
 
+    pub fn named_child(&self, index: &str) -> Option<Node<'a, T>> {
+        self.node.child_by_field_name(index).map(|node| Node::new(node, self.source, self.storage))
+    }
+
     pub fn iter(&self) -> NodeIterator<'a, T> {
-        NodeIterator::new(Self::new(self.node, self.source, self.storage))
+        NodeIterator::new(
+            Self::new(self.node, self.source, self.storage),
+            0,
+            None,
+            1
+        )
+    }
+
+    pub fn range(&self, start: Option<usize>, end: Option<usize>, gap: Option<usize>) -> NodeIterator<'a, T> {
+        NodeIterator::new(
+            Self::new(self.node, self.source, self.storage),
+            start.unwrap_or(0),
+            end,
+            gap.unwrap_or(1)
+        )
     }
 
     pub fn kind(&self) -> &'static str {
@@ -255,7 +365,12 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn child_count(&self) -> usize {
-        self.node.child_count()
+        // we have to count only usable node
+        let mut result = 0;
+        for _ in self.iter() {
+            result += 1;
+        }
+        result
     }
 
     pub fn data(&self) -> Option<&T>{
@@ -273,14 +388,18 @@ impl<'a, T> Node<'a, T> {
 
 pub struct NodeIterator<'a, T> {
     inner: Node<'a, T>,
-    index: usize
+    index: usize,
+    end: Option<usize>,
+    gap : usize
 }
 
 impl<'a, T> NodeIterator<'a, T> {
-    fn new(node: Node<'a, T>) -> Self{
+    fn new(node: Node<'a, T>, start: usize, end: Option<usize>, gap: usize) -> Self{
         Self {
             inner: node,
-            index : 0
+            index : start,
+            end,
+            gap
         }
     }
 }
@@ -289,9 +408,15 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     type Item = Node<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(end) = self.end {
+            if self.index > end {
+                return None;
+            }
+        }
+
         match self.inner.node.child(self.index) {
             Some(node) => {
-                self.index += 1;
+                self.index += self.gap;
                 Some(Node::new(node, self.inner.source, self.inner.storage))
             },
             None => None

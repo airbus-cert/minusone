@@ -40,11 +40,12 @@ impl<'a> RuleMut<'a> for ConcatString {
     }
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
-        let node_view = node.view();
-        if node_view.kind() == "additive_expression"  {
-            if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
+        let view = node.view();
+        if view.kind() == "additive_expression"  {
+
+            if let (Some(left_op), Some(operator), Some(right_op)) = (view.child(0), view.child(1), view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Str(string_left)), "+", Some(Str(string_right))) => node.set(Str(String::from(string_left) + string_right)),
+                     (Some(Str(string_left)), "+", Some(Str(string_right))) => node.set(Str(String::from(string_left) + string_right)),
                     _ => {}
                 }
             }

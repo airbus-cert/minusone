@@ -31,7 +31,7 @@ impl DebugView {
 /// use minusone::debug::DebugView;
 ///
 /// let mut tree = from_powershell_src("4").unwrap();
-/// tree.apply(DebugView::new()).unwrap(); // it will print you the tree over the console
+/// tree.apply(&mut DebugView::new()).unwrap(); // it will print you the tree over the console
 ///
 /// ```
 impl<'a> Rule<'a> for DebugView {

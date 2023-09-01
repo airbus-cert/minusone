@@ -57,6 +57,10 @@ impl Error {
     pub fn new(kind: MinusOneErrorKind, message: &str) -> Self {
         Error::MinusOneError(MinusOneError::new(kind, message))
     }
+
+    pub fn invalid_child() -> Self {
+        Error::MinusOneError(MinusOneError::new(MinusOneErrorKind::InvalidChildIndex, "A child was expected at this index"))
+    }
 }
 
 impl From<Utf8Error> for Error {

@@ -33,7 +33,6 @@ impl<T: Clone> Scope<T> {
             // even if it's None
             var_value.inferred_type = value.data().map(|value| value.clone());
         } else {
-            println!("assign {}",var.text()?);
             self.vars.insert(var.text()?.to_string(), Variable::new(value.data().map(|value| value.clone())));
         }
         Ok(())
@@ -41,8 +40,6 @@ impl<T: Clone> Scope<T> {
 
     pub fn attach(&self, var: &mut NodeMut<T>) -> MinusOneResult<()> {
         let view = var.view();
-
-        println!("attach {}",view.text()?);
         if let Some(var_value) = self.vars.get(view.text()?) {
             if let Some(inferred_value) = &var_value.inferred_type {
                 var.set(inferred_value.clone())

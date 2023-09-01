@@ -32,17 +32,17 @@ impl<'a> RuleMut<'a> for ParseInt {
     /// use minusone::ps::integer::{ParseInt, AddInt};
     ///
     /// let mut test1 = from_powershell_src("4").unwrap();
-    /// test1.apply_mut((ParseInt::default(), Forward::default())).unwrap();
+    /// test1.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
     ///
     /// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
     ///
     /// let mut test2 = from_powershell_src("0x42").unwrap();
-    /// test2.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    /// test2.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
     ///
     /// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(0x42));
     ///
     /// let mut test3 = from_powershell_src("-5").unwrap();
-    /// test3.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    /// test3.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
     ///
     /// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-5));
     /// ```
@@ -103,17 +103,17 @@ impl<'a> RuleMut<'a> for AddInt {
     /// use minusone::ps::integer::{ParseInt, AddInt};
     ///
     /// let mut test1 = from_powershell_src("4 + 5").unwrap();
-    /// test1.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    /// test1.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
     ///
     /// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(9));
     ///
     /// let mut test2 = from_powershell_src("4 - 5").unwrap();
-    /// test2.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    /// test2.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
     ///
     /// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-1));
     ///
     /// let mut test3 = from_powershell_src("4 + -5").unwrap();
-    /// test3.apply_mut((ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
+    /// test3.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
     ///
     /// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-1));
     /// ```
