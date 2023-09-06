@@ -32,7 +32,7 @@ fn main() {
     tree.apply(&mut debub_view).unwrap();
 
     let mut ps_litter_view = PowershellLitter::new();
-    ps_litter_view.print(&tree.root().unwrap());
+    ps_litter_view.print(&tree.root().unwrap()).unwrap();
 
     println!("\nPowershell litter");
     println!("{}", ps_litter_view.output);

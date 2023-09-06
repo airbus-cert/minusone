@@ -384,6 +384,22 @@ impl<'a, T> Node<'a, T> {
     pub fn parent(&self) -> Option<Node<'a, T>> {
         self.node.parent().map(|node| Self::new(node, self.source, self.storage))
     }
+
+
+    pub fn parent_from_type(&self, kind: &str) -> Option<Node<'a, T>> {
+        let mut current = self.parent();
+        loop {
+            if let Some(current_node) = current {
+                if current_node.kind() == kind {
+                    return Some(current_node);
+                }
+                current = current_node.parent();
+            }
+            else {
+                return None;
+            }
+        }
+    }
 }
 
 pub struct NodeIterator<'a, T> {

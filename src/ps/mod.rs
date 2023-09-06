@@ -1,4 +1,4 @@
-use ps::integer::{ParseInt, AddInt};
+use ps::integer::{ParseInt, AddInt, MultInt};
 use ps::forward::Forward;
 use ps::string::{ParseString, ConcatString};
 use error::MinusOneResult;
@@ -22,12 +22,25 @@ pub enum InferredValue {
     Str(String)
 }
 
-pub type RuleSet = (Forward, ParseInt, AddInt, ParseString, ConcatString, Var, Cast);
+/// This is the rule set use to perform
+/// inferred type in Powershell deobfuscation
+pub type RuleSet = (
+    Forward,
+    ParseInt,
+    AddInt,
+    MultInt,
+    ParseString,
+    ConcatString,
+    Var,
+    Cast
+);
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<InferredValue>>> {
     let mut parser = Parser::new();
     parser.set_language(powershell_language()).unwrap();
 
-    let tree_sitter = parser.parse( source, None).unwrap();
+    // Powershell is case insensitive
+    // And the grammar is specified in lowercase
+    let tree_sitter = parser.parse( source.to_lowercase().as_str(), None).unwrap();
     Ok(Tree::<HashMapStorage<InferredValue>>::new(source.as_bytes(), tree_sitter))
 }

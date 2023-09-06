@@ -131,3 +131,60 @@ impl<'a> RuleMut<'a> for AddInt {
         Ok(())
     }
 }
+
+
+/// This rule will infer integer operation + -
+#[derive(Default)]
+pub struct MultInt;
+
+/// We will infer integer operation during down to top traveling of the tree
+/// We will manage basic operation + and -
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::InferredValue::Number;
+/// use minusone::ps::integer::{ParseInt, MultInt};
+///
+/// let mut test1 = from_powershell_src("4 * 5").unwrap();
+/// test1.apply_mut(&mut (ParseInt::default(), MultInt::default(), Forward::default())).unwrap();
+///
+/// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(20));
+///
+/// let mut test2 = from_powershell_src("4 / 5").unwrap();
+/// test2.apply_mut(&mut (ParseInt::default(), MultInt::default(), Forward::default())).unwrap();
+///
+/// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(0));
+///
+/// let mut test3 = from_powershell_src("108*116/108").unwrap();
+/// test3.apply_mut(&mut (ParseInt::default(), MultInt::default(), Forward::default())).unwrap();
+///
+/// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(116));
+/// ```
+impl<'a> RuleMut<'a> for MultInt {
+    type Language = InferredValue;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let node_view = node.view();
+        if node_view.kind() == "multiplicative_expression"  {
+            if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
+                match (left_op.data(), operator.text()?, right_op.data()) {
+                    (Some(Number(number_left)), "*", Some(Number(number_right))) => node.set(Number(number_left * number_right)),
+                    (Some(Number(number_left)), "/", Some(Number(number_right))) => node.set(Number((number_left / number_right) as i32)),
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}

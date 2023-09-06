@@ -27,26 +27,25 @@ impl<T: Clone> Scope<T> {
         }
     }
 
-    pub fn assign(&mut self, var: &Node<T>, value: &Node<T>) -> MinusOneResult<()> {
-        if let Some(var_value) = self.vars.get_mut(var.text()?) {
-            // We will set the state of the variable
-            // even if it's None
-            var_value.inferred_type = value.data().map(|value| value.clone());
+    pub fn assign(&mut self, var_name: &str, value: T) {
+        if let Some(var_value) = self.vars.get_mut(var_name) {
+            var_value.inferred_type = Some(value);
         } else {
-            self.vars.insert(var.text()?.to_string(), Variable::new(value.data().map(|value| value.clone())));
+            self.vars.insert(var_name.to_string(), Variable::new(Some(value)));
         }
-        Ok(())
     }
 
-    pub fn attach(&self, var: &mut NodeMut<T>) -> MinusOneResult<()> {
-        let view = var.view();
-        if let Some(var_value) = self.vars.get(view.text()?) {
-            if let Some(inferred_value) = &var_value.inferred_type {
-                var.set(inferred_value.clone())
-            }
+    pub fn forget(&mut self, var_name: &str) {
+        if let Some(var_value) = self.vars.get_mut(var_name) {
+            var_value.inferred_type = None;
         }
+    }
 
-        Ok(())
+    pub fn get_current_var(&self, var_name: &str) -> Option<T> {
+        if let Some(data) = self.vars.get(var_name) {
+            return data.inferred_type.as_ref().map(|v| v.clone());
+        }
+        None
     }
 }
 
