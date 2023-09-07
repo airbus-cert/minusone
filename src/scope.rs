@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use tree::{Node, NodeMut};
-use error::MinusOneResult;
 
 #[derive(Clone)]
 pub struct Variable<T: Clone> {

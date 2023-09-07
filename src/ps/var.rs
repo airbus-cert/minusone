@@ -3,7 +3,6 @@ use ps::InferredValue;
 use rule::{RuleMut};
 use tree::{NodeMut, Node};
 use error::MinusOneResult;
-use std::env::current_exe;
 
 pub struct Var {
     scope_manager : ScopeManager<InferredValue>
@@ -13,22 +12,6 @@ impl Default for Var {
     fn default() -> Self {
         Var {
             scope_manager: ScopeManager::new()
-        }
-    }
-}
-
-/// This function
-fn is_left<T>(node: &Node<T>) -> bool {
-    let mut current = node.parent();
-    loop {
-        if let Some(current_node) = current {
-            if current_node.kind() == "left_assignment_expression" {
-                return true;
-            }
-            current = current_node.parent();
-        }
-        else {
-            return false;
         }
     }
 }
@@ -45,8 +28,9 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     None
 }
 
-/// Forward will just forward inferred type in case of very simple
-/// tree exploring
+/// Var is a variable manager that will try to track
+/// static var assignement and propagte it in the code
+/// when it's possible
 ///
 /// # Example
 /// ```
@@ -60,7 +44,7 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 /// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::var::Var;
-/// use minusone::ps::litter::PowershellLitter;
+/// use minusone::ps::litter::Litter;
 ///
 /// let mut tree = from_powershell_src("\
 /// $foo = 4
@@ -68,7 +52,7 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 /// ").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
 ///
-/// let mut ps_litter_view = PowershellLitter::new();
+/// let mut ps_litter_view = Litter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\
@@ -115,8 +99,7 @@ impl<'a> RuleMut<'a> for Var {
             },
             "variable" => {
                 // check if we are not on the left part of an assignment expression
-                // The powershell grammar doesn't make a difference node name for each part
-                if view.parent_from_type("left_assignment_expression") == None {
+                if view.get_parent_of_type("left_assignment_expression") == None {
                     if let Some(data) = self.scope_manager.current().get_current_var(view.text()?) {
                         node.set(data);
                     }
@@ -125,5 +108,54 @@ impl<'a> RuleMut<'a> for Var {
             _ => ()
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ps::from_powershell_src;
+    use ps::integer::ParseInt;
+    use ps::forward::Forward;
+    use ps::InferredValue::Number;
+
+    #[test]
+    fn test_static_replacement() {
+        let mut tree = from_powershell_src("$foo = 4\nWrite-Debug $foo").unwrap();
+
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
+
+        // We are waiting for
+        // Write-Debug 4
+        // (pipeline inferred_type: None
+        //   (command inferred_type: None
+        //    (command_name inferred_type: None)
+        //    (variable inferred_type: Some(Number(4))))))
+        assert_eq!(*tree.root().unwrap()
+            .child(1).unwrap() // pipeline
+            .child(0).unwrap() //command
+            .child(1).unwrap()// variable
+            .data().expect("Expecting inferred type"), Number(4)
+        );
+    }
+
+    #[test]
+    fn test_unfollow_var_use_unknow_var() {
+        let mut tree = from_powershell_src("$foo = $toto\nWrite-Debug $foo").unwrap();
+
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
+
+        // We are waiting for
+        // Write-Debug 4
+        // (pipeline inferred_type: None
+        //   (command inferred_type: None
+        //    (command_name inferred_type: None)
+        //    (variable inferred_type: Some(Number(4))))))
+        assert_eq!(tree.root().unwrap()
+            .child(1).unwrap() // pipeline
+            .child(0).unwrap() //command
+            .child(1).unwrap()// variable
+            .data(), None
+        );
     }
 }

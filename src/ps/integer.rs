@@ -8,6 +8,34 @@ use ps::InferredValue::Number;
 #[derive(Default)]
 pub struct ParseInt;
 
+/// Parse int will infer decimal or hexadecimal numbers
+/// as decimal
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::InferredValue::Number;
+/// use minusone::ps::integer::{ParseInt, AddInt};
+/// use minusone::ps::litter::Litter;
+///
+/// let mut tree = from_powershell_src("\
+/// 4 + 0x5
+/// ").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\
+/// 4 + 5
+/// ");
+/// ```
 impl<'a> RuleMut<'a> for ParseInt {
     type Language = InferredValue;
 
@@ -15,37 +43,6 @@ impl<'a> RuleMut<'a> for ParseInt {
         Ok(())
     }
 
-    /// We will infer parse integer operation during down to top traveling of the tree
-    /// We will manage to import numbers in normal format (ex: 123), hex (0x42),
-    /// with unary operation (ex: -5)
-    ///
-    /// # Example
-    /// ```
-    /// extern crate tree_sitter;
-    /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
-    /// use minusone::tree::{HashMapStorage, Tree};
-    /// use minusone::ps::from_powershell_src;
-    /// use minusone::ps::forward::Forward;
-    /// use minusone::ps::InferredValue::Number;
-    /// use minusone::ps::integer::{ParseInt, AddInt};
-    ///
-    /// let mut test1 = from_powershell_src("4").unwrap();
-    /// test1.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
-    ///
-    /// let mut test2 = from_powershell_src("0x42").unwrap();
-    /// test2.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(0x42));
-    ///
-    /// let mut test3 = from_powershell_src("-5").unwrap();
-    /// test3.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-5));
-    /// ```
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let view = node.view();
         let token = view.text()?;
@@ -80,6 +77,34 @@ impl<'a> RuleMut<'a> for ParseInt {
 #[derive(Default)]
 pub struct AddInt;
 
+/// This rule will infer integer operation
+/// of type add (+) and minus(-)
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::InferredValue::Number;
+/// use minusone::ps::integer::{ParseInt, AddInt};
+/// use minusone::ps::litter::Litter;
+///
+/// let mut tree = from_powershell_src("\
+/// 4 + 5 - 2
+/// ").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\
+/// 7
+/// ");
+/// ```
 impl<'a> RuleMut<'a> for AddInt {
     type Language = InferredValue;
 
@@ -87,36 +112,6 @@ impl<'a> RuleMut<'a> for AddInt {
         Ok(())
     }
 
-    /// We will infer integer operation during down to top traveling of the tree
-    /// We will manage basic operation + and -
-    ///
-    /// # Example
-    /// ```
-    /// extern crate tree_sitter;
-    /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
-    /// use minusone::tree::{HashMapStorage, Tree};
-    /// use minusone::ps::from_powershell_src;
-    /// use minusone::ps::forward::Forward;
-    /// use minusone::ps::InferredValue::Number;
-    /// use minusone::ps::integer::{ParseInt, AddInt};
-    ///
-    /// let mut test1 = from_powershell_src("4 + 5").unwrap();
-    /// test1.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(9));
-    ///
-    /// let mut test2 = from_powershell_src("4 - 5").unwrap();
-    /// test2.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-1));
-    ///
-    /// let mut test3 = from_powershell_src("4 + -5").unwrap();
-    /// test3.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default())).unwrap();
-    ///
-    /// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(-1));
-    /// ```
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let node_view = node.view();
         if node_view.kind() == "additive_expression"  {
@@ -137,8 +132,8 @@ impl<'a> RuleMut<'a> for AddInt {
 #[derive(Default)]
 pub struct MultInt;
 
-/// We will infer integer operation during down to top traveling of the tree
-/// We will manage basic operation + and -
+/// This rule will infer integer operation
+/// of type add (+) and minus(-)
 ///
 /// # Example
 /// ```
@@ -151,21 +146,19 @@ pub struct MultInt;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::{ParseInt, MultInt};
+/// use minusone::ps::litter::Litter;
 ///
-/// let mut test1 = from_powershell_src("4 * 5").unwrap();
-/// test1.apply_mut(&mut (ParseInt::default(), MultInt::default(), Forward::default())).unwrap();
+/// let mut tree = from_powershell_src("\
+/// 3 * 4 / 12
+/// ").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
 ///
-/// assert_eq!(*(test1.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(20));
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
-/// let mut test2 = from_powershell_src("4 / 5").unwrap();
-/// test2.apply_mut(&mut (ParseInt::default(), MultInt::default(), Forward::default())).unwrap();
-///
-/// assert_eq!(*(test2.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(0));
-///
-/// let mut test3 = from_powershell_src("108*116/108").unwrap();
-/// test3.apply_mut(&mut (ParseInt::default(), MultInt::default(), Forward::default())).unwrap();
-///
-/// assert_eq!(*(test3.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(116));
+/// assert_eq!(ps_litter_view.output, "\
+/// 1
+/// ");
 /// ```
 impl<'a> RuleMut<'a> for MultInt {
     type Language = InferredValue;
@@ -186,5 +179,82 @@ impl<'a> RuleMut<'a> for MultInt {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ps::from_powershell_src;
+    use ps::forward::Forward;
+
+    #[test]
+    fn test_add_two_elements() {
+        let mut tree = from_powershell_src("4 + 5").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(9)
+        );
+    }
+
+    #[test]
+    fn test_add_three_elements() {
+        let mut tree = from_powershell_src("4 + 5 + 9").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(18)
+        );
+    }
+
+    #[test]
+    fn test_minus_two_elements() {
+        let mut tree = from_powershell_src("4 - 5").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(-1)
+        );
+    }
+
+    #[test]
+    fn test_minus_two_elements_with_unary_operators() {
+        let mut tree = from_powershell_src("4 + -5").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(-1)
+        );
+    }
+
+    #[test]
+    fn test_minus_two_elements_with_two_unary_operators() {
+        let mut tree = from_powershell_src("-4 - 5").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(-9)
+        );
+    }
+
+    #[test]
+    fn test_mul_two_elements() {
+        let mut tree = from_powershell_src("4 * 5").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(20)
+        );
+    }
+
+    #[test]
+    fn test_mul_three_elements() {
+        let mut tree = from_powershell_src("4 * 5 * 10").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Number(200)
+        );
     }
 }

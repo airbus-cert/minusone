@@ -2,14 +2,14 @@ use ps::InferredValue;
 use tree::Node;
 use error::{MinusOneResult, Error};
 
-pub struct PowershellLitter {
+pub struct Litter {
     pub output: String,
     tab: String,
 }
 
-impl PowershellLitter {
+impl Litter {
     pub fn new() -> Self {
-        PowershellLitter {
+        Litter {
             output: String::new(),
             tab: String::new(),
         }
@@ -67,7 +67,7 @@ impl PowershellLitter {
             self.output += " ";
             self.output += operator.text()?;
             self.output += " ";
-            self.print(&right_node);
+            self.print(&right_node)?;
         }
         Ok(())
     }
@@ -76,7 +76,7 @@ impl PowershellLitter {
         self.output += "$(";
         if let Some(statements) = node.named_child("statements") {
             for statement in statements.iter() {
-                self.print(&statement);
+                self.print(&statement)?;
             }
         }
         self.output += ")";

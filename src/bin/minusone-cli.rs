@@ -7,7 +7,7 @@ use std::fs;
 use clap::{Arg, App};
 use minusone::debug::DebugView;
 use minusone::ps::{RuleSet, from_powershell_src};
-use minusone::ps::litter::PowershellLitter;
+use minusone::ps::litter::Litter;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -31,7 +31,7 @@ fn main() {
     let mut debub_view = DebugView::new();
     tree.apply(&mut debub_view).unwrap();
 
-    let mut ps_litter_view = PowershellLitter::new();
+    let mut ps_litter_view = Litter::new();
     ps_litter_view.print(&tree.root().unwrap()).unwrap();
 
     println!("\nPowershell litter");

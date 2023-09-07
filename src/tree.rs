@@ -386,7 +386,7 @@ impl<'a, T> Node<'a, T> {
     }
 
 
-    pub fn parent_from_type(&self, kind: &str) -> Option<Node<'a, T>> {
+    pub fn get_parent_of_type(&self, kind: &str) -> Option<Node<'a, T>> {
         let mut current = self.parent();
         loop {
             if let Some(current_node) = current {
