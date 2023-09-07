@@ -1,6 +1,8 @@
-use ps::InferredValue;
+use ps::Powershell;
 use tree::Node;
 use error::{MinusOneResult, Error};
+use ps::Powershell::Raw;
+use ps::Value::{Str, Num};
 
 pub struct Litter {
     pub output: String,
@@ -15,20 +17,21 @@ impl Litter {
         }
     }
 
-    pub fn print(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+    pub fn print(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         // handle inferred type first
         if let Some(inferred_type) = node.data() {
             match inferred_type {
-                InferredValue::Str(str) => {
+                Raw(Str(str)) => {
                     self.output += "\"";
                     self.output += str;
                     self.output += "\"";
                     return Ok(());
                 }
-                InferredValue::Number(number) => {
+                Raw(Num(number)) => {
                     self.output.push_str(number.to_string().as_str());
                     return Ok(());
                 }
+                _ => () // We will only manage raw value
             }
         }
 
@@ -61,7 +64,7 @@ impl Litter {
         Ok(())
     }
 
-    fn expression(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+    fn expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         self.print(&node.child(0).ok_or(Error::invalid_child())?)?;
         if let (Some(operator), Some(right_node)) = (node.child(1), node.child(2)) {
             self.output += " ";
@@ -72,7 +75,7 @@ impl Litter {
         Ok(())
     }
 
-    fn sub_expression(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+    fn sub_expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         self.output += "$(";
         if let Some(statements) = node.named_child("statements") {
             for statement in statements.iter() {
@@ -83,7 +86,7 @@ impl Litter {
         Ok(())
     }
 
-    fn space_sep(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()>{
+    fn space_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()>{
         let mut nb_childs = node.child_count();
         for child in node.iter() {
             self.print(&child)?;
@@ -96,7 +99,7 @@ impl Litter {
         Ok(())
     }
 
-    fn statement_sep(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+    fn statement_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         for child in node.iter() {
             self.output += &self.tab;
             self.print(&child)?;
@@ -106,7 +109,7 @@ impl Litter {
         Ok(())
     }
 
-    fn statement_block(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+    fn statement_block(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         let old_tab = self.tab.clone();
         self.tab.push_str(" ");
 
@@ -127,7 +130,7 @@ impl Litter {
         Ok(())
     }
 
-    fn if_statement(&mut self, node: &Node<InferredValue>) -> MinusOneResult<()> {
+    fn if_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         self.output += &self.tab;
         self.output += "if (";
         self.print(&node.child(2).ok_or(Error::invalid_child())?)?;

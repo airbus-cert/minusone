@@ -7,6 +7,7 @@ use tree_sitter::{Parser};
 use tree_sitter_powershell::language as powershell_language;
 use ps::var::Var;
 use ps::cast::Cast;
+use ps::array::{ParseArrayLiteral, ParseRange};
 
 pub mod string;
 pub mod integer;
@@ -14,12 +15,19 @@ pub mod forward;
 pub mod var;
 pub mod litter;
 pub mod cast;
+pub mod array;
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum InferredValue {
-    Number(i32),
+pub enum Value {
+    Num(i32),
     Str(String)
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Powershell {
+    Raw(Value),
+    Array(Vec<Value>)
 }
 
 /// This is the rule set use to perform
@@ -32,15 +40,17 @@ pub type RuleSet = (
     ParseString,
     ConcatString,
     Var,
-    Cast
+    Cast,
+    ParseArrayLiteral,
+    ParseRange
 );
 
-pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<InferredValue>>> {
+pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
     let mut parser = Parser::new();
     parser.set_language(powershell_language()).unwrap();
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase
     let tree_sitter = parser.parse( source.to_lowercase().as_str(), None).unwrap();
-    Ok(Tree::<HashMapStorage<InferredValue>>::new(source.as_bytes(), tree_sitter))
+    Ok(Tree::<HashMapStorage<Powershell>>::new(source.as_bytes(), tree_sitter))
 }

@@ -1,6 +1,6 @@
 use rule::Rule;
 use tree::{Node};
-use ps::InferredValue;
+use ps::Powershell;
 use error::MinusOneResult;
 
 /// A debug view is used to print the tree nodes
@@ -35,7 +35,7 @@ impl DebugView {
 ///
 /// ```
 impl<'a> Rule<'a> for DebugView {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     /// During the top down travel we will manage tab
     /// increment and general print

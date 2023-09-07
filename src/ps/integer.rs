@@ -1,8 +1,9 @@
 use rule::RuleMut;
-use ps::InferredValue;
+use ps::Powershell;
 use tree::NodeMut;
 use error::MinusOneResult;
-use ps::InferredValue::Number;
+use ps::Value::Num;
+use ps::Powershell::Raw;
 
 /// Parse int will interpret integer node into Rust world
 #[derive(Default)]
@@ -20,7 +21,6 @@ pub struct ParseInt;
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::litter::Litter;
 ///
@@ -37,7 +37,7 @@ pub struct ParseInt;
 /// ");
 /// ```
 impl<'a> RuleMut<'a> for ParseInt {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         Ok(())
@@ -49,19 +49,19 @@ impl<'a> RuleMut<'a> for ParseInt {
         match view.kind() {
             "hexadecimal_integer_literal" => {
                 if let Ok(number) = u32::from_str_radix(&token[2..], 16) {
-                    node.set(Number(number as i32));
+                    node.set(Raw(Num(number as i32)));
                 }
             },
             "decimal_integer_literal" => {
                 if let Ok(number) = token.parse::<i32>() {
-                    node.set(Number(number));
+                    node.set(Raw(Num(number)));
                 }
             },
             "expression_with_unary_operator" => {
                 if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
                     match (operator.text()?, expression.data()) {
-                        ("-", Some(Number(num))) => node.set(Number(-num)),
-                        ("+", Some(Number(num))) => node.set(Number(*num)),
+                        ("-", Some(Raw(Num(num)))) => node.set(Raw(Num(-num))),
+                        ("+", Some(Raw(Num(num)))) => node.set(Raw(Num(*num))),
                         _ => ()
                     }
                 }
@@ -89,7 +89,6 @@ pub struct AddInt;
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::litter::Litter;
 ///
@@ -106,7 +105,7 @@ pub struct AddInt;
 /// ");
 /// ```
 impl<'a> RuleMut<'a> for AddInt {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         Ok(())
@@ -117,8 +116,8 @@ impl<'a> RuleMut<'a> for AddInt {
         if node_view.kind() == "additive_expression"  {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Number(number_left)), "+", Some(Number(number_right))) => node.set(Number(number_left + number_right)),
-                    (Some(Number(number_left)), "-", Some(Number(number_right))) => node.set(Number(number_left - number_right)),
+                    (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left + number_right))),
+                    (Some(Raw(Num(number_left))), "-", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left - number_right))),
                     _ => {}
                 }
             }
@@ -144,7 +143,6 @@ pub struct MultInt;
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::{ParseInt, MultInt};
 /// use minusone::ps::litter::Litter;
 ///
@@ -161,7 +159,7 @@ pub struct MultInt;
 /// ");
 /// ```
 impl<'a> RuleMut<'a> for MultInt {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         Ok(())
@@ -172,8 +170,8 @@ impl<'a> RuleMut<'a> for MultInt {
         if node_view.kind() == "multiplicative_expression"  {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Number(number_left)), "*", Some(Number(number_right))) => node.set(Number(number_left * number_right)),
-                    (Some(Number(number_left)), "/", Some(Number(number_right))) => node.set(Number((number_left / number_right) as i32)),
+                    (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left * number_right))),
+                    (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => node.set(Raw(Num((number_left / number_right) as i32))),
                     _ => {}
                 }
             }
@@ -194,7 +192,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(9)
+            .data().expect("Inferred type"), Raw(Num(9))
         );
     }
 
@@ -204,7 +202,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(18)
+            .data().expect("Inferred type"), Raw(Num(18))
         );
     }
 
@@ -214,7 +212,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(-1)
+            .data().expect("Inferred type"), Raw(Num(-1))
         );
     }
 
@@ -224,7 +222,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(-1)
+            .data().expect("Inferred type"), Raw(Num(-1))
         );
     }
 
@@ -234,7 +232,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(-9)
+            .data().expect("Inferred type"), Raw(Num(-9))
         );
     }
 
@@ -244,7 +242,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(20)
+            .data().expect("Inferred type"), Raw(Num(20))
         );
     }
 
@@ -254,7 +252,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
-            .data().expect("Inferred type"), Number(200)
+            .data().expect("Inferred type"), Raw(Num(200))
         );
     }
 }

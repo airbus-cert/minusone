@@ -1,11 +1,11 @@
 use scope::ScopeManager;
-use ps::InferredValue;
+use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node};
 use error::MinusOneResult;
 
 pub struct Var {
-    scope_manager : ScopeManager<InferredValue>
+    scope_manager : ScopeManager<Powershell>
 }
 
 impl Default for Var {
@@ -41,7 +41,6 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::var::Var;
 /// use minusone::ps::litter::Litter;
@@ -61,7 +60,7 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 /// ");
 /// ```
 impl<'a> RuleMut<'a> for Var {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let view = node.view();
@@ -117,7 +116,9 @@ mod test {
     use ps::from_powershell_src;
     use ps::integer::ParseInt;
     use ps::forward::Forward;
-    use ps::InferredValue::Number;
+    use ps::Powershell::Raw;
+    use ps::Value::Num;
+
 
     #[test]
     fn test_static_replacement() {
@@ -135,7 +136,7 @@ mod test {
             .child(1).unwrap() // pipeline
             .child(0).unwrap() //command
             .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Number(4)
+            .data().expect("Expecting inferred type"), Raw(Num(4))
         );
     }
 

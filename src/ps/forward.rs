@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use ps::InferredValue;
+use ps::Powershell;
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
 
@@ -29,7 +29,7 @@ pub struct Forward;
 /// assert_eq!(*(tree.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
 /// ```
 impl<'a> RuleMut<'a> for Forward {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     /// Nothing to do during top down exploration
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{

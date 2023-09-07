@@ -1,8 +1,9 @@
 use rule::RuleMut;
-use ps::InferredValue;
+use ps::{Powershell, Value};
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
-use ps::InferredValue::{Number, Str};
+use ps::Value::{Num, Str};
+use ps::Powershell::Raw;
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -41,7 +42,7 @@ pub struct Cast;
 /// assert_eq!(*(test3.root().unwrap().child(0).expect("expecting a child").data().expect("expecting a data in the first child")), Number(65));
 /// ```
 impl<'a> RuleMut<'a> for Cast {
-    type Language = InferredValue;
+    type Language = Powershell;
 
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         Ok(())
@@ -57,20 +58,20 @@ impl<'a> RuleMut<'a> for Cast {
                         .child(0).ok_or(Error::invalid_child())? // type_name
                         .child(0).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(), expression.data()) // type_identifier
                     {
-                        ("int", Some(Str(token))) => {
+                        ("int", Some(Raw(Str(token)))) => {
                             if let Ok(number) = token.parse::<i32>() {
-                                node.set(Number(number));
+                                node.set(Raw(Num(number)));
                             }
                         },
-                        ("byte", Some(Str(token))) => {
+                        ("byte", Some(Raw(Str(token)))) => {
                             if let Ok(number) = token.parse::<u8>() {
-                                node.set(Number(number as i32));
+                                node.set(Raw(Num(number as i32)));
                             }
                         },
-                        ("char", Some(Number(num))) => {
+                        ("char", Some(Raw(Num(num)))) => {
                             let mut result = String::new();
                             result.push(char::from(*num as u8));
-                            node.set(Str(result));
+                            node.set(Raw(Str(result)));
                         },
                         _ => ()
                     }

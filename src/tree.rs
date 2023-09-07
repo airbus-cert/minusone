@@ -242,7 +242,6 @@ pub trait VisitMut<'a, T> {
 /// use tree_sitter_powershell::language as powershell_language;
 /// use minusone::tree::{Storage, HashMapStorage, NodeMut, VisitMut};
 /// use minusone::rule::RuleMut;
-/// use minusone::ps::InferredValue;
 /// use minusone::error::MinusOneResult;
 ///
 /// #[derive(Default)]
