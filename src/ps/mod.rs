@@ -8,6 +8,7 @@ use tree_sitter_powershell::language as powershell_language;
 use ps::var::Var;
 use ps::cast::Cast;
 use ps::array::{ParseArrayLiteral, ParseRange};
+use ps::access::AccessString;
 
 pub mod string;
 pub mod integer;
@@ -16,6 +17,8 @@ pub mod var;
 pub mod litter;
 pub mod cast;
 pub mod array;
+pub mod behavior;
+pub mod access;
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -42,7 +45,8 @@ pub type RuleSet = (
     Var,
     Cast,
     ParseArrayLiteral,
-    ParseRange
+    ParseRange,
+    AccessString
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

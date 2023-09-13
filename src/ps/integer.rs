@@ -6,10 +6,6 @@ use ps::Value::Num;
 use ps::Powershell::Raw;
 
 /// Parse int will interpret integer node into Rust world
-#[derive(Default)]
-pub struct ParseInt;
-
-/// Parse int will infer decimal or hexadecimal numbers
 /// as decimal
 ///
 /// # Example
@@ -24,18 +20,17 @@ pub struct ParseInt;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::litter::Litter;
 ///
-/// let mut tree = from_powershell_src("\
-/// 4 + 0x5
-/// ").unwrap();
+/// let mut tree = from_powershell_src("4 + 0x5").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
 ///
 /// let mut ps_litter_view = Litter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
-/// assert_eq!(ps_litter_view.output, "\
-/// 4 + 5
-/// ");
+/// assert_eq!(ps_litter_view.output, "4 + 5");
 /// ```
+#[derive(Default)]
+pub struct ParseInt;
+
 impl<'a> RuleMut<'a> for ParseInt {
     type Language = Powershell;
 
@@ -73,10 +68,6 @@ impl<'a> RuleMut<'a> for ParseInt {
     }
 }
 
-/// This rule will infer integer operation + -
-#[derive(Default)]
-pub struct AddInt;
-
 /// This rule will infer integer operation
 /// of type add (+) and minus(-)
 ///
@@ -92,18 +83,17 @@ pub struct AddInt;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::litter::Litter;
 ///
-/// let mut tree = from_powershell_src("\
-/// 4 + 5 - 2
-/// ").unwrap();
+/// let mut tree = from_powershell_src("4 + 5 - 2").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
 ///
 /// let mut ps_litter_view = Litter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
-/// assert_eq!(ps_litter_view.output, "\
-/// 7
-/// ");
+/// assert_eq!(ps_litter_view.output, "7");
 /// ```
+#[derive(Default)]
+pub struct AddInt;
+
 impl<'a> RuleMut<'a> for AddInt {
     type Language = Powershell;
 
@@ -127,10 +117,6 @@ impl<'a> RuleMut<'a> for AddInt {
 }
 
 
-/// This rule will infer integer operation + -
-#[derive(Default)]
-pub struct MultInt;
-
 /// This rule will infer integer operation
 /// of type add (+) and minus(-)
 ///
@@ -146,18 +132,17 @@ pub struct MultInt;
 /// use minusone::ps::integer::{ParseInt, MultInt};
 /// use minusone::ps::litter::Litter;
 ///
-/// let mut tree = from_powershell_src("\
-/// 3 * 4 / 12
-/// ").unwrap();
+/// let mut tree = from_powershell_src("3 * 4 / 12").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
 ///
 /// let mut ps_litter_view = Litter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
-/// assert_eq!(ps_litter_view.output, "\
-/// 1
-/// ");
+/// assert_eq!(ps_litter_view.output, "1");
 /// ```
+#[derive(Default)]
+pub struct MultInt;
+
 impl<'a> RuleMut<'a> for MultInt {
     type Language = Powershell;
 

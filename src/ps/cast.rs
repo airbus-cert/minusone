@@ -56,7 +56,8 @@ impl<'a> RuleMut<'a> for Cast {
                     match (type_literal
                         .child(1).ok_or(Error::invalid_child())? // type_spec
                         .child(0).ok_or(Error::invalid_child())? // type_name
-                        .child(0).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(), expression.data()) // type_identifier
+                        .child(0).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(),
+                           expression.data()) // type_identifier
                     {
                         ("int", Some(Raw(Str(token)))) => {
                             if let Ok(number) = token.parse::<i32>() {

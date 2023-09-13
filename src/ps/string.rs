@@ -3,7 +3,7 @@ use tree::{NodeMut};
 use error::MinusOneResult;
 use ps::Value::Str;
 use ps::Powershell;
-use ps::Powershell::Raw;
+use ps::Powershell::{Raw, Array};
 
 #[derive(Default)]
 pub struct ParseString;
@@ -30,6 +30,29 @@ impl<'a> RuleMut<'a> for ParseString {
     }
 }
 
+
+/// This rule will infer string concat operation
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::{ConcatString, ParseString};
+///
+/// let mut tree = from_powershell_src("'foo' + 'bar'").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"foobar\"");
+/// ```
 #[derive(Default)]
 pub struct ConcatString;
 

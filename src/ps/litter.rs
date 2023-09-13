@@ -37,12 +37,11 @@ impl Litter {
 
         match node.kind() {
             // Statement separated rule
-            "program" => self.statement_sep(node)?,
+            "program" => self.statements(node)?,
 
             // Space separated token
             "pipeline" | "command" |
-            "assignment_expression" | "left_assignment_expression"
-            => self.space_sep(node)?,
+            "assignment_expression" | "left_assignment_expression"  => self.space_sep(node)?,
 
             "logical_expression" | "bitwise_expression" |
             "comparison_expression" | "additive_expression" |
@@ -55,12 +54,27 @@ impl Litter {
 
             "sub_expression" => self.sub_expression(node)?,
 
+            "script_block_expression" => self.script_block_expression(node)?,
+
+            "script_block" => self.script_block(node, false)?,
+
+            "parenthesized_expression" => self.parenthesized_expression(node)?,
+
+            "empty_statement" => {}, // Do nothing
+
             // Un modified tokens
             _ => {
-                self.output += node.text()?
+                self.output += &node.text()?.to_lowercase()
             }
         }
 
+        Ok(())
+    }
+
+    fn transparent(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        for child in node.iter() {
+            self.print(&child)?;
+        }
         Ok(())
     }
 
@@ -99,11 +113,44 @@ impl Litter {
         Ok(())
     }
 
-    fn statement_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+    fn statements(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        let mut is_first = true;
         for child in node.iter() {
+
+            if child.kind() == "empty_statement" {
+                continue;
+            }
+
+            if !is_first {
+                self.output += "\n";
+            }
+            else {
+                is_first = false;
+            }
+
             self.output += &self.tab;
             self.print(&child)?;
-            self.output += "\n";
+        }
+
+        Ok(())
+    }
+
+    fn inline_statements(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        let mut is_first = true;
+        for child in node.iter() {
+            if child.kind() == "empty_statement" {
+                continue;
+            }
+
+            if !is_first {
+                self.output += ";";
+            }
+            else {
+                is_first = false;
+            }
+
+            self.output += &self.tab;
+            self.print(&child)?;
         }
 
         Ok(())
@@ -117,7 +164,7 @@ impl Litter {
         self.output += "{\n";
 
         // all statement seperated by a line
-        for child in node.range(Some(1), Some(node.child_count() - 1), None) {
+        for child in node.range(Some(1  ), Some(node.child_count() - 1), None) {
             self.output += &self.tab;
             self.print(&child)?;
             self.output += "\n";
@@ -151,6 +198,97 @@ impl Litter {
             self.output += &self.tab;
             self.output += "else\n";
             self.print(&else_clause.child(1).ok_or(Error::invalid_child())?)?;
+        }
+
+        Ok(())
+    }
+
+    fn script_block_expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        self.output += "{ ";
+        self.script_block(&node.child(1).ok_or(Error::invalid_child())?, true)?;
+        self.output += " }";
+
+        Ok(())
+    }
+
+    fn script_block(&mut self, node: &Node<Powershell>, inline: bool) -> MinusOneResult<()> {
+        self.script_block_body(&node.child(0).ok_or(Error::invalid_child())?, inline)?;
+        Ok(())
+    }
+
+    fn script_block_body(&mut self, node: &Node<Powershell>, inline: bool) -> MinusOneResult<()> {
+        let child = node.child(0).ok_or(Error::invalid_child())?;
+
+        if child.kind() == "named_block_list" {
+            self.print(&child)
+        }
+        else {
+            if inline {
+                self.inline_statements(&node)
+            }
+            else {
+                self.statements(&node)
+            }
+        }
+    }
+
+    fn parenthesized_expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        let mut is_priority = false;
+
+        let mut parent = node.parent();
+        loop {
+            if let Some(parent_node) = &parent {
+                // find a pipeline node => end exploring
+                if parent_node.kind() == "pipeline" {
+                    break;
+                }
+                // If my parent node have more than one child
+                // is considering as complex
+                if parent_node.child_count() != 1 {
+                    is_priority = true;
+                    break;
+                }
+                parent = parent_node.parent();
+            }
+            else {
+                // end exploring
+                break;
+            }
+        }
+
+        // I know that i'm part of a complex expression
+        // Check if i'm a complex expression too
+        // If i'm here I don't have inferred type
+        if is_priority {
+            is_priority = false;
+
+            let mut son = node.child(1);
+
+            loop {
+                if let Some(son_node) = &son {
+                    if son_node.kind() == "unary_expression" {
+                        break;
+                    }
+                    if son_node.child_count() > 1 {
+                        is_priority = true;
+                        break;
+                    }
+                    son = son_node.child(0);
+                }
+                else {
+                    break;
+                }
+            }
+        }
+
+        // if priority is needed let's keep parenthesis
+        if is_priority {
+            self.output += "( ";
+            self.print(&node.child(1).ok_or(Error::invalid_child())?)?;
+            self.output += " )";
+        }
+        else {
+            self.print(&node.child(1).ok_or(Error::invalid_child())?)?;
         }
 
         Ok(())

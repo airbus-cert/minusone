@@ -4,6 +4,38 @@ use rule::{RuleMut};
 use tree::{NodeMut, Node};
 use error::MinusOneResult;
 
+
+/// Var is a variable manager that will try to track
+/// static var assignement and propagte it in the code
+/// when it's possible
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::var::Var;
+/// use minusone::ps::litter::Litter;
+///
+/// let mut tree = from_powershell_src("\
+/// $foo = 4
+/// Write-Debug $foo\
+/// ").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\
+/// $foo = 4
+/// Write-Debug 4\
+/// ");
+/// ```
 pub struct Var {
     scope_manager : ScopeManager<Powershell>
 }
@@ -28,37 +60,6 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     None
 }
 
-/// Var is a variable manager that will try to track
-/// static var assignement and propagte it in the code
-/// when it's possible
-///
-/// # Example
-/// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
-/// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
-/// use minusone::ps::forward::Forward;
-/// use minusone::ps::integer::ParseInt;
-/// use minusone::ps::var::Var;
-/// use minusone::ps::litter::Litter;
-///
-/// let mut tree = from_powershell_src("\
-/// $foo = 4
-/// Write-Debug $foo
-/// ").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
-///
-/// let mut ps_litter_view = Litter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
-///
-/// assert_eq!(ps_litter_view.output, "\
-/// $foo = 4
-/// Write-Debug 4
-/// ");
-/// ```
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
