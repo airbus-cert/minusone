@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use ps::{Powershell, Value};
+use ps::Powershell;
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
 use ps::Value::{Num, Str};

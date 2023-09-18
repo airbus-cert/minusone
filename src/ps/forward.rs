@@ -44,7 +44,11 @@ impl<'a> RuleMut<'a> for Forward {
             "multiplicative_expression" | "additive_expression" |
             "comparison_expression" | "bitwise_expression" |
             "string_literal" | "logical_expression" |
-            "integer_literal" | "pipeline" => {
+            "integer_literal" | "pipeline" |
+            "range_argument_expression" | "format_argument_expression" |
+            "multiplicative_argument_expression" | "additive_argument_expression" |
+            "comparison_argument_expression" | "bitwise_argument_expression" |
+            "logical_argument_expression" | "argument_expression" => {
                 if node.view().child_count() == 1 {
                     if let Some(child_data) = node.view().child(0).ok_or(Error::invalid_child())?.data() {
                         node.set(child_data.clone());

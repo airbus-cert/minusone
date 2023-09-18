@@ -33,7 +33,7 @@ use error::MinusOneResult;
 ///
 /// assert_eq!(ps_litter_view.output, "\
 /// $foo = 4
-/// Write-Debug 4\
+/// write-debug 4\
 /// ");
 /// ```
 pub struct Var {
@@ -99,6 +99,7 @@ impl<'a> RuleMut<'a> for Var {
             },
             "variable" => {
                 // check if we are not on the left part of an assignment expression
+                // already handle by the previous case
                 if view.get_parent_of_type("left_assignment_expression") == None {
                     if let Some(data) = self.scope_manager.current().get_current_var(view.text()?) {
                         node.set(data);

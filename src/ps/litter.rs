@@ -60,9 +60,11 @@ impl Litter {
 
             "parenthesized_expression" => self.parenthesized_expression(node)?,
 
+            "command_name_expr" => self.transparent(node)?,
+
             "empty_statement" => {}, // Do nothing
 
-            // Un modified tokens
+            // Unmodified tokens
             _ => {
                 self.output += &node.text()?.to_lowercase()
             }

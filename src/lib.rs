@@ -10,3 +10,4 @@ pub mod rule;
 pub mod debug;
 pub mod error;
 pub mod scope;
+pub mod init;

@@ -103,7 +103,7 @@ impl<'a> RuleMut<'a> for AddInt {
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let node_view = node.view();
-        if node_view.kind() == "additive_expression"  {
+        if node_view.kind() == "additive_expression" || node_view.kind() == "additive_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
                     (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left + number_right))),
@@ -152,7 +152,7 @@ impl<'a> RuleMut<'a> for MultInt {
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
         let node_view = node.view();
-        if node_view.kind() == "multiplicative_expression"  {
+        if node_view.kind() == "multiplicative_expression" || node_view.kind() == "multiplicative_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
                     (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left * number_right))),

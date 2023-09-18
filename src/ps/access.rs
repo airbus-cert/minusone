@@ -3,8 +3,8 @@ use ps::{Powershell, Value};
 use tree::NodeMut;
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
-use ps::Value::{Str, Num};
 use ps::array::parse_i32;
+use ps::Value::Str;
 
 /// This function get char at index position
 /// even if the index is negative

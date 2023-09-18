@@ -8,6 +8,7 @@ use clap::{Arg, App};
 use minusone::debug::DebugView;
 use minusone::ps::{RuleSet, from_powershell_src};
 use minusone::ps::litter::Litter;
+use minusone::init::Init;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -26,7 +27,7 @@ fn main() {
 
     let source = fs::read_to_string(matches.value_of("path").expect("Path arguments is mandatory")).unwrap();
     let mut tree = from_powershell_src(source.as_str()).unwrap();
-    tree.apply_mut(&mut RuleSet::default()).unwrap();
+    tree.apply_mut(&mut RuleSet::init()).unwrap();
 
     let mut debub_view = DebugView::new();
     tree.apply(&mut debub_view).unwrap();

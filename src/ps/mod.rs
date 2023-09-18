@@ -9,6 +9,7 @@ use ps::var::Var;
 use ps::cast::Cast;
 use ps::array::{ParseArrayLiteral, ParseRange};
 use ps::access::AccessString;
+use ps::join::{JoinComparison, JoinStringMethod};
 
 pub mod string;
 pub mod integer;
@@ -19,6 +20,7 @@ pub mod cast;
 pub mod array;
 pub mod behavior;
 pub mod access;
+pub mod join;
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -35,6 +37,7 @@ pub enum Powershell {
 
 /// This is the rule set use to perform
 /// inferred type in Powershell deobfuscation
+
 pub type RuleSet = (
     Forward,
     ParseInt,
@@ -46,7 +49,9 @@ pub type RuleSet = (
     Cast,
     ParseArrayLiteral,
     ParseRange,
-    AccessString
+    AccessString,
+    JoinComparison,
+    JoinStringMethod
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

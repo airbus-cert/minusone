@@ -46,8 +46,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 pub fn parse_i32(v: &Value) -> Option<i32> {
     match v {
         Num(num) => Some(*num),
-        Str(num_str) => num_str.parse::<i32>().ok(),
-        _ => None
+        Str(num_str) => num_str.parse::<i32>().ok()
     }
 }
 
