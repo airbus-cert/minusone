@@ -71,6 +71,13 @@ impl<'a> RuleMut<'a> for Forward {
                         node.set(pipeline_data.clone())
                     }
                 }
+            },
+            "array_expression" => {
+                if let Some(pipeline) = node.view().child(1) {
+                    if let Some(pipeline_data) = pipeline.data() {
+                        node.set(pipeline_data.clone())
+                    }
+                }
             }
             _ => ()
         }

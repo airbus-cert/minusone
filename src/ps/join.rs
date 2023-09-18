@@ -75,10 +75,9 @@ impl<'a> RuleMut<'a> for JoinComparison {
 }
 
 
-/// This rule will infer the -join opoerator
-/// in the context of comparison operator
+/// This rule will infer the [string]::join function
 ///
-/// @('f', 'o', 'o') -join '' => 'foo'
+/// [string]::join('', ('a','b','c')) => 'abc'
 ///
 /// # Example
 /// ```
@@ -94,7 +93,6 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// use minusone::ps::join::JoinStringMethod;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::array::ParseArrayLiteral;
-/// use minusone::ps::access::AccessString;
 ///
 /// let mut tree = from_powershell_src("[string]::join('', (\"a\",\"b\",\"c\"))").unwrap();
 /// tree.apply_mut(&mut (
@@ -102,8 +100,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 ///     Forward::default(),
 ///     ParseInt::default(),
 ///     ParseArrayLiteral::default(),
-///     JoinStringMethod::default(),
-///     AccessString::default()
+///     JoinStringMethod::default()
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Litter::new();
@@ -146,6 +143,73 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
                             }
                         }
                     },
+                    _ => ()
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// This rule will infer the -join operator
+/// in context of unary operatoe
+///
+/// -join @('a','b','c') => 'abc'
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::array::ParseArrayLiteral;
+///
+/// let mut tree = from_powershell_src("-join @(\"a\",\"b\", \"c\")").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(),
+///     Forward::default(),
+///     ParseInt::default(),
+///     ParseArrayLiteral::default(),
+///     JoinOperator::default()
+/// )).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"abc\"");
+/// ```
+#[derive(Default)]
+pub struct JoinOperator;
+
+impl<'a> RuleMut<'a> for JoinOperator {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "expression_with_unary_operator" {
+            if let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1)) {
+                match (operator.text()?.to_lowercase().as_str(), unary_expression.data()) {
+                    ("-join", Some(Array(values))) => {
+                        let result = values.iter().map(|e| {
+                            match e {
+                                Str(s) => s.clone(),
+                                Num(n) => n.to_string()
+                            }
+                        }).collect::<Vec<String>>().join(""); // by default the join operator join with an empty token
+
+                        node.set(Raw(Str(result)));
+                    }
                     _ => ()
                 }
             }

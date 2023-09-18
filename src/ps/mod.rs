@@ -9,7 +9,7 @@ use ps::var::Var;
 use ps::cast::Cast;
 use ps::array::{ParseArrayLiteral, ParseRange};
 use ps::access::AccessString;
-use ps::join::{JoinComparison, JoinStringMethod};
+use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
 
 pub mod string;
 pub mod integer;
@@ -51,7 +51,8 @@ pub type RuleSet = (
     ParseRange,
     AccessString,
     JoinComparison,
-    JoinStringMethod
+    JoinStringMethod,
+    JoinOperator
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
