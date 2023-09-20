@@ -431,7 +431,7 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(end) = self.end {
-            if self.index > end {
+            if self.index >= end {
                 return None;
             }
         }

@@ -1,7 +1,7 @@
 use rule::RuleMut;
 use tree::{NodeMut};
 use error::MinusOneResult;
-use ps::Value::Str;
+use ps::Value::{Str, Num};
 use ps::Powershell;
 use ps::Powershell::Raw;
 
@@ -16,13 +16,40 @@ impl<'a> RuleMut<'a> for ParseString {
     }
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
-        let node_view = node.view();
+        let view = node.view();
 
-        match node_view.kind() {
-            "expandable_string_literal" | "verbatim_string_characters" => {
-                let value = String::from(node_view.text()?);
+        match view.kind() {
+            "verbatim_string_characters" => {
+                let value = String::from(view.text()?);
                 // Parse string by removing the double quote
                 node.set(Raw(Str(String::from(&value[1..value.len() - 1]))));
+            },
+            "expandable_string_literal" => {
+                // expand what is expandable
+                let value = String::from(view.text()?);
+                // Parse string by removing the double quote
+                let mut result = String::from(&value[1..value.len() - 1]);
+
+                // last child is the token \"
+                for child in view.range(None, Some(view.child_count() - 1), None) {
+                    if let Some(Raw(v)) = child.data() {
+                        match v {
+                            Str(s) => {
+                                result = result.replace(child.text()?, s);
+                            },
+                            Num(n) => {
+                                result = result.replace(child.text()?, n.to_string().as_str());
+                            }
+                        }
+                    }
+                    else {
+
+                        // the expandable string have non inferred child
+                        // so can't be inferred
+                        return Ok(())
+                    }
+                }
+                node.set(Raw(Str(result)));
             }
             _ => ()
         }

@@ -41,7 +41,8 @@ impl Litter {
 
             // Space separated token
             "pipeline" | "command" |
-            "assignment_expression" | "left_assignment_expression"  => self.space_sep(node)?,
+            "assignment_expression" | "left_assignment_expression" |
+            "command_elements" => self.space_sep(node)?,
 
             "logical_expression" | "bitwise_expression" |
             "comparison_expression" | "additive_expression" |
@@ -63,6 +64,8 @@ impl Litter {
             "command_name_expr" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
+
+            "while_statement" => self.while_statement(node)?,
 
             // Unmodified tokens
             _ => {
@@ -163,13 +166,13 @@ impl Litter {
         self.tab.push_str(" ");
 
         self.output += &old_tab;
-        self.output += "{\n";
+        self.output += "{";
 
         // all statement seperated by a line
         for child in node.range(Some(1  ), Some(node.child_count() - 1), None) {
+            self.output += "\n";
             self.output += &self.tab;
             self.print(&child)?;
-            self.output += "\n";
         }
 
         self.output += &old_tab;
@@ -181,9 +184,9 @@ impl Litter {
 
     fn if_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         self.output += &self.tab;
-        self.output += "if (";
+        self.output += "if ( ";
         self.print(&node.child(2).ok_or(Error::invalid_child())?)?;
-        self.output += ")\n";
+        self.output += " )\n";
         self.print(&node.child(4).ok_or(Error::invalid_child())?)?;
 
         if let Some(elseif_clauses) = node.named_child("elseif_clauses") {
@@ -293,6 +296,17 @@ impl Litter {
             self.print(&node.child(1).ok_or(Error::invalid_child())?)?;
         }
 
+        Ok(())
+    }
+
+    fn while_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        let while_condition = node.child(2).ok_or(Error::invalid_child())?;
+        let statement_block = node.child(4).ok_or(Error::invalid_child())?;
+
+        self.output += "while ( ";
+        self.print(&while_condition)?;
+        self.output += " )\n";
+        self.print(&statement_block)?;
         Ok(())
     }
 }
