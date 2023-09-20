@@ -38,25 +38,26 @@ impl<'a> RuleMut<'a> for Forward {
 
     /// Forward the inferred type to the top node
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()> {
-        match node.view().kind() {
+        let view = node.view();
+        match view.kind() {
             "unary_expression" | "array_literal_expression" |
             "range_expression" | "format_expression" |
             "multiplicative_expression" | "additive_expression" |
             "comparison_expression" | "bitwise_expression" |
             "string_literal" | "logical_expression" |
-            "integer_literal" | "pipeline" |
+            "integer_literal" | "argument_expression" |
             "range_argument_expression" | "format_argument_expression" |
             "multiplicative_argument_expression" | "additive_argument_expression" |
             "comparison_argument_expression" | "bitwise_argument_expression" |
-            "logical_argument_expression" | "argument_expression" => {
-                if node.view().child_count() == 1 {
-                    if let Some(child_data) = node.view().child(0).ok_or(Error::invalid_child())?.data() {
+            "logical_argument_expression" | "command_name_expr" => {
+                if view.child_count() == 1 {
+                    if let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
                         node.set(child_data.clone());
                     }
                 }
             }
             "sub_expression" => {
-                if let Some(expression) = node.view().named_child("statements") {
+                if let Some(expression) = view.named_child("statements") {
                     // A sub expression must have only one statement to be reduced
                     if expression.child_count() == 1 {
                         if let Some(expression_data) = expression.child(0).ok_or(Error::invalid_child())?.data() {
@@ -66,16 +67,25 @@ impl<'a> RuleMut<'a> for Forward {
                 }
             },
             "parenthesized_expression" => {
-                if let Some(pipeline) = node.view().child(1) {
-                    if let Some(pipeline_data) = pipeline.data() {
-                        node.set(pipeline_data.clone())
+                if let Some(expression) = view.child(1) {
+                    if let Some(expression_data) = expression.data() {
+                        node.set(expression_data.clone())
                     }
                 }
             },
             "array_expression" => {
-                if let Some(pipeline) = node.view().child(1) {
-                    if let Some(pipeline_data) = pipeline.data() {
-                        node.set(pipeline_data.clone())
+                if let Some(expression) = view.child(1) {
+                    if let Some(expression_data) = expression.data() {
+                        node.set(expression_data.clone())
+                    }
+                }
+            },
+
+            // we infer pipeline type with the value of the last expression
+            "pipeline" => {
+                if let Some(expression) = view.child(view.child_count() - 1) {
+                    if let Some(expression_data) = expression.data() {
+                        node.set(expression_data.clone())
                     }
                 }
             }

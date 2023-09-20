@@ -122,28 +122,30 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
         let view = node.view();
         if view.kind() == "invokation_expression" {
             // Invokation must be done using argument list
-            if let (Some(type_literal), Some(operator), Some(member_name), Some(arguments_list)) = (view.child(0), view.child(1), view.child(2), view.child(3)) {
-                match (type_literal.child(1).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(), operator.text()?.to_lowercase().as_str(), member_name.text()?.to_lowercase().as_str()) {
-                    ("string", "::", "join") => {
-                        // get the argument list if present
-                        if let Some(argument_expression_list) = arguments_list.named_child("argument_expression_list") {
-                            // if there is 2 arguments
-                            if let (Some(arg_1), Some(arg_2)) = (argument_expression_list.child(0), argument_expression_list.child(2)) {
-                                // if arguments was inferred as Str, Array
-                                if let (Some(Raw(Str(join_token))), Some(Array(values))) = (arg_1.data(), arg_2.data()) {
-                                    let result = values.iter().map(|e| {
-                                        match e {
-                                            Str(s) => s.clone(),
-                                            Num(n) => n.to_string()
-                                        }
-                                    }).collect::<Vec<String>>().join(join_token);
+            if let (Some(primary_expression), Some(operator), Some(member_name), Some(arguments_list)) = (view.child(0), view.child(1), view.child(2), view.child(3)) {
+                if primary_expression.kind() == "type_literal" {
+                    match (primary_expression.child(1).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(), operator.text()?.to_lowercase().as_str(), member_name.text()?.to_lowercase().as_str()) {
+                        ("string", "::", "join") => {
+                            // get the argument list if present
+                            if let Some(argument_expression_list) = arguments_list.named_child("argument_expression_list") {
+                                // if there is 2 arguments
+                                if let (Some(arg_1), Some(arg_2)) = (argument_expression_list.child(0), argument_expression_list.child(2)) {
+                                    // if arguments was inferred as Str, Array
+                                    if let (Some(Raw(Str(join_token))), Some(Array(values))) = (arg_1.data(), arg_2.data()) {
+                                        let result = values.iter().map(|e| {
+                                            match e {
+                                                Str(s) => s.clone(),
+                                                Num(n) => n.to_string()
+                                            }
+                                        }).collect::<Vec<String>>().join(join_token);
 
-                                    node.set(Raw(Str(result)));
+                                        node.set(Raw(Str(result)));
+                                    }
                                 }
                             }
-                        }
-                    },
-                    _ => ()
+                        },
+                        _ => ()
+                    }
                 }
             }
         }

@@ -1,9 +1,29 @@
 use rule::RuleMut;
-use ps::Powershell;
+use ps::{Powershell, Value};
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
 use ps::Value::{Num, Str};
-use ps::Powershell::Raw;
+use ps::Powershell::{Raw, PSItem, Array};
+use std::str::FromStr;
+
+fn parse_str_token_as_int(v: &Value) -> Option<i32> {
+    match v {
+        Str(s) => {
+            if let Ok(number) = s.parse::<i32>() {
+                Some(number)
+            }
+            else if s.len() > 2 {
+                u32::from_str_radix(&s[2..], 16).map(|e| e as i32).ok()
+            }
+            else {
+                None
+            }
+        },
+        Num(i) => {
+            Some(*i)
+        }
+    }
+}
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -59,14 +79,16 @@ impl<'a> RuleMut<'a> for Cast {
                         .child(0).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(),
                            expression.data()) // type_identifier
                     {
-                        ("int", Some(Raw(Str(token)))) => {
-                            if let Ok(number) = token.parse::<i32>() {
-                                node.set(Raw(Num(number)));
+                        ("int", Some(Raw(v))) => {
+                            if let Some(number) = parse_str_token_as_int(v) {
+                                node.set(Raw(Num(number as i32)));
                             }
                         },
-                        ("byte", Some(Raw(Str(token)))) => {
-                            if let Ok(number) = token.parse::<u8>() {
-                                node.set(Raw(Num(number as i32)));
+                        ("byte", Some(Raw(v))) => {
+                            if let Some(number) = parse_str_token_as_int(v) {
+                                if number < 256 && number > 0 {
+                                    node.set(Raw(Num(number as i32)));
+                                }
                             }
                         },
                         ("char", Some(Raw(Num(num)))) => {
@@ -74,6 +96,53 @@ impl<'a> RuleMut<'a> for Cast {
                             result.push(char::from(*num as u8));
                             node.set(Raw(Str(result)));
                         },
+                        ("int", Some(PSItem(values))) => {
+                            let mut result = Vec::new();
+                            for v in values {
+                                if let Some(n) = parse_str_token_as_int(v) {
+                                    result.push(Num(n));
+                                }
+                                else {
+                                    return Ok(())
+                                }
+                            }
+                            node.set(PSItem(result));
+                        },
+                        ("byte", Some(PSItem(values))) => {
+                            let mut result = Vec::new();
+                            for v in values {
+                                if let Some(n) = parse_str_token_as_int(v) {
+                                    // invalid cast
+                                    if n < 0 || n > 255 {
+                                        return Ok(())
+                                    }
+                                    result.push(Num(n));
+                                }
+                                else {
+                                    return Ok(())
+                                }
+                            }
+                            node.set(PSItem(result));
+                        },
+                        ("char", Some(PSItem(values))) => {
+                            let mut result = Vec::new();
+                            for e in values {
+                                let casted_value = match e {
+                                    Str(_) => None,
+                                    Num(number) => {
+                                        char::from_u32(*number as u32)
+                                    }
+                                };
+
+                                if casted_value == None {
+                                    // Failed to cast -> stop the rule
+                                    return Ok(())
+                                }
+
+                                result.push(Str(casted_value.unwrap().to_string()));
+                            }
+                            node.set(PSItem(result));
+                        }
                         _ => ()
                     }
                 }

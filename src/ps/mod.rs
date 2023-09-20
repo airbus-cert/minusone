@@ -10,6 +10,7 @@ use ps::cast::Cast;
 use ps::array::{ParseArrayLiteral, ParseRange};
 use ps::access::AccessString;
 use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
+use ps::foreach::{PSItemInferrator, ForEach};
 
 pub mod string;
 pub mod integer;
@@ -18,7 +19,7 @@ pub mod var;
 pub mod litter;
 pub mod cast;
 pub mod array;
-pub mod behavior;
+pub mod foreach;
 pub mod access;
 pub mod join;
 
@@ -32,7 +33,8 @@ pub enum Value {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Powershell {
     Raw(Value),
-    Array(Vec<Value>)
+    Array(Vec<Value>),
+    PSItem(Vec<Value>)
 }
 
 /// This is the rule set use to perform
@@ -52,7 +54,9 @@ pub type RuleSet = (
     AccessString,
     JoinComparison,
     JoinStringMethod,
-    JoinOperator
+    JoinOperator,
+    PSItemInferrator,
+    ForEach
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

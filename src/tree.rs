@@ -320,14 +320,21 @@ impl<'a, T> Node<'a, T> {
 
     pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
         let mut current = 0;
-        for child in self.iter() {
+        for i in 0..self.node.child_count() {
+            let child = self.node.child(i);
+            if child == None {
+                break
+            }
+
             // ignore extra node when requesting child at particumar index
-            if child.is_extra() {
+            if child.unwrap().is_extra() {
                 continue;
             }
+
             if current == index {
-                return Some(child);
+                return Some(Node::new(child.unwrap(), self.source, self.storage));
             }
+
             current += 1;
         }
         return None;
@@ -429,10 +436,10 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
             }
         }
 
-        match self.inner.node.child(self.index) {
+        match self.inner.child(self.index) {
             Some(node) => {
                 self.index += self.gap;
-                Some(Node::new(node, self.inner.source, self.inner.storage))
+                Some(node)
             },
             None => None
         }
