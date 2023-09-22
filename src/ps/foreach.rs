@@ -97,7 +97,6 @@ impl<'a> RuleMut<'a> for ForEach {
                 if command_name == "%" || command_name == "foreach-object" {
                     if let Some(command_elements) = view.named_child("command_elements") {
                         // we can only handle this pattern
-                        println!("{}", command_elements.kind());
                         if command_elements.child_count() == 1 && command_elements.child(0).unwrap().kind() == "script_block_expression" {
                             let script_block_expression = command_elements.child(0).unwrap();
                             if let Some(previous_command) = find_previous_expr(&view)? {

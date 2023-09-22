@@ -88,6 +88,13 @@ impl<'a> RuleMut<'a> for Forward {
                         node.set(expression_data.clone())
                     }
                 }
+            },
+            "statement_list" => {
+                if let Some(statement) = view.child(view.child_count() - 1) {
+                    if let Some(statement_data) = statement.data() {
+                        node.set(statement_data.clone())
+                    }
+                }
             }
             _ => ()
         }

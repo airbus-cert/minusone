@@ -177,6 +177,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
+            .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(9))
         );
     }

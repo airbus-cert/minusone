@@ -130,14 +130,19 @@ mod test {
 
         // We are waiting for
         // Write-Debug 4
-        // (pipeline inferred_type: None
-        //   (command inferred_type: None
-        //    (command_name inferred_type: None)
-        //    (variable inferred_type: Some(Number(4))))))
-        assert_eq!(*tree.root().unwrap()
+        // (program
+        //  (statement_list inferred_type: None)
+        //   (pipeline inferred_type: None
+        //    (command inferred_type: None
+        //     (command_name inferred_type: None)
+        //     (command_elements inferred_type: None)
+        //      (variable inferred_type: Some(Number(4)))))))))
+        assert_eq!(*tree.root().unwrap()// program
+            .child(0).unwrap() // statement_list
             .child(1).unwrap() // pipeline
             .child(0).unwrap() //command
-            .child(1).unwrap()// variable
+            .child(1).unwrap() // command_elements
+            .child(0).unwrap()// variable
             .data().expect("Expecting inferred type"), Raw(Num(4))
         );
     }

@@ -7,6 +7,7 @@ use ps::Value::{Str, Num};
 pub struct Litter {
     pub output: String,
     tab: String,
+    is_inline_statement: bool
 }
 
 impl Litter {
@@ -14,6 +15,7 @@ impl Litter {
         Litter {
             output: String::new(),
             tab: String::new(),
+            is_inline_statement: false
         }
     }
 
@@ -37,35 +39,85 @@ impl Litter {
 
         match node.kind() {
             // Statement separated rule
-            "program" => self.statements(node)?,
+            "program" => self.transparent(node)?,
 
             // Space separated token
             "pipeline" | "command" |
             "assignment_expression" | "left_assignment_expression" |
-            "command_elements" => self.space_sep(node)?,
+            "command_elements" => self.space_sep(node, None)?,
 
             "logical_expression" | "bitwise_expression" |
             "comparison_expression" | "additive_expression" |
             "multiplicative_expression" | "format_expression" |
-            "range_expression" | "array_literal_expression" |
-            "unary_expression" => self.expression(node)?,
+            "unary_expression" | "argument_expression" |
+            "range_argument_expression" | "format_argument_expression" |
+            "multiplicative_argument_expression" | "additive_argument_expression" |
+            "comparison_argument_expression" | "bitwise_argument_expression" |
+            "logical_argument_expression" | "hash_literal_expression" => self.space_sep(node, None)?,
+
+            "array_literal_expression" | "argument_expression_list" => self.list_sep(node)?,
 
             "statement_block" => self.statement_block(node)?,
-            "if_statement" => self.if_statement(node)?,
+            "if_statement" | "else_clause" | "elseif_clauses" => self.space_sep(node, None)?,
 
-            "sub_expression" => self.sub_expression(node)?,
+            "script_block_expression" => {
+                let staked_value = self.is_inline_statement;
+                self.is_inline_statement = true;
+                self.space_sep(node, None)?;
+                self.is_inline_statement = staked_value;
+            },
 
-            "script_block_expression" => self.script_block_expression(node)?,
-
-            "script_block" => self.script_block(node, false)?,
+            "sub_expression" => {
+                let staked_value = self.is_inline_statement;
+                self.is_inline_statement = true;
+                self.transparent(node)?;
+                self.is_inline_statement = staked_value;
+            },
 
             "parenthesized_expression" => self.parenthesized_expression(node)?,
 
-            "command_name_expr" => self.transparent(node)?,
+            "command_name_expr" | "element_access" |
+            "invokation_expression" | "argument_list" |
+            "range_expression" | "member_access" |
+            "post_increment_expression" | "post_decrement_expression" |
+            "type_literal" | "cast_expression" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 
-            "while_statement" => self.while_statement(node)?,
+            "while_statement" | "foreach_statement" |
+            "while_condition" | "do_statement" |
+            "trap_statement" | "data_statement" => self.space_sep(node, None)?,
+
+            "try_statement" | "catch_clauses" | "catch_clause" |
+            "finally_clause" | "catch_type_list" |
+            "named_block" => self.space_sep(node, None)?,
+
+            "named_block_list" => self.newline_sep(node)?,
+
+            "script_block" => {
+                if self.is_inline_statement {
+                    self.transparent(node)?;
+                }
+                else {
+                    self.indent(node)?;
+                }
+            },
+
+            "script_block_body" => self.transparent(node)?,
+
+            "for_statement" => self.for_statement(node)?,
+
+            "function_statement" | "function_parameter_declaration" |
+            "param_block" => self.space_sep(node, Some(1))?,
+
+            "statement_list" => {
+                if self.is_inline_statement {
+                    self.inline_statement_list(node)?;
+                }
+                else {
+                    self.statement_list(node)?;
+                }
+            },
 
             // Unmodified tokens
             _ => {
@@ -83,42 +135,35 @@ impl Litter {
         Ok(())
     }
 
-    fn expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        self.print(&node.child(0).ok_or(Error::invalid_child())?)?;
-        if let (Some(operator), Some(right_node)) = (node.child(1), node.child(2)) {
-            self.output += " ";
-            self.output += operator.text()?;
-            self.output += " ";
-            self.print(&right_node)?;
-        }
-        Ok(())
-    }
-
-    fn sub_expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        self.output += "$(";
-        if let Some(statements) = node.named_child("statements") {
-            for statement in statements.iter() {
-                self.print(&statement)?;
-            }
-        }
-        self.output += ")";
-        Ok(())
-    }
-
-    fn space_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()>{
-        let mut nb_childs = node.child_count();
+    fn space_sep(&mut self, node: &Node<Powershell>, end: Option<usize>) -> MinusOneResult<()>{
+        let mut nb_childs = node.child_count() - end.unwrap_or(0);
         for child in node.iter() {
             self.print(&child)?;
-            nb_childs -= 1;
             if nb_childs > 0 {
-                self.output += " ";
+                nb_childs -= 1;
+                if nb_childs > 0 {
+                    self.output += " ";
+                }
             }
         }
-
         Ok(())
     }
 
-    fn statements(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+    fn list_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()>{
+        let mut nb_childs = node.child_count();
+        for child in node.range(None, None, Some(2)) {
+            self.print(&child)?;
+            if nb_childs > 1 {
+                nb_childs -= 2;
+                if nb_childs > 0 {
+                    self.output += ", ";
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn statement_list(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         let mut is_first = true;
         for child in node.iter() {
 
@@ -128,19 +173,20 @@ impl Litter {
 
             if !is_first {
                 self.output += "\n";
+                self.output += &self.tab;
             }
             else {
                 is_first = false;
             }
 
-            self.output += &self.tab;
+            //self.output += &self.tab;
             self.print(&child)?;
         }
 
         Ok(())
     }
 
-    fn inline_statements(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+    fn inline_statement_list(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         let mut is_first = true;
         for child in node.iter() {
             if child.kind() == "empty_statement" {
@@ -148,16 +194,29 @@ impl Litter {
             }
 
             if !is_first {
-                self.output += ";";
+                self.output += "; ";
             }
             else {
                 is_first = false;
             }
 
-            self.output += &self.tab;
             self.print(&child)?;
         }
 
+        Ok(())
+    }
+
+    fn newline_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        let mut child_count = node.child_count();
+        self.output += "\n";
+        for child in node.iter() {
+            self.output += &self.tab;
+            self.print(&child)?;
+            child_count -= 1;
+            if child_count > 0 {
+                self.output += "\n";
+            }
+        }
         Ok(())
     }
 
@@ -165,76 +224,19 @@ impl Litter {
         let old_tab = self.tab.clone();
         self.tab.push_str(" ");
 
-        self.output += &old_tab;
-        self.output += "{";
+        self.output += "{\n";
+        self.output += &self.tab;
 
-        // all statement seperated by a line
-        for child in node.range(Some(1  ), Some(node.child_count() - 1), None) {
-            self.output += "\n";
-            self.output += &self.tab;
-            self.print(&child)?;
+        if let Some(statement_list) = node.named_child("statement_list") {
+            self.statement_list(&statement_list)?;
         }
 
+        self.output += "\n";
         self.output += &old_tab;
-        self.output += "}\n";
+        self.output += "}";
 
         self.tab = old_tab;
         Ok(())
-    }
-
-    fn if_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        self.output += &self.tab;
-        self.output += "if ( ";
-        self.print(&node.child(2).ok_or(Error::invalid_child())?)?;
-        self.output += " )\n";
-        self.print(&node.child(4).ok_or(Error::invalid_child())?)?;
-
-        if let Some(elseif_clauses) = node.named_child("elseif_clauses") {
-            for elseif_clause in elseif_clauses.iter() {
-                self.output += &self.tab;
-                self.output += "elseif (";
-                self.print(&elseif_clause.child(2).ok_or(Error::invalid_child())?)?;
-                self.output += ")\n";
-                self.print(&elseif_clause.child(4).ok_or(Error::invalid_child())?)?;
-            }
-        }
-
-        if let Some(else_clause) = node.named_child("else_clause") {
-            self.output += &self.tab;
-            self.output += "else\n";
-            self.print(&else_clause.child(1).ok_or(Error::invalid_child())?)?;
-        }
-
-        Ok(())
-    }
-
-    fn script_block_expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        self.output += "{ ";
-        self.script_block(&node.child(1).ok_or(Error::invalid_child())?, true)?;
-        self.output += " }";
-
-        Ok(())
-    }
-
-    fn script_block(&mut self, node: &Node<Powershell>, inline: bool) -> MinusOneResult<()> {
-        self.script_block_body(&node.child(0).ok_or(Error::invalid_child())?, inline)?;
-        Ok(())
-    }
-
-    fn script_block_body(&mut self, node: &Node<Powershell>, inline: bool) -> MinusOneResult<()> {
-        let child = node.child(0).ok_or(Error::invalid_child())?;
-
-        if child.kind() == "named_block_list" {
-            self.print(&child)
-        }
-        else {
-            if inline {
-                self.inline_statements(&node)
-            }
-            else {
-                self.statements(&node)
-            }
-        }
     }
 
     fn parenthesized_expression(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
@@ -288,9 +290,9 @@ impl Litter {
 
         // if priority is needed let's keep parenthesis
         if is_priority {
-            self.output += "( ";
+            self.output += "(";
             self.print(&node.child(1).ok_or(Error::invalid_child())?)?;
-            self.output += " )";
+            self.output += ")";
         }
         else {
             self.print(&node.child(1).ok_or(Error::invalid_child())?)?;
@@ -299,14 +301,40 @@ impl Litter {
         Ok(())
     }
 
-    fn while_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        let while_condition = node.child(2).ok_or(Error::invalid_child())?;
-        let statement_block = node.child(4).ok_or(Error::invalid_child())?;
+    fn for_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
 
-        self.output += "while ( ";
-        self.print(&while_condition)?;
-        self.output += " )\n";
-        self.print(&statement_block)?;
+        let for_initializer = node.named_child("for_initializer");
+        let for_condition = node.named_child("for_condition");
+        let for_iterator = node.named_child("for_iterator");
+
+        self.output += "for ( ";
+        if let Some(n) = for_initializer {
+            self.space_sep(&n, None)?;
+        }
+        self.output += " ; ";
+        if let Some(n) = for_condition {
+            self.space_sep(&n, None)?;
+        }
+        self.output += " ; ";
+        if let Some(n) = for_iterator {
+            self.space_sep(&n, None)?;
+        }
+        self.output += " ) ";
+
+        self.statement_block(&node.child(node.child_count() - 1).unwrap())?;
+        Ok(())
+    }
+
+    fn indent(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        self.output += "\n";
+        let old_tab = self.tab.clone();
+        self.tab += " ";
+        for child in node.iter() {
+            self.output += &self.tab;
+            self.print(&child)?;
+            self.output += "\n";
+        }
+        self.tab = old_tab;
         Ok(())
     }
 }
