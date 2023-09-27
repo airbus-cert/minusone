@@ -6,25 +6,6 @@ use ps::Value::{Num, Str};
 use ps::Powershell::{Raw, PSItem, Array};
 use std::str::FromStr;
 
-fn parse_str_token_as_int(v: &Value) -> Option<i32> {
-    match v {
-        Str(s) => {
-            if let Ok(number) = s.parse::<i32>() {
-                Some(number)
-            }
-            else if s.len() > 2 {
-                u32::from_str_radix(&s[2..], 16).map(|e| e as i32).ok()
-            }
-            else {
-                None
-            }
-        },
-        Num(i) => {
-            Some(*i)
-        }
-    }
-}
-
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
 #[derive(Default)]
@@ -80,12 +61,12 @@ impl<'a> RuleMut<'a> for Cast {
                            expression.data()) // type_identifier
                     {
                         ("int", Some(Raw(v))) => {
-                            if let Some(number) = parse_str_token_as_int(v) {
+                            if let Some(number) = <Value as Into<Option<i32>>>::into(v.clone()) {
                                 node.set(Raw(Num(number as i32)));
                             }
                         },
                         ("byte", Some(Raw(v))) => {
-                            if let Some(number) = parse_str_token_as_int(v) {
+                            if let Some(number) = <Value as Into<Option<i32>>>::into(v.clone()) {
                                 if number < 256 && number > 0 {
                                     node.set(Raw(Num(number as i32)));
                                 }
@@ -99,7 +80,7 @@ impl<'a> RuleMut<'a> for Cast {
                         ("int", Some(PSItem(values))) => {
                             let mut result = Vec::new();
                             for v in values {
-                                if let Some(n) = parse_str_token_as_int(v) {
+                                if let Some(n) = <Value as Into<Option<i32>>>::into(v.clone()) {
                                     result.push(Num(n));
                                 }
                                 else {
@@ -111,7 +92,7 @@ impl<'a> RuleMut<'a> for Cast {
                         ("byte", Some(PSItem(values))) => {
                             let mut result = Vec::new();
                             for v in values {
-                                if let Some(n) = parse_str_token_as_int(v) {
+                                if let Some(n) = <Value as Into<Option<i32>>>::into(v.clone()) {
                                     // invalid cast
                                     if n < 0 || n > 255 {
                                         return Ok(())

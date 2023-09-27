@@ -42,14 +42,6 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
     }
 }
 
-
-pub fn parse_i32(v: &Value) -> Option<i32> {
-    match v {
-        Num(num) => Some(*num),
-        Str(num_str) => num_str.parse::<i32>().ok()
-    }
-}
-
 /// This rule will generate
 /// a range value from operator ..
 #[derive(Default)]
@@ -67,7 +59,7 @@ impl<'a> RuleMut<'a> for ParseRange {
         if view.kind() == "range_expression" {
             if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
                 if let (Some(Raw(left_value)), Some(Raw(right_value))) = (left_node.data(), right_node.data()) {
-                    if let (Some(from), Some(to)) = (parse_i32(left_value), parse_i32(right_value)) {
+                    if let (Some(from), Some(to)) = (<Value as Into<Option<i32>>>::into(left_value.clone()), <Value as Into<Option<i32>>>::into(right_value.clone())) {
                         let mut result = Vec::new();
                         for i in from .. to + 1 {
                             result.push(Num(i));
@@ -78,5 +70,144 @@ impl<'a> RuleMut<'a> for ParseRange {
             }
         }
         Ok(())
+    }
+}
+
+
+#[derive(Default)]
+pub struct ComputeArrayExpr;
+
+impl<'a> RuleMut<'a> for ComputeArrayExpr {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() == "array_expression" {
+            if let Some(statement_list) = view.named_child("statements") {
+                let mut result = Vec::new();
+                for statement in statement_list.iter() {
+                    if statement.kind() == "empty_statement" {
+                        continue
+                    }
+
+                    match statement.data() {
+                        Some(Array(values)) => {
+                            result.extend(values.clone());
+                        },
+                        Some(Raw(value)) => {
+                            result.push(value.clone());
+                        }
+                        _ => {
+                            // stop inferring
+                            return Ok(());
+                        }
+                    }
+                }
+                node.set(Array(result));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ps::from_powershell_src;
+    use ps::integer::{ParseInt, AddInt};
+    use ps::forward::Forward;
+    use ps::array::{ParseArrayLiteral, ComputeArrayExpr};
+    use ps::Powershell::Array;
+    use ps::Value::{Num, Str};
+    use ps::string::ParseString;
+
+    #[test]
+    fn test_init_num_array() {
+        let mut tree = from_powershell_src("@(1,2,3)").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Num(1), Num(2), Num(3)])
+        );
+    }
+
+    #[test]
+    fn test_init_mix_array() {
+        let mut tree = from_powershell_src("@(1,2,'3')").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Num(1), Num(2), Str("3".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_init_str_array() {
+        let mut tree = from_powershell_src("@('a','b','c')").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Str("a".to_string()), Str("b".to_string()), Str("c".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_init_int_array_without_at() {
+        let mut tree = from_powershell_src("1,2,3").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Num(1), Num(2), Num(3)])
+        );
+    }
+
+    #[test]
+    fn test_init_array_with_multi_statement() {
+        let mut tree = from_powershell_src("@(1,2,3; 4 + 6)").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            AddInt::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Num(1), Num(2), Num(3), Num(10)])
+        );
     }
 }

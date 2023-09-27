@@ -103,40 +103,42 @@ impl<'a> RuleMut<'a> for ForEach {
                                 // if the previous pipeline was inferred as an array
                                 if let Some(Array(values)) = previous_command.data() {
                                     let script_block_body = script_block_expression
-                                        .child(1).ok_or(Error::invalid_child())?
+                                        .child(1).ok_or(Error::invalid_child())? // script_block node
                                         .named_child("script_block_body");
 
                                     if let Some(script_block_body_node) = script_block_body {
-                                        // determine the number of loop
-                                        // by looping over the size of the array
+                                        if let Some(statement_list) = script_block_body_node.named_child("statement_list") {
+                                            // determine the number of loop
+                                            // by looping over the size of the array
 
-                                        let mut result = Vec::new();
-                                        for i in 0..values.len() {
-                                            for child_statement in script_block_body_node.iter() {
-                                                if child_statement.kind() == "empty_statement" {
-                                                    continue
-                                                }
-
-                                                match child_statement.data() {
-                                                    Some(PSItem(values)) => {
-                                                        result.push(values[i].clone());
-                                                    },
-                                                    Some(Raw(r)) => {
-                                                        result.push(r.clone());
-                                                    },
-                                                    Some(Array(array_value)) => {
-                                                        for v in array_value {
-                                                            result.push(v.clone());
-                                                        }
+                                            let mut result = Vec::new();
+                                            for i in 0..values.len() {
+                                                for child_statement in statement_list.iter() {
+                                                    if child_statement.kind() == "empty_statement" {
+                                                        continue
                                                     }
-                                                    _ => {
-                                                        // stop inferring we have not enough infos
-                                                        return Ok(())
+
+                                                    match child_statement.data() {
+                                                        Some(PSItem(values)) => {
+                                                            result.push(values[i].clone());
+                                                        },
+                                                        Some(Raw(r)) => {
+                                                            result.push(r.clone());
+                                                        },
+                                                        Some(Array(array_value)) => {
+                                                            for v in array_value {
+                                                                result.push(v.clone());
+                                                            }
+                                                        }
+                                                        _ => {
+                                                            // stop inferring we have not enough infos
+                                                            return Ok(())
+                                                        }
                                                     }
                                                 }
                                             }
+                                            node.set(Array(result));
                                         }
-                                        node.set(Array(result));
                                     }
                                 }
                             }

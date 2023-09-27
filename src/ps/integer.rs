@@ -188,6 +188,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
+            .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(18))
         );
     }
@@ -197,6 +198,7 @@ mod test {
         let mut tree = from_powershell_src("4 - 5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(-1))
         );
@@ -208,6 +210,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
+            .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(-1))
         );
     }
@@ -217,6 +220,7 @@ mod test {
         let mut tree = from_powershell_src("-4 - 5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(-9))
         );
@@ -228,6 +232,7 @@ mod test {
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
+            .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(20))
         );
     }
@@ -237,6 +242,7 @@ mod test {
         let mut tree = from_powershell_src("4 * 5 * 10").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Raw(Num(200))
         );

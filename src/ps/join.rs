@@ -57,13 +57,11 @@ impl<'a> RuleMut<'a> for JoinComparison {
             if let (Some(left_expression), Some(operator), Some(right_expression)) = (view.child(0), view.child(1), view.child(2)) {
                 match (left_expression.data(), operator.text()?, right_expression.data()) {
                     (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) => {
-                        let result = src_array.iter().map(|e| {
-                            match e {
-                                Str(s) => s.clone(),
-                                Num(n) => n.to_string()
-                            }
-                        }).collect::<Vec<String>>().join(join_token);
-
+                        let result = src_array
+                            .iter()
+                            .map(|e| e.to_string())
+                            .collect::<Vec<String>>()
+                            .join(join_token);
                         node.set(Raw(Str(result)));
                     },
                     _ => ()
@@ -132,12 +130,11 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
                                 if let (Some(arg_1), Some(arg_2)) = (argument_expression_list.child(0), argument_expression_list.child(2)) {
                                     // if arguments was inferred as Str, Array
                                     if let (Some(Raw(Str(join_token))), Some(Array(values))) = (arg_1.data(), arg_2.data()) {
-                                        let result = values.iter().map(|e| {
-                                            match e {
-                                                Str(s) => s.clone(),
-                                                Num(n) => n.to_string()
-                                            }
-                                        }).collect::<Vec<String>>().join(join_token);
+                                        let result = values
+                                            .iter()
+                                            .map(|e| e.to_string())
+                                            .collect::<Vec<String>>()
+                                            .join(join_token);
 
                                         node.set(Raw(Str(result)));
                                     }

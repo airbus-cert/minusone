@@ -3,7 +3,6 @@ use ps::{Powershell, Value};
 use tree::NodeMut;
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
-use ps::array::parse_i32;
 use ps::Value::Str;
 
 /// This function get char at index position
@@ -42,7 +41,7 @@ impl<'a> RuleMut<'a> for AccessString {
                     (Some(Raw(Str(string_element))), Some(Array(index))) => {
                         let mut result = vec![];
                         for index_value in index {
-                            if let Some(parsed_index_value) = parse_i32(index_value) {
+                            if let Some(parsed_index_value) = <Value as Into<Option<i32>>>::into(index_value.clone()) {
                                 if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                     result.push(Str(string_result));
                                 }
@@ -51,7 +50,7 @@ impl<'a> RuleMut<'a> for AccessString {
                         node.set(Array(result));
                     },
                     (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
-                        if let Some(parsed_index_value) = parse_i32(index_value) {
+                        if let Some(parsed_index_value) = <Value as Into<Option<i32>>>::into(index_value.clone()) {
                             if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                 let mut result = vec![];
                                 result.push(Str(string_result));
@@ -88,6 +87,7 @@ mod test {
 
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
+            .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Str("a".to_string())])
         );
     }
@@ -103,6 +103,7 @@ mod test {
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Str("b".to_string())])
         );
@@ -120,6 +121,7 @@ mod test {
 
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
+            .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Str("b".to_string())])
         );
     }
@@ -135,6 +137,7 @@ mod test {
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Str("a".to_string())])
         );
@@ -152,6 +155,7 @@ mod test {
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Str("b".to_string()), Str("c".to_string())])
         );

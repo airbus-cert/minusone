@@ -103,3 +103,35 @@ impl<'a> RuleMut<'a> for ConcatString {
         Ok(())
     }
 }
+
+#[derive(Default)]
+pub struct StringReplaceMethod;
+
+impl<'a> RuleMut<'a> for StringReplaceMethod {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "invokation_expression" {
+            if let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) = (view.child(0), view.child(1), view.child(2), view.child(3)) {
+                match (expression.data(), operator.text()?, member_name.text()?.to_lowercase().as_str()) {
+                     (Some(Raw(Str(src))), ".", "replace") => {
+                         if let Some(argument_expression_list) = arguments_list.named_child("argument_expression_list") {
+                            if let (Some(arg_1), Some(arg_2)) = (argument_expression_list.child(0), argument_expression_list.child(2)) {
+                                if let (Some(Raw(Str(from))), Some(Raw(to))) = (arg_1.data(), arg_2.data()) {
+                                    node.set(Raw(Str(src.replace(from, &to.to_string()))));
+                                }
+                            }
+                         }
+                     },
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}

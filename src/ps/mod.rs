@@ -1,13 +1,13 @@
 use ps::integer::{ParseInt, AddInt, MultInt};
 use ps::forward::Forward;
-use ps::string::{ParseString, ConcatString};
+use ps::string::{ParseString, ConcatString, StringReplaceMethod};
 use error::MinusOneResult;
 use tree::{Tree, HashMapStorage};
 use tree_sitter::{Parser};
 use tree_sitter_powershell::language as powershell_language;
 use ps::var::Var;
 use ps::cast::Cast;
-use ps::array::{ParseArrayLiteral, ParseRange};
+use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr};
 use ps::access::AccessString;
 use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
 use ps::foreach::{PSItemInferrator, ForEach};
@@ -28,6 +28,36 @@ pub mod join;
 pub enum Value {
     Num(i32),
     Str(String)
+}
+
+impl ToString for Value {
+    fn to_string(&self) -> String {
+        match self {
+            Value::Num(e) => e.to_string(),
+            Value::Str(s) => s.clone()
+        }
+    }
+}
+
+impl Into<Option<i32>> for Value {
+    fn into(self) -> Option<i32> {
+        match self {
+            Value::Str(s) => {
+                if let Ok(number) = s.parse::<i32>() {
+                    Some(number)
+                }
+                else if s.len() > 2 {
+                    u32::from_str_radix(&s[2..], 16).map(|e| e as i32).ok()
+                }
+                else {
+                    None
+                }
+            },
+            Value::Num(i) => {
+                Some(i)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -56,7 +86,9 @@ pub type RuleSet = (
     JoinStringMethod,
     JoinOperator,
     PSItemInferrator,
-    ForEach
+    ForEach,
+    StringReplaceMethod,
+    ComputeArrayExpr
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

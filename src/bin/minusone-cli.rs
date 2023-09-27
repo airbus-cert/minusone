@@ -29,8 +29,8 @@ fn main() {
     let mut tree = from_powershell_src(source.as_str()).unwrap();
     tree.apply_mut(&mut RuleSet::init()).unwrap();
 
-    //let mut debub_view = DebugView::new();
-    //tree.apply(&mut debub_view).unwrap();
+    let mut debub_view = DebugView::new();
+    tree.apply(&mut debub_view).unwrap();
 
     let mut ps_litter_view = Litter::new();
     ps_litter_view.print(&tree.root().unwrap()).unwrap();
