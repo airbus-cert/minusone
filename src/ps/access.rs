@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use ps::{Powershell, Value};
+use ps::Powershell;
 use tree::NodeMut;
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
@@ -21,6 +21,43 @@ fn get_at_index(s: &str, index: i32) -> Option<String> {
 }
 
 
+/// Extract element as array using [] operator
+///
+/// "foo"[0] => "f"
+/// "foo"[1,3] => "fo"
+/// "foo"[-1] => "o"
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::access::AccessString;
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::array::ParseArrayLiteral;
+///
+/// let mut tree = from_powershell_src("-join 'abc'[2,1,0]").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     ParseString::default(),
+///     ParseArrayLiteral::default(),
+///     AccessString::default(),
+///     JoinOperator::default()
+///     )
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"cba\"");
+/// ```
 #[derive(Default)]
 pub struct AccessString;
 
@@ -41,7 +78,7 @@ impl<'a> RuleMut<'a> for AccessString {
                     (Some(Raw(Str(string_element))), Some(Array(index))) => {
                         let mut result = vec![];
                         for index_value in index {
-                            if let Some(parsed_index_value) = <Value as Into<Option<i32>>>::into(index_value.clone()) {
+                            if let Some(parsed_index_value) = index_value.clone().to_i32() {
                                 if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                     result.push(Str(string_result));
                                 }
@@ -49,8 +86,9 @@ impl<'a> RuleMut<'a> for AccessString {
                         }
                         node.set(Array(result));
                     },
+                    // "foo"[0]
                     (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
-                        if let Some(parsed_index_value) = <Value as Into<Option<i32>>>::into(index_value.clone()) {
+                        if let Some(parsed_index_value) = index_value.clone().to_i32() {
                             if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                 let mut result = vec![];
                                 result.push(Str(string_result));

@@ -39,8 +39,8 @@ impl ToString for Value {
     }
 }
 
-impl Into<Option<i32>> for Value {
-    fn into(self) -> Option<i32> {
+impl Value {
+    fn to_i32(self) -> Option<i32> {
         match self {
             Value::Str(s) => {
                 if let Ok(number) = s.parse::<i32>() {

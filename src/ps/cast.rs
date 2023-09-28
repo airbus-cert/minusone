@@ -1,10 +1,9 @@
 use rule::RuleMut;
-use ps::{Powershell, Value};
+use ps::Powershell;
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
 use ps::Value::{Num, Str};
-use ps::Powershell::{Raw, PSItem, Array};
-use std::str::FromStr;
+use ps::Powershell::{Raw, PSItem};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -19,28 +18,26 @@ pub struct Cast;
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::InferredValue::{Number, Str};
 /// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::ParseString;
 /// use minusone::ps::cast::Cast;
-/// use minusone::ps::string::{ConcatString, ParseString};
 ///
-/// let mut test1 = from_powershell_src("[char]0x74").unwrap();
-/// test1.apply_mut(&mut (ParseInt::default(), Cast::default(), Forward::default())).unwrap();
+/// let mut tree = from_powershell_src("[char]0x61").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     ParseString::default(),
+///     Cast::default()
+///     )
+/// ).unwrap();
 ///
-/// assert_eq!(*(test1.root().unwrap().child(0).expect("expecting a child").data().expect("expecting a data in the first child")), Str("t".to_string()));
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
-/// let mut test2 = from_powershell_src("[char]0x74 + [char]0x6f + [char]0x74 + [char]0x6f").unwrap();
-/// test2.apply_mut(&mut (ParseInt::default(), Cast::default(), Forward::default(), ConcatString::default())).unwrap();
-///
-/// assert_eq!(*(test2.root().unwrap().child(0).expect("expecting a child").data().expect("expecting a data in the first child")), Str("toto".to_string()));
-///
-/// let mut test3 = from_powershell_src("[int]'65'").unwrap();
-/// test3.apply_mut(&mut (ParseInt::default(), Cast::default(), Forward::default(), ParseString::default())).unwrap();
-///
-/// assert_eq!(*(test3.root().unwrap().child(0).expect("expecting a child").data().expect("expecting a data in the first child")), Number(65));
+/// assert_eq!(ps_litter_view.output, "\"a\"");
 /// ```
 impl<'a> RuleMut<'a> for Cast {
     type Language = Powershell;
@@ -61,12 +58,12 @@ impl<'a> RuleMut<'a> for Cast {
                            expression.data()) // type_identifier
                     {
                         ("int", Some(Raw(v))) => {
-                            if let Some(number) = <Value as Into<Option<i32>>>::into(v.clone()) {
+                            if let Some(number) = v.clone().to_i32() {
                                 node.set(Raw(Num(number as i32)));
                             }
                         },
                         ("byte", Some(Raw(v))) => {
-                            if let Some(number) = <Value as Into<Option<i32>>>::into(v.clone()) {
+                            if let Some(number) = v.clone().to_i32() {
                                 if number < 256 && number > 0 {
                                     node.set(Raw(Num(number as i32)));
                                 }
@@ -80,7 +77,7 @@ impl<'a> RuleMut<'a> for Cast {
                         ("int", Some(PSItem(values))) => {
                             let mut result = Vec::new();
                             for v in values {
-                                if let Some(n) = <Value as Into<Option<i32>>>::into(v.clone()) {
+                                if let Some(n) = v.clone().to_i32() {
                                     result.push(Num(n));
                                 }
                                 else {
@@ -92,7 +89,7 @@ impl<'a> RuleMut<'a> for Cast {
                         ("byte", Some(PSItem(values))) => {
                             let mut result = Vec::new();
                             for v in values {
-                                if let Some(n) = <Value as Into<Option<i32>>>::into(v.clone()) {
+                                if let Some(n) = v.clone().to_i32() {
                                     // invalid cast
                                     if n < 0 || n > 255 {
                                         return Ok(())
@@ -141,7 +138,109 @@ impl<'a> RuleMut<'a> for Cast {
             }
             _ => ()
         }
-
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ps::from_powershell_src;
+    use ps::integer::{ParseInt, AddInt};
+    use ps::forward::Forward;
+    use ps::cast::Cast;
+    use ps::Value::{Str, Num};
+    use ps::Powershell::{Raw, Array};
+    use ps::string::{ConcatString, ParseString};
+    use ps::foreach::{ForEach, PSItemInferrator};
+    use ps::array::ParseArrayLiteral;
+
+    #[test]
+    fn test_cast_int_to_char() {
+        let mut tree = from_powershell_src("[char]0x61").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            Cast::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("a".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_cast_char_to_int() {
+        let mut tree = from_powershell_src("[int]'61'").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            Cast::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Num(61))
+        );
+    }
+
+    #[test]
+    fn test_cast_int_additive_to_char() {
+        let mut tree = from_powershell_src("[char](0x61 + 3)").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            AddInt::default(),
+            Forward::default(),
+            Cast::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("d".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_cast_int_concat_char() {
+        let mut tree = from_powershell_src("[char]0x74 + [char]0x6f + [char]0x74 + [char]0x6f").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ConcatString::default(),
+            Forward::default(),
+            Cast::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("toto".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_cast_foreach_char() {
+        let mut tree = from_powershell_src("(0x74, 0x6f, 0x74, 0x6f) | % {[char]$_}").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            Cast::default(),
+            ForEach::default(),
+            ParseArrayLiteral::default(),
+            PSItemInferrator::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![
+                Str("t".to_string()),
+                Str("o".to_string()),
+                Str("t".to_string()),
+                Str("o".to_string())
+            ])
+        );
     }
 }

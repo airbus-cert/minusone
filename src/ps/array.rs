@@ -1,16 +1,44 @@
 use rule::RuleMut;
-use ps::{Powershell, Value};
+use ps::Powershell;
 use tree::NodeMut;
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
-use ps::Value::{Num, Str};
+use ps::Value::Num;
 
 /// Parse array literal
 ///
-/// It will parse 1,2,3,"5" as a range for powershell
+/// It will parse 1,2,3,"5" as an array for powershell
 ///
-/// It will not have direct impact on Powershell litter
-/// It's an internal representation
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::access::AccessString;
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::array::ParseArrayLiteral;
+///
+/// let mut tree = from_powershell_src("-join ('a','b','c')").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     ParseString::default(),
+///     ParseArrayLiteral::default(),
+///     JoinOperator::default()
+///     )
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"abc\"");
+/// ```
 #[derive(Default)]
 pub struct ParseArrayLiteral;
 
@@ -44,6 +72,38 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 
 /// This rule will generate
 /// a range value from operator ..
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::access::AccessString;
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::array::ParseRange;
+///
+/// let mut tree = from_powershell_src("-join \"abc\"[0..2]").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     ParseRange::default(),
+///     ParseString::default(),
+///     JoinOperator::default(),
+///     AccessString::default()
+///     )
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"abc\"");
+/// ```
 #[derive(Default)]
 pub struct ParseRange;
 
@@ -59,7 +119,7 @@ impl<'a> RuleMut<'a> for ParseRange {
         if view.kind() == "range_expression" {
             if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
                 if let (Some(Raw(left_value)), Some(Raw(right_value))) = (left_node.data(), right_node.data()) {
-                    if let (Some(from), Some(to)) = (<Value as Into<Option<i32>>>::into(left_value.clone()), <Value as Into<Option<i32>>>::into(right_value.clone())) {
+                    if let (Some(from), Some(to)) = (left_value.clone().to_i32(), right_value.clone().to_i32()) {
                         let mut result = Vec::new();
                         for i in from .. to + 1 {
                             result.push(Num(i));
@@ -74,6 +134,43 @@ impl<'a> RuleMut<'a> for ParseRange {
 }
 
 
+/// This rule will handle array decared using @ operator
+///
+/// @(1, 2; 2+1)
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::{ParseInt, AddInt};
+/// use minusone::ps::litter::Litter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::access::AccessString;
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
+///
+/// let mut tree = from_powershell_src("-join \"abc\"[@(0, 1; 1+1)]").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     AddInt::default(),
+///     Forward::default(),
+///     ComputeArrayExpr::default(),
+///     ParseString::default(),
+///     JoinOperator::default(),
+///     AccessString::default(),
+///     ParseArrayLiteral::default()
+///     )
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"abc\"");
+/// ```
 #[derive(Default)]
 pub struct ComputeArrayExpr;
 

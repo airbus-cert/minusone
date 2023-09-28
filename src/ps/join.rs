@@ -167,15 +167,14 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 /// use minusone::ps::litter::Litter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::join::JoinOperator;
-/// use minusone::ps::integer::ParseInt;
-/// use minusone::ps::array::ParseArrayLiteral;
+/// use minusone::ps::array::{ParseArrayLiteral, ComputeArrayExpr};
 ///
 /// let mut tree = from_powershell_src("-join @(\"a\",\"b\", \"c\")").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(),
 ///     Forward::default(),
-///     ParseInt::default(),
 ///     ParseArrayLiteral::default(),
+///     ComputeArrayExpr::default(),
 ///     JoinOperator::default()
 /// )).unwrap();
 ///
@@ -200,12 +199,11 @@ impl<'a> RuleMut<'a> for JoinOperator {
             if let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1)) {
                 match (operator.text()?.to_lowercase().as_str(), unary_expression.data()) {
                     ("-join", Some(Array(values))) => {
-                        let result = values.iter().map(|e| {
-                            match e {
-                                Str(s) => s.clone(),
-                                Num(n) => n.to_string()
-                            }
-                        }).collect::<Vec<String>>().join(""); // by default the join operator join with an empty token
+                        let result = values
+                            .iter()
+                            .map(|e| e.to_string())
+                            .collect::<Vec<String>>()
+                            .join(""); // by default the join operator join with an empty token
 
                         node.set(Raw(Str(result)));
                     }
