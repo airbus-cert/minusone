@@ -3,7 +3,7 @@ use ps::Powershell;
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
 use ps::Powershell::{Array, Raw};
-use ps::Value::{Str, Num};
+use ps::Value::{Str};
 
 /// This rule will infer the -join opoerator
 /// in the context of comparison operator

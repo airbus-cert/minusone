@@ -1,5 +1,4 @@
 extern crate clap;
-extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 extern crate minusone;
 

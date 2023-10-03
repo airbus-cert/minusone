@@ -20,7 +20,6 @@ pub struct Forward;
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::InferredValue::Number;
 /// use minusone::ps::integer::ParseInt;
 ///
 /// let mut tree = from_powershell_src("4").unwrap();

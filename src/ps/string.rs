@@ -3,7 +3,7 @@ use tree::{NodeMut};
 use error::MinusOneResult;
 use ps::Value::{Str, Num};
 use ps::Powershell;
-use ps::Powershell::Raw;
+use ps::Powershell::{Raw, Array};
 
 #[derive(Default)]
 pub struct ParseString;
@@ -129,6 +129,36 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
                          }
                      },
                     _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct StringReplaceOp;
+
+impl<'a> RuleMut<'a> for StringReplaceOp {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "comparison_expression" {
+            if let (Some(left_expression), Some(operator), Some(right_expression)) = (view.child(0), view.child(1), view.child(2)) {
+                match (left_expression.data(), operator.text()?.to_lowercase().as_str(), right_expression.data()) {
+                    (Some(Raw(Str(src))), "-replace", Some(Array(params)))
+                    | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) =>  {
+                        // -replace operator need two params
+                        if let (Some(Str(old)), Some(Str(new))) = (params.get(0), params.get(1)) {
+                            node.set(Raw(Str(src.replace(old, new))));
+                        }
+                    }
+                    _ => ()
                 }
             }
         }

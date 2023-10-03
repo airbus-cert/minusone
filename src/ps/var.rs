@@ -3,6 +3,8 @@ use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node};
 use error::MinusOneResult;
+use ps::Powershell::Raw;
+use ps::Value::Str;
 
 
 /// Var is a variable manager that will try to track
@@ -112,6 +114,61 @@ impl<'a> RuleMut<'a> for Var {
     }
 }
 
+
+/// Static Var rule is used to replace
+/// Variable by its static and predictable value
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::var::Var;
+/// use minusone::ps::litter::Litter;
+///
+/// let mut tree = from_powershell_src("\
+/// $foo = 4
+/// Write-Debug $foo\
+/// ").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
+///
+/// let mut ps_litter_view = Litter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\
+/// $foo = 4
+/// write-debug 4\
+/// ");
+/// ```
+#[derive(Default)]
+pub struct StaticVar;
+
+impl<'a> RuleMut<'a> for StaticVar {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "variable" {
+            match view.text()?.to_lowercase().as_str() {
+                "$shellid" => {
+                    node.set(Raw(Str(String::from("Microsoft.Powershell"))))
+                },
+                _ => ()
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -169,6 +226,23 @@ mod test {
             .child(1).unwrap()// command_elements
             .child(0).unwrap()// variable
             .data(), None
+        );
+    }
+
+    #[test]
+    fn test_static_var_shell_id() {
+        let mut tree = from_powershell_src("$shellid").unwrap();
+
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            StaticVar::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()// program
+            .child(0).unwrap() // statement_list
+            .child(0).unwrap() // pipeline
+            .data().expect("Expecting inferred type"), Raw(Str("Microsoft.Powershell".to_string()))
         );
     }
 }

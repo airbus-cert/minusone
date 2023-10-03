@@ -1,11 +1,11 @@
 use ps::integer::{ParseInt, AddInt, MultInt};
 use ps::forward::Forward;
-use ps::string::{ParseString, ConcatString, StringReplaceMethod};
+use ps::string::{ParseString, ConcatString, StringReplaceMethod, StringReplaceOp};
 use error::MinusOneResult;
 use tree::{Tree, HashMapStorage};
 use tree_sitter::{Parser};
 use tree_sitter_powershell::language as powershell_language;
-use ps::var::Var;
+use ps::var::{Var, StaticVar};
 use ps::cast::Cast;
 use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr};
 use ps::access::AccessString;
@@ -88,7 +88,9 @@ pub type RuleSet = (
     PSItemInferrator,
     ForEach,
     StringReplaceMethod,
-    ComputeArrayExpr
+    ComputeArrayExpr,
+    StringReplaceOp,
+    StaticVar
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
