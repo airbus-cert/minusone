@@ -21,6 +21,9 @@ fn main() {
                  .long("path")
                  .takes_value(true)
                  .help("Path to the script file"))
+        .arg(Arg::with_name("debug")
+                 .long("debug")
+                 .help("Print the tree-sitter tree with inferred value on each node"))
         .get_matches();
 
 
@@ -28,12 +31,13 @@ fn main() {
     let mut tree = from_powershell_src(source.as_str()).unwrap();
     tree.apply_mut(&mut RuleSet::init()).unwrap();
 
-    let mut debub_view = DebugView::new();
-    tree.apply(&mut debub_view).unwrap();
-
-    let mut ps_litter_view = Litter::new();
-    ps_litter_view.print(&tree.root().unwrap()).unwrap();
-
-    println!("\nPowershell litter");
-    println!("{}", ps_litter_view.output);
+    if matches.is_present("debug") {
+        let mut debub_view = DebugView::new();
+        tree.apply(&mut debub_view).unwrap();
+    }
+    else {
+        let mut ps_litter_view = Litter::new();
+        ps_litter_view.print(&tree.root().unwrap()).unwrap();
+        println!("{}", ps_litter_view.output);
+    }
 }

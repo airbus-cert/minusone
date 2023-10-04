@@ -2,9 +2,9 @@ use scope::ScopeManager;
 use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node};
-use error::MinusOneResult;
-use ps::Powershell::Raw;
-use ps::Value::Str;
+use error::{MinusOneResult, Error};
+use ps::Powershell::{Raw, Bool};
+use ps::Value::{Str, Num};
 
 
 /// Var is a variable manager that will try to track
@@ -62,6 +62,19 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     None
 }
 
+// This function will check if we can assign a variable
+// Minusone have restriction to infer variable
+fn can_assign<T>(variable: &Node<T>) -> bool {
+    variable.get_parent_of_types(vec![
+        "for_statement",
+        "while_statement",
+        "switch_statement",
+        "foreach_statement",
+        "do_statement",
+        "if_statement"
+    ]) == None
+}
+
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
@@ -77,6 +90,27 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             },
+            // in the enter function because pre increment before assigned
+            "pre_increment_expression" => {
+                if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
+                    if !can_assign(&variable) {
+                        return Ok(())
+                    }
+                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_current_var(variable.text()?.to_lowercase().as_str()) {
+                        *v = *v + 1;
+                    }
+                }
+            },
+            "pre_decrement_expression" => {
+                if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
+                    if !can_assign(&variable) {
+                        return Ok(())
+                    }
+                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_current_var(variable.text()?.to_lowercase().as_str()) {
+                        *v = *v - 1;
+                    }
+                }
+            }
             _ => ()
         }
         Ok(())
@@ -89,12 +123,17 @@ impl<'a> RuleMut<'a> for Var {
                 // Assign var value if it's possible
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
                     if let Some(var) = find_variable_node(&left) {
+                        if !can_assign(&var) {
+                            // we can't follow assignment from a labelled_statement
+                            self.scope_manager.current().forget(var.text()?.to_lowercase().as_str());
+                            return Ok(())
+                        }
                         if let Some(data) = right.data() {
-                            self.scope_manager.current().assign(var.text()?, data.clone());
+                            self.scope_manager.current().assign(var.text()?.to_lowercase().as_str(), data.clone());
                         }
                         else {
                             // forget the value, we were not able to follow the value
-                            self.scope_manager.current().forget(var.text()?);
+                            self.scope_manager.current().forget(var.text()?.to_lowercase().as_str());
                         }
                     }
                 }
@@ -102,12 +141,20 @@ impl<'a> RuleMut<'a> for Var {
             "variable" => {
                 // check if we are not on the left part of an assignment expression
                 // already handle by the previous case
-                if view.get_parent_of_type("left_assignment_expression") == None {
-                    if let Some(data) = self.scope_manager.current().get_current_var(view.text()?) {
-                        node.set(data);
+                if view.get_parent_of_types(vec!["left_assignment_expression"]) == None {
+                    if let Some(data) = self.scope_manager.current().get_current_var(view.text()?.to_lowercase().as_str()) {
+                        node.set(data.clone());
                     }
                 }
-            }
+            },
+            // pre_increment_expression is saf eto forward due to the enter management
+            "pre_increment_expression" | "pre_decrement_expression" => {
+                if let Some(expression) = view.child(1) {
+                    if let Some(expression_data) = expression.data() {
+                        node.set(expression_data.clone())
+                    }
+                }
+            },
             _ => ()
         }
         Ok(())
@@ -162,6 +209,9 @@ impl<'a> RuleMut<'a> for StaticVar {
                 "$shellid" => {
                     node.set(Raw(Str(String::from("Microsoft.Powershell"))))
                 },
+                "$?" => {
+                    node.set(Bool(true))
+                }
                 _ => ()
             }
         }

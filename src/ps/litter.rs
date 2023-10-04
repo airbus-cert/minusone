@@ -44,9 +44,14 @@ impl Litter {
             // Space separated token
             "pipeline" | "command" |
             "assignment_expression" | "left_assignment_expression" |
-            "command_elements" => self.space_sep(node, None)?,
-
-            "logical_expression" | "bitwise_expression" |
+            "command_elements" | "while_statement" | "foreach_statement" |
+            "while_condition" | "do_statement" |
+            "trap_statement" | "data_statement" |
+            "expression_with_unary_operator" |
+            "try_statement" | "catch_clauses" | "catch_clause" |
+            "finally_clause" | "catch_type_list" |
+            "if_statement" | "else_clause" | "elseif_clause" |
+            "named_block" | "logical_expression" | "bitwise_expression" |
             "comparison_expression" | "additive_expression" |
             "multiplicative_expression" | "format_expression" |
             "unary_expression" | "argument_expression" |
@@ -58,7 +63,6 @@ impl Litter {
             "array_literal_expression" | "argument_expression_list" => self.list_sep(node)?,
 
             "statement_block" => self.statement_block(node)?,
-            "if_statement" | "else_clause" | "elseif_clauses" => self.space_sep(node, None)?,
 
             "script_block_expression" => {
                 let staked_value = self.is_inline_statement;
@@ -80,17 +84,10 @@ impl Litter {
             "invokation_expression" | "argument_list" |
             "range_expression" | "member_access" |
             "post_increment_expression" | "post_decrement_expression" |
-            "type_literal" | "cast_expression" => self.transparent(node)?,
+            "type_literal" | "cast_expression" |
+            "member_name" | "elseif_clauses" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
-
-            "while_statement" | "foreach_statement" |
-            "while_condition" | "do_statement" |
-            "trap_statement" | "data_statement" => self.space_sep(node, None)?,
-
-            "try_statement" | "catch_clauses" | "catch_clause" |
-            "finally_clause" | "catch_type_list" |
-            "named_block" => self.space_sep(node, None)?,
 
             "named_block_list" => self.newline_sep(node)?,
 

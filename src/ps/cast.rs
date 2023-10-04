@@ -142,6 +142,31 @@ impl<'a> RuleMut<'a> for Cast {
     }
 }
 
+#[derive(Default)]
+pub struct CastNull;
+
+impl<'a> RuleMut<'a> for CastNull {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "expression_with_unary_operator" {
+            if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
+                match (operator.text()?.to_lowercase().as_str(), expression.data()) {
+                    ("+", Some(Powershell::Null)) => node.set(Raw(Num(0))),
+                    ("-", Some(Powershell::Null)) => node.set(Raw(Num(0))),
+                    _ => ()
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use ps::from_powershell_src;

@@ -2,6 +2,7 @@ use rule::RuleMut;
 use ps::Powershell;
 use tree::NodeMut;
 use error::{MinusOneResult, Error};
+use ps::Powershell::Null;
 
 /// The forward rule is use to forward
 /// inferedtype in the most simple case : where there is nothing to do
@@ -48,7 +49,7 @@ impl<'a> RuleMut<'a> for Forward {
             "range_argument_expression" | "format_argument_expression" |
             "multiplicative_argument_expression" | "additive_argument_expression" |
             "comparison_argument_expression" | "bitwise_argument_expression" |
-            "logical_argument_expression" | "command_name_expr" => {
+            "logical_argument_expression" | "command_name_expr" | "expression_with_unary_operator" => {
                 if view.child_count() == 1 {
                     if let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
                         node.set(child_data.clone());
@@ -63,6 +64,10 @@ impl<'a> RuleMut<'a> for Forward {
                             node.set(expression_data.clone())
                         }
                     }
+                }
+                else {
+                    // an empty subexpression is considering as null output
+                    node.set(Null)
                 }
             },
             "parenthesized_expression" => {

@@ -3,7 +3,7 @@ use tree::{NodeMut};
 use error::MinusOneResult;
 use ps::Value::{Str, Num};
 use ps::Powershell;
-use ps::Powershell::{Raw, Array};
+use ps::Powershell::{Raw, Array, Bool};
 
 #[derive(Default)]
 pub struct ParseString;
@@ -32,14 +32,21 @@ impl<'a> RuleMut<'a> for ParseString {
 
                 // last child is the token \"
                 for child in view.range(None, Some(view.child_count() - 1), None) {
-                    if let Some(Raw(v)) = child.data() {
+                    if let Some(v) = child.data() {
                         match v {
-                            Str(s) => {
+                            Raw(Str(s)) => {
                                 result = result.replace(child.text()?, s);
                             },
-                            Num(n) => {
+                            Raw(Num(n)) => {
                                 result = result.replace(child.text()?, n.to_string().as_str());
+                            },
+                            Bool(true) => {
+                                result = result.replace(child.text()?, "True");
                             }
+                            Powershell::HashMap => {
+                                result = result.replace(child.text()?, "System.Collections.Hashtable");
+                            }
+                            _ => ()
                         }
                     }
                     else {

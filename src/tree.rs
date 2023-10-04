@@ -392,11 +392,11 @@ impl<'a, T> Node<'a, T> {
     }
 
 
-    pub fn get_parent_of_type(&self, kind: &str) -> Option<Node<'a, T>> {
+    pub fn get_parent_of_types(&self, kinds: Vec<&str>) -> Option<Node<'a, T>> {
         let mut current = self.parent();
         loop {
             if let Some(current_node) = current {
-                if current_node.kind() == kind {
+                if kinds.contains(&current_node.kind()) {
                     return Some(current_node);
                 }
                 current = current_node.parent();

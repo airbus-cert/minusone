@@ -39,9 +39,9 @@ impl<T: Clone> Scope<T> {
         }
     }
 
-    pub fn get_current_var(&self, var_name: &str) -> Option<T> {
-        if let Some(data) = self.vars.get(var_name) {
-            return data.inferred_type.as_ref().map(|v| v.clone());
+    pub fn get_current_var(&mut self, var_name: &str) -> Option<&mut T> {
+        if let Some(data) = self.vars.get_mut(var_name) {
+            return data.inferred_type.as_mut();
         }
         None
     }

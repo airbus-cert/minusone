@@ -6,11 +6,12 @@ use tree::{Tree, HashMapStorage};
 use tree_sitter::{Parser};
 use tree_sitter_powershell::language as powershell_language;
 use ps::var::{Var, StaticVar};
-use ps::cast::Cast;
+use ps::cast::{Cast, CastNull};
 use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr};
 use ps::access::AccessString;
 use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
 use ps::foreach::{PSItemInferrator, ForEach};
+use ps::hash::ParseHash;
 
 pub mod string;
 pub mod integer;
@@ -22,6 +23,7 @@ pub mod array;
 pub mod foreach;
 pub mod access;
 pub mod join;
+pub mod hash;
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -63,8 +65,11 @@ impl Value {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Powershell {
     Raw(Value),
+    Bool(bool), // Bool is not yet handle as a raw type
     Array(Vec<Value>),
-    PSItem(Vec<Value>)
+    PSItem(Vec<Value>),
+    Null,
+    HashMap // We don't infer this time, but it's planed
 }
 
 /// This is the rule set use to perform
@@ -90,7 +95,9 @@ pub type RuleSet = (
     StringReplaceMethod,
     ComputeArrayExpr,
     StringReplaceOp,
-    StaticVar
+    StaticVar,
+    CastNull,
+    ParseHash
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

@@ -94,8 +94,8 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
         let view = node.view();
         // find usage of magic variable
         if view.kind() == "variable" && view.text()? == "$_"{
-            if let Some(script_block_expression) = view.get_parent_of_type("script_block_expression") {
-                if let Some(command) = script_block_expression.get_parent_of_type("command") {
+            if let Some(script_block_expression) = view.get_parent_of_types(vec!["script_block_expression"]) {
+                if let Some(command) = script_block_expression.get_parent_of_types(vec!["command"]) {
                     // it's part of a foreach command
                     if let Some(command_name) = parse_command(&command)? {
                         if command_name == "%" || command_name == "foreach-object" {
