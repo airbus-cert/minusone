@@ -22,7 +22,7 @@ use ps::Value::{Str, Num};
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::var::Var;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 ///
 /// let mut tree = from_powershell_src("\
 /// $foo = 4
@@ -30,7 +30,7 @@ use ps::Value::{Str, Num};
 /// ").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\
@@ -53,26 +53,17 @@ impl Default for Var {
 fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     for child in node.iter() {
         if child.kind() == "variable" {
-            return Some(child);
+            if let Some(parent) = child.parent() {
+                if parent.kind() == "unary_expression" {
+                    return Some(child);
+                }
+            }
         }
         else if let Some(new_node) = find_variable_node(&child){
             return Some(new_node)
         }
     }
     None
-}
-
-// This function will check if we can assign a variable
-// Minusone have restriction to infer variable
-fn can_assign<T>(variable: &Node<T>) -> bool {
-    variable.get_parent_of_types(vec![
-        "for_statement",
-        "while_statement",
-        "switch_statement",
-        "foreach_statement",
-        "do_statement",
-        "if_statement"
-    ]) == None
 }
 
 impl<'a> RuleMut<'a> for Var {
@@ -82,31 +73,25 @@ impl<'a> RuleMut<'a> for Var {
         let view = node.view();
         match view.kind() {
             "program" => self.scope_manager.reset(),
-            "function_statement" => self.scope_manager.enter(),
+            "function_statement" | "statement_block" => self.scope_manager.enter(),
             "}" => {
                 if let Some(parent) = view.parent() {
-                    if parent.kind() == "function_statement" {
-                        self.scope_manager.leave()
+                    if ["function_statement", "statement_block"].contains(&parent.kind()) {
+                        self.scope_manager.leave();
                     }
                 }
             },
             // in the enter function because pre increment before assigned
             "pre_increment_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
-                    if !can_assign(&variable) {
-                        return Ok(())
-                    }
-                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_current_var(variable.text()?.to_lowercase().as_str()) {
+                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(variable.text()?.to_lowercase().as_str()) {
                         *v = *v + 1;
                     }
                 }
             },
             "pre_decrement_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
-                    if !can_assign(&variable) {
-                        return Ok(())
-                    }
-                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_current_var(variable.text()?.to_lowercase().as_str()) {
+                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(variable.text()?.to_lowercase().as_str()) {
                         *v = *v - 1;
                     }
                 }
@@ -123,16 +108,17 @@ impl<'a> RuleMut<'a> for Var {
                 // Assign var value if it's possible
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
                     if let Some(var) = find_variable_node(&left) {
-                        if !can_assign(&var) {
-                            // we can't follow assignment from a labelled_statement
-                            self.scope_manager.current().forget(var.text()?.to_lowercase().as_str());
-                            return Ok(())
-                        }
+                        // make assignment
                         if let Some(data) = right.data() {
+                            // If assignment is done on already known variable in stack
+                            // we have to forget it because we will infer var from another scope
+                            if self.scope_manager.is_known_in_stack(var.text()?.to_lowercase().as_str()) {
+                                self.scope_manager.forget_everywhere(var.text()?.to_lowercase().as_str())
+                            }
                             self.scope_manager.current().assign(var.text()?.to_lowercase().as_str(), data.clone());
                         }
+                        // forget the value, we were not able to follow the value
                         else {
-                            // forget the value, we were not able to follow the value
                             self.scope_manager.current().forget(var.text()?.to_lowercase().as_str());
                         }
                     }
@@ -141,8 +127,10 @@ impl<'a> RuleMut<'a> for Var {
             "variable" => {
                 // check if we are not on the left part of an assignment expression
                 // already handle by the previous case
-                if view.get_parent_of_types(vec!["left_assignment_expression"]) == None {
-                    if let Some(data) = self.scope_manager.current().get_current_var(view.text()?.to_lowercase().as_str()) {
+                // We also exclude member_access for now
+                if view.get_parent_of_types(vec!["left_assignment_expression", "member_access"]) == None {
+                    // Try to assign variable member
+                    if let Some(data) = self.scope_manager.current().get_var_mut(view.text()?.to_lowercase().as_str()) {
                         node.set(data.clone());
                     }
                 }
@@ -176,7 +164,7 @@ impl<'a> RuleMut<'a> for Var {
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::var::Var;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 ///
 /// let mut tree = from_powershell_src("\
 /// $foo = 4
@@ -184,7 +172,7 @@ impl<'a> RuleMut<'a> for Var {
 /// ").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Var::default())).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\

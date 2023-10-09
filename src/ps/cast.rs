@@ -21,7 +21,7 @@ pub struct Cast;
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::cast::Cast;
 ///
@@ -34,7 +34,7 @@ pub struct Cast;
 ///     )
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"a\"");

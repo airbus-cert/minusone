@@ -3,13 +3,20 @@ use std::collections::HashMap;
 #[derive(Clone)]
 pub struct Variable<T: Clone> {
     inferred_type: Option<T>,
+    // use to handle variable attributes
+    attributes: HashMap<String, T>
 }
 
 impl<T: Clone> Variable<T> {
     pub fn new(inferred_type: Option<T>) -> Self {
         Variable {
-            inferred_type
+            inferred_type,
+            attributes: HashMap::new()
         }
+    }
+
+    pub fn set_attr(&mut self, name: String, inferred_type: T) {
+        self.attributes.insert(name, inferred_type);
     }
 }
 
@@ -39,9 +46,16 @@ impl<T: Clone> Scope<T> {
         }
     }
 
-    pub fn get_current_var(&mut self, var_name: &str) -> Option<&mut T> {
+    pub fn get_var_mut(&mut self, var_name: &str) -> Option<&mut T> {
         if let Some(data) = self.vars.get_mut(var_name) {
             return data.inferred_type.as_mut();
+        }
+        None
+    }
+
+    pub fn get_var(&self, var_name: &str) -> Option<&T> {
+        if let Some(data) = self.vars.get(var_name) {
+            return data.inferred_type.as_ref();
         }
         None
     }
@@ -72,5 +86,21 @@ impl<T: Clone> ScopeManager<T> {
 
     pub fn reset(&mut self) {
         self.scopes = vec![Scope::new()]
+    }
+
+    pub fn is_known_in_stack(&self, var_name: &str) -> bool {
+        // check in the stack without checking the current one
+        for scope in &self.scopes[0..self.scopes.len() - 1] {
+            if !scope.get_var(var_name).is_none() {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn forget_everywhere(&mut self, var_name: &str) {
+        for scope in self.scopes.iter_mut() {
+            scope.forget(var_name)
+        }
     }
 }

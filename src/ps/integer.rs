@@ -18,12 +18,12 @@ use ps::Powershell::Raw;
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 ///
 /// let mut tree = from_powershell_src("4 + 0x5").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "4 + 5");
@@ -81,12 +81,12 @@ impl<'a> RuleMut<'a> for ParseInt {
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 ///
 /// let mut tree = from_powershell_src("4 + 5 - 2").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "7");
@@ -130,12 +130,12 @@ impl<'a> RuleMut<'a> for AddInt {
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, MultInt};
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 ///
 /// let mut tree = from_powershell_src("3 * 4 / 12").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "1");

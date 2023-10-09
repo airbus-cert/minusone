@@ -19,7 +19,7 @@ use ps::Value::{Str};
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::join::JoinComparison;
 /// use minusone::ps::integer::ParseInt;
@@ -36,7 +36,7 @@ use ps::Value::{Str};
 ///     AccessString::default()
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"invoke-expression\"");
@@ -86,7 +86,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::join::JoinStringMethod;
 /// use minusone::ps::integer::ParseInt;
@@ -101,7 +101,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 ///     JoinStringMethod::default()
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
@@ -164,7 +164,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::{ParseArrayLiteral, ComputeArrayExpr};
@@ -178,7 +178,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 ///     JoinOperator::default()
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");

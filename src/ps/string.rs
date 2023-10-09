@@ -76,13 +76,13 @@ impl<'a> RuleMut<'a> for ParseString {
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::{ConcatString, ParseString};
 ///
 /// let mut tree = from_powershell_src("'foo' + 'bar'").unwrap();
 /// tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"foobar\"");
@@ -170,5 +170,133 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
             }
         }
         Ok(())
+    }
+}
+
+
+/// This rule will infer format operator
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::string::{ParseString, FormatString};
+/// use minusone::ps::array::ParseArrayLiteral;
+///
+/// let mut tree = from_powershell_src("\"{1} {0}\" -f 'world', 'hello'").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(),
+///     Forward::default(),
+///     FormatString::default(),
+///     ParseArrayLiteral::default())
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Linter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"hello world\"");
+/// ```
+#[derive(Default)]
+pub struct FormatString;
+
+impl<'a> RuleMut<'a> for FormatString {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "format_expression" {
+            if let (Some(format_str_node), Some(format_args_node)) = (view.child(0), view.child(2)) {
+                match (format_str_node.data(), format_args_node.data()) {
+                    (Some(Raw(Str(format_str))), Some(Array(format_args))) => {
+                        let mut result = format_str.clone();
+                        let mut index = 0;
+                        for new in format_args.iter() {
+                            result = result.replace(format!("{{{}}}", index).as_str(), new.to_string().as_str());
+                            index += 1;
+                        }
+                        node.set(Raw(Str(result)));
+                    },
+                    (Some(Raw(Str(format_str))), Some(Raw(format_arg))) => {
+                        node.set(Raw(Str(format_str.replace("{0}", format_arg.to_string().as_str()))));
+                    },
+                    _ => ()
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ps::from_powershell_src;
+    use ps::forward::Forward;
+    use ps::Powershell::Raw;
+    use ps::Value::Str;
+    use ps::string::{ParseString, ConcatString, StringReplaceOp, FormatString};
+    use ps::array::ParseArrayLiteral;
+
+    #[test]
+    fn test_concat_two_elements() {
+        let mut tree = from_powershell_src("'a' + 'b'").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("ab".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_infer_subexpression_elements() {
+        let mut tree = from_powershell_src("\"foo$(\"b\"+\"a\"+\"r\")\"").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("foobar".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_replace_operator() {
+        let mut tree = from_powershell_src("\"hello world\" -replace \"world\", \"toto\"").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringReplaceOp::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("hello toto".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_format_operator() {
+        let mut tree = from_powershell_src("\"{1} {0}\" -f \"world\", \"hello\"").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            FormatString::default(),
+            ParseArrayLiteral::default()
+        )).unwrap();
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("hello world".to_string()))
+        );
     }
 }

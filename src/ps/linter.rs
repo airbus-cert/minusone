@@ -4,15 +4,15 @@ use error::{MinusOneResult, Error};
 use ps::Powershell::Raw;
 use ps::Value::{Str, Num};
 
-pub struct Litter {
+pub struct Linter {
     pub output: String,
     tab: String,
     is_inline_statement: bool
 }
 
-impl Litter {
+impl Linter {
     pub fn new() -> Self {
-        Litter {
+        Linter {
             output: String::new(),
             tab: String::new(),
             is_inline_statement: false

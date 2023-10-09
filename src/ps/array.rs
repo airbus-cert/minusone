@@ -18,7 +18,7 @@ use ps::Value::Num;
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::access::AccessString;
 /// use minusone::ps::join::JoinOperator;
@@ -34,7 +34,7 @@ use ps::Value::Num;
 ///     )
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
@@ -82,7 +82,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::access::AccessString;
 /// use minusone::ps::join::JoinOperator;
@@ -99,7 +99,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 ///     )
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
@@ -147,7 +147,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 /// use minusone::ps::from_powershell_src;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
-/// use minusone::ps::litter::Litter;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::access::AccessString;
 /// use minusone::ps::join::JoinOperator;
@@ -166,7 +166,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 ///     )
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Litter::new();
+/// let mut ps_litter_view = Linter::new();
 /// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");

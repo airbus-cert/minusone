@@ -1,6 +1,6 @@
 use ps::integer::{ParseInt, AddInt, MultInt};
 use ps::forward::Forward;
-use ps::string::{ParseString, ConcatString, StringReplaceMethod, StringReplaceOp};
+use ps::string::{ParseString, ConcatString, StringReplaceMethod, StringReplaceOp, FormatString};
 use error::MinusOneResult;
 use tree::{Tree, HashMapStorage};
 use tree_sitter::{Parser};
@@ -17,7 +17,7 @@ pub mod string;
 pub mod integer;
 pub mod forward;
 pub mod var;
-pub mod litter;
+pub mod linter;
 pub mod cast;
 pub mod array;
 pub mod foreach;
@@ -97,7 +97,8 @@ pub type RuleSet = (
     StringReplaceOp,
     StaticVar,
     CastNull,
-    ParseHash
+    ParseHash,
+    FormatString
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
