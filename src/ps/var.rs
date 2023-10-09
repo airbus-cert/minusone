@@ -3,8 +3,8 @@ use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node};
 use error::{MinusOneResult, Error};
-use ps::Powershell::{Raw, Bool};
-use ps::Value::{Str, Num};
+use ps::Powershell::Raw;
+use ps::Value::{Str, Num, Bool};
 
 
 /// Var is a variable manager that will try to track
@@ -198,8 +198,8 @@ impl<'a> RuleMut<'a> for StaticVar {
                     node.set(Raw(Str(String::from("Microsoft.Powershell"))))
                 },
                 "$?" => {
-                    node.set(Bool(true))
-                }
+                    node.set(Raw(Bool(true)))
+                },
                 _ => ()
             }
         }

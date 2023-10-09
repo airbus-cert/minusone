@@ -12,6 +12,7 @@ use ps::access::AccessString;
 use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
 use ps::foreach::{PSItemInferrator, ForEach};
 use ps::hash::ParseHash;
+use ps::bool::{ParseBool, Comparison};
 
 pub mod string;
 pub mod integer;
@@ -24,19 +25,23 @@ pub mod foreach;
 pub mod access;
 pub mod join;
 pub mod hash;
+pub mod bool;
 
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub enum Value {
     Num(i32),
-    Str(String)
+    Str(String),
+    Bool(bool)
 }
 
 impl ToString for Value {
     fn to_string(&self) -> String {
         match self {
             Value::Num(e) => e.to_string(),
-            Value::Str(s) => s.clone()
+            Value::Str(s) => s.clone(),
+            Value::Bool(true) => "True".to_string(),
+            Value::Bool(false) => "False".to_string()
         }
     }
 }
@@ -57,7 +62,8 @@ impl Value {
             },
             Value::Num(i) => {
                 Some(i)
-            }
+            },
+            Value::Bool(_) => None
         }
     }
 }
@@ -65,7 +71,6 @@ impl Value {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Powershell {
     Raw(Value),
-    Bool(bool), // Bool is not yet handle as a raw type
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
@@ -98,7 +103,9 @@ pub type RuleSet = (
     StaticVar,
     CastNull,
     ParseHash,
-    FormatString
+    FormatString,
+    ParseBool,
+    Comparison
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

@@ -1,9 +1,9 @@
 use rule::RuleMut;
 use tree::{NodeMut};
 use error::MinusOneResult;
-use ps::Value::{Str, Num};
+use ps::Value::{Str, Num, Bool};
 use ps::Powershell;
-use ps::Powershell::{Raw, Array, Bool};
+use ps::Powershell::{Raw, Array};
 
 #[derive(Default)]
 pub struct ParseString;
@@ -40,8 +40,11 @@ impl<'a> RuleMut<'a> for ParseString {
                             Raw(Num(n)) => {
                                 result = result.replace(child.text()?, n.to_string().as_str());
                             },
-                            Bool(true) => {
+                            Raw(Bool(true)) => {
                                 result = result.replace(child.text()?, "True");
+                            },
+                            Raw(Bool(false)) => {
+                                result = result.replace(child.text()?, "False");
                             }
                             Powershell::HashMap => {
                                 result = result.replace(child.text()?, "System.Collections.Hashtable");

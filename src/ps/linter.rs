@@ -2,7 +2,7 @@ use ps::Powershell;
 use tree::Node;
 use error::{MinusOneResult, Error};
 use ps::Powershell::Raw;
-use ps::Value::{Str, Num};
+use ps::Value::{Str, Num, Bool};
 
 pub struct Linter {
     pub output: String,
@@ -32,7 +32,15 @@ impl Linter {
                 Raw(Num(number)) => {
                     self.output.push_str(number.to_string().as_str());
                     return Ok(());
-                }
+                },
+                Raw(Bool(true)) => {
+                    self.output.push_str("$true".to_string().as_str());
+                    return Ok(())
+                },
+                Raw(Bool(false)) => {
+                    self.output.push_str("$false".to_string().as_str());
+                    return Ok(())
+                },
                 _ => () // We will only manage raw value
             }
         }
@@ -44,8 +52,8 @@ impl Linter {
             // Space separated token
             "pipeline" | "command" |
             "assignment_expression" | "left_assignment_expression" |
-            "command_elements" | "while_statement" | "foreach_statement" |
-            "while_condition" | "do_statement" |
+            "command_elements" | "foreach_statement" |
+            "while_condition" |
             "trap_statement" | "data_statement" |
             "expression_with_unary_operator" |
             "try_statement" | "catch_clauses" | "catch_clause" |
@@ -115,6 +123,8 @@ impl Linter {
                     self.statement_list(node)?;
                 }
             },
+
+            "while_statement" | "do_statement" => self.conditional_statement(node)?,
 
             // Unmodified tokens
             _ => {
@@ -332,6 +342,16 @@ impl Linter {
             self.output += "\n";
         }
         self.tab = old_tab;
+        Ok(())
+    }
+
+    fn conditional_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        if let Some(condition) = node.named_child("condition") {
+            // dead code elysium
+            if condition.data() != Some(&Raw(Bool(false))) {
+                self.space_sep(node, None)?
+            }
+        }
         Ok(())
     }
 }

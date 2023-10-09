@@ -106,10 +106,10 @@ impl<'a> RuleMut<'a> for Cast {
                             let mut result = Vec::new();
                             for e in values {
                                 let casted_value = match e {
-                                    Str(_) => None,
                                     Num(number) => {
                                         char::from_u32(*number as u32)
-                                    }
+                                    },
+                                    _ => None
                                 };
 
                                 if casted_value == None {
