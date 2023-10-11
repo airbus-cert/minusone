@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use tree::{NodeMut};
+use tree::{NodeMut, BranchFlow};
 use error::MinusOneResult;
 use ps::Value::{Str, Num, Bool};
 use ps::Powershell;
@@ -11,11 +11,11 @@ pub struct ParseString;
 impl<'a> RuleMut<'a> for ParseString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
 
         match view.kind() {
@@ -96,11 +96,11 @@ pub struct ConcatString;
 impl<'a> RuleMut<'a> for ConcatString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "additive_expression" ||  view.kind() == "additive_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (view.child(0), view.child(1), view.child(2)) {
@@ -120,11 +120,11 @@ pub struct StringReplaceMethod;
 impl<'a> RuleMut<'a> for StringReplaceMethod {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "invokation_expression" {
             if let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) = (view.child(0), view.child(1), view.child(2), view.child(3)) {
@@ -152,11 +152,11 @@ pub struct StringReplaceOp;
 impl<'a> RuleMut<'a> for StringReplaceOp {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "comparison_expression" {
             if let (Some(left_expression), Some(operator), Some(right_expression)) = (view.child(0), view.child(1), view.child(2)) {
@@ -211,11 +211,11 @@ pub struct FormatString;
 impl<'a> RuleMut<'a> for FormatString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "format_expression" {
             if let (Some(format_str_node), Some(format_args_node)) = (view.child(0), view.child(2)) {

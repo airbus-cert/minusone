@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::NodeMut;
+use tree::{NodeMut, BranchFlow};
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
 use ps::Value::Str;
@@ -64,11 +64,11 @@ pub struct AccessString;
 impl<'a> RuleMut<'a> for AccessString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "element_access"  {
             if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {

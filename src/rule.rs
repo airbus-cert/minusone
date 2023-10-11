@@ -1,11 +1,11 @@
-use tree::{NodeMut, Node};
+use tree::{NodeMut, Node, BranchFlow};
 use error::MinusOneResult;
 
 
 pub trait RuleMut<'a> {
     type Language;
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>;
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>;
+    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>;
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>;
 }
 
 
@@ -27,18 +27,18 @@ macro_rules! impl_data {
             {
                 type Language = Data;
 
-                fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+                fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
                     $(
                         ${ignore(ty)}
-                        self.${index()}.enter(node)?;
+                        self.${index()}.enter(node, flow)?;
                     )*
                     Ok(())
                 }
 
-                fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+                fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
                     $(
                         ${ignore(ty)}
-                        self.${index()}.leave(node)?;
+                        self.${index()}.leave(node, flow)?;
                     )*
                     Ok(())
                 }

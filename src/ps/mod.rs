@@ -26,6 +26,7 @@ pub mod access;
 pub mod join;
 pub mod hash;
 pub mod bool;
+pub mod strategy;
 
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]

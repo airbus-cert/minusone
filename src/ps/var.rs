@@ -1,7 +1,7 @@
 use scope::ScopeManager;
 use ps::Powershell;
 use rule::{RuleMut};
-use tree::{NodeMut, Node};
+use tree::{NodeMut, Node, BranchFlow};
 use error::{MinusOneResult, Error};
 use ps::Powershell::Raw;
 use ps::Value::{Str, Num, Bool};
@@ -39,13 +39,15 @@ use ps::Value::{Str, Num, Bool};
 /// ");
 /// ```
 pub struct Var {
-    scope_manager : ScopeManager<Powershell>
+    scope_manager : ScopeManager<Powershell>,
+    blank: bool
 }
 
 impl Default for Var {
     fn default() -> Self {
         Var {
-            scope_manager: ScopeManager::new()
+            scope_manager: ScopeManager::new(),
+            blank: false
         }
     }
 }
@@ -69,39 +71,46 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         match view.kind() {
             "program" => self.scope_manager.reset(),
-            "function_statement" | "statement_block" => self.scope_manager.enter(),
+            "function_statement" => self.scope_manager.enter(),
             "}" => {
                 if let Some(parent) = view.parent() {
-                    if ["function_statement", "statement_block"].contains(&parent.kind()) {
+                    if parent.kind() == "function_statement" {
                         self.scope_manager.leave();
                     }
                 }
             },
             // in the enter function because pre increment before assigned
-            "pre_increment_expression" => {
+            "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
-                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(variable.text()?.to_lowercase().as_str()) {
-                        *v = *v + 1;
+                    let var_name = variable.text()?.to_lowercase();
+                    match flow {
+                        BranchFlow::Unpredictable => self.scope_manager.current().forget(&var_name),
+                        BranchFlow::Predictable => {
+                            if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(&var_name) {
+                                if view.kind() == "pre_increment_expression" {
+                                    *v = *v + 1;
+                                }
+                                else {
+                                    *v = *v - 1;
+                                }
+                            }
+                            else {
+                                self.scope_manager.current().forget(&var_name)
+                            }
+                        }
                     }
                 }
             },
-            "pre_decrement_expression" => {
-                if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
-                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(variable.text()?.to_lowercase().as_str()) {
-                        *v = *v - 1;
-                    }
-                }
-            }
             _ => ()
         }
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         match view.kind() {
             "assignment_expression" => {
@@ -109,17 +118,17 @@ impl<'a> RuleMut<'a> for Var {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
                     if let Some(var) = find_variable_node(&left) {
                         // make assignment
-                        if let Some(data) = right.data() {
-                            // If assignment is done on already known variable in stack
-                            // we have to forget it because we will infer var from another scope
-                            if self.scope_manager.is_known_in_stack(var.text()?.to_lowercase().as_str()) {
-                                self.scope_manager.forget_everywhere(var.text()?.to_lowercase().as_str())
+                        let var_name = var.text()?.to_lowercase();
+                        match flow {
+                            BranchFlow::Unpredictable => self.scope_manager.current().forget(&var_name),
+                            BranchFlow::Predictable => {
+                                if let Some(data) = right.data() {
+                                    self.scope_manager.current().assign(&var_name, data.clone());
+                                }
+                                else {
+                                    self.scope_manager.current().forget(&var_name)
+                                }
                             }
-                            self.scope_manager.current().assign(var.text()?.to_lowercase().as_str(), data.clone());
-                        }
-                        // forget the value, we were not able to follow the value
-                        else {
-                            self.scope_manager.current().forget(var.text()?.to_lowercase().as_str());
                         }
                     }
                 }
@@ -130,12 +139,12 @@ impl<'a> RuleMut<'a> for Var {
                 // We also exclude member_access for now
                 if view.get_parent_of_types(vec!["left_assignment_expression", "member_access"]) == None {
                     // Try to assign variable member
-                    if let Some(data) = self.scope_manager.current().get_var_mut(view.text()?.to_lowercase().as_str()) {
+                    if let Some(data) = self.scope_manager.current().get_var(view.text()?.to_lowercase().as_str()) {
                         node.set(data.clone());
                     }
                 }
             },
-            // pre_increment_expression is saf eto forward due to the enter management
+            // pre_increment_expression is safe to forward due to the enter function handler
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(expression) = view.child(1) {
                     if let Some(expression_data) = expression.data() {
@@ -186,11 +195,11 @@ pub struct StaticVar;
 impl<'a> RuleMut<'a> for StaticVar {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "variable" {
             match view.text()?.to_lowercase().as_str() {

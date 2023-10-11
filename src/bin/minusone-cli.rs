@@ -8,6 +8,7 @@ use minusone::debug::DebugView;
 use minusone::ps::{RuleSet, from_powershell_src};
 use minusone::ps::linter::Linter;
 use minusone::init::Init;
+use minusone::ps::strategy::PowershellStrategy;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -29,7 +30,7 @@ fn main() {
 
     let source = fs::read_to_string(matches.value_of("path").expect("Path arguments is mandatory")).unwrap();
     let mut tree = from_powershell_src(source.as_str()).unwrap();
-    tree.apply_mut(&mut RuleSet::init()).unwrap();
+    tree.apply_mut_with_strategy(&mut RuleSet::init(), PowershellStrategy::default()).unwrap();
 
     if matches.is_present("debug") {
         let mut debub_view = DebugView::new();

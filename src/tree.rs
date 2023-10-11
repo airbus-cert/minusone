@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use rule::{RuleMut, Rule};
 use std::str::Utf8Error;
 use error::{MinusOneResult};
+use std::ops;
+use std::ops::BitOr;
 
 /// Node components are stored following
 /// a storage pattern
@@ -142,7 +144,7 @@ impl<T> Storage for HashMapStorage<T> {
 /// But only change value of the current one
 pub struct NodeMut<'a, T> {
     /// The current tree-sitter node
-    inner: TreeNode<'a>,
+    pub inner: TreeNode<'a>,
 
     /// reference to the original source code
     source: &'a [u8],
@@ -221,72 +223,46 @@ impl<'a, T> NodeMut<'a, T> {
     pub fn set(&mut self, data: T) {
         self.storage.set(self.inner, data)
     }
-}
 
-/// Interface use to visit a tree
-/// with mutability capability on node component (not on the node itself)
-pub trait VisitMut<'a, T> {
-    fn visit(&mut self, node: &mut NodeMut<'a, T>) -> MinusOneResult<()>;
-}
-
-
-/// We implement the VisitMut Trait for RuleMut (Rule that want mutability)
-///
-/// # Example
-/// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
-/// use tree_sitter::{Parser, Language};
-/// use tree_sitter_powershell::language as powershell_language;
-/// use minusone::tree::{Storage, HashMapStorage, NodeMut, VisitMut};
-/// use minusone::rule::RuleMut;
-/// use minusone::error::MinusOneResult;
-///
-/// #[derive(Default)]
-/// pub struct LazzyRule;
-///
-/// impl<'a> RuleMut<'a> for LazzyRule {
-///     type Language = u32;
-///
-///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
-///         if node.view().kind() == "program" {
-///             node.set(42)
-///         }
-///         Ok(())
-///     }
-///
-///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
-///         Ok(())
-///     }
-/// }
-///
-/// let mut parser = Parser::new();
-/// parser.set_language(powershell_language()).unwrap();
-///
-/// let source = "4";
-/// let ts_tree = parser.parse(source, None).unwrap();
-///
-/// let mut storage = HashMapStorage::<u32>::default();
-///
-/// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
-///
-/// LazzyRule::default().visit(&mut node);
-/// assert_eq!(node.view().data(), Some(&42));
-/// ```
-impl<'a, T, X> VisitMut<'a, T> for X where X : RuleMut<'a, Language = T>{
-    fn visit(&mut self, node: &mut NodeMut<'a, T>) -> MinusOneResult<()> {
-        self.enter(node)?;
-        let mut cursor = node.inner.walk();
-        let current_node = node.inner;
-        for child in node.inner.children(&mut cursor) {
-            node.inner = child;
-            self.visit(node)?;
+    fn apply(&mut self, rule: &mut (impl RuleMut<'a, Language=T>)) -> MinusOneResult<()> {
+        rule.enter(self, BranchFlow::Unpredictable)?;
+        let mut cursor = self.inner.walk();
+        let current_node = self.inner;
+        for child in self.inner.children(&mut cursor) {
+            self.inner = child;
+            self.apply(rule)?;
         }
 
-        node.inner = current_node;
-        self.leave(node)?;
+        self.inner = current_node;
+        rule.leave(self, BranchFlow::Unpredictable)?;
+        Ok(())
+    }
+
+    fn apply_with_strategy(&mut self, rule: &mut (impl RuleMut<'a, Language=T>), strategy: &impl Strategy<T>, flow: BranchFlow) -> MinusOneResult<()> {
+        let mut computed_flow = flow;
+        match strategy.control(self.view())? {
+            // Execution flow detected
+            ControlFlow::Branch(new_flow) => {
+                // We are computing the new statue of the execution flow
+                // If it's predictable or not
+                computed_flow = computed_flow | new_flow;
+            },
+            ControlFlow::Break => return Ok(()),
+            ControlFlow::Continue => ()
+        }
+
+        rule.enter(self, computed_flow)?;
+
+        let mut cursor = self.inner.walk();
+        let current_node = self.inner;
+        for child in self.inner.children(&mut cursor) {
+            self.inner = child;
+            self.apply_with_strategy(rule, strategy, computed_flow)?;
+        }
+
+        self.inner = current_node;
+
+        rule.leave(self, computed_flow)?;
         Ok(())
     }
 }
@@ -406,6 +382,17 @@ impl<'a, T> Node<'a, T> {
             }
         }
     }
+
+    fn apply(&self, rule: &mut (impl Rule<'a, Language=T>)) -> MinusOneResult<()> {
+        rule.enter(self)?;
+        for child in self.iter() {
+            child.apply(rule)?;
+        }
+        rule.leave(self)?;
+
+        Ok(())
+    }
+
 }
 
 pub struct NodeIterator<'a, T> {
@@ -446,20 +433,33 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     }
 }
 
-pub trait Visit<'a, T> {
-    fn visit(&mut self, node: Node<'a, T>) -> MinusOneResult<()>;
+#[derive(Copy, Clone, Debug)]
+pub enum BranchFlow {
+    Predictable,
+    Unpredictable
 }
 
-impl<'a, T, X> Visit<'a, T> for X where X : Rule<'a, Language = T>{
-    fn visit(&mut self, node: Node<'a, T>) -> MinusOneResult<()> {
-        if self.enter(&node)? {
-            for child in node.iter() {
-                self.visit(child)?;
-            }
-            self.leave(&node)?;
+impl ops::BitOr<BranchFlow> for BranchFlow {
+    type Output = BranchFlow;
+
+    fn bitor(self, rhs: BranchFlow) -> Self::Output {
+        match (self, rhs) {
+            (BranchFlow::Predictable, BranchFlow::Predictable) => BranchFlow::Predictable,
+            (BranchFlow::Predictable, BranchFlow::Unpredictable) => BranchFlow::Unpredictable,
+            (BranchFlow::Unpredictable, BranchFlow::Predictable) => BranchFlow::Unpredictable,
+            (BranchFlow::Unpredictable, BranchFlow::Unpredictable) => BranchFlow::Unpredictable,
         }
-        Ok(())
     }
+}
+
+pub enum ControlFlow {
+    Branch(BranchFlow),
+    Break,
+    Continue
+}
+
+pub trait Strategy<T> {
+    fn control(&self, node: Node<T>) -> MinusOneResult<ControlFlow>;
 }
 
 pub struct Tree<'a, S : Storage> {
@@ -479,11 +479,17 @@ impl<'a, S> Tree<'a, S> where S : Storage + Default {
 
     pub fn apply_mut<'b>(&'b mut self, rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized)) -> MinusOneResult<()>{
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
-        rule.visit(&mut node)
+        node.apply(rule)
+    }
+
+    pub fn apply_mut_with_strategy<'b>(&'b mut self, rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized), strategy: impl Strategy<S::Component>) -> MinusOneResult<()>{
+        let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
+        node.apply_with_strategy(rule, &strategy, BranchFlow::Predictable)
     }
 
     pub fn apply<'b>(&'b self, rule: &mut (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
-        rule.visit(Node::new(self.tree_sitter.root_node(), self.source, &self.storage))
+        let mut node = Node::new(self.tree_sitter.root_node(), self.source, &self.storage);
+        node.apply(rule)
     }
 
     pub fn root(&self) -> MinusOneResult<Node<S::Component>> {

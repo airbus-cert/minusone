@@ -73,7 +73,7 @@ impl<T: Clone> ScopeManager<T> {
     }
 
     pub fn enter(&mut self) {
-        self.scopes.push(self.scopes.last().expect("It must at least exist a last scope").clone())
+        self.scopes.push(Scope::new())
     }
 
     pub fn leave(&mut self) {
@@ -86,16 +86,6 @@ impl<T: Clone> ScopeManager<T> {
 
     pub fn reset(&mut self) {
         self.scopes = vec![Scope::new()]
-    }
-
-    pub fn is_known_in_stack(&self, var_name: &str) -> bool {
-        // check in the stack without checking the current one
-        for scope in &self.scopes[0..self.scopes.len() - 1] {
-            if !scope.get_var(var_name).is_none() {
-                return true;
-            }
-        }
-        return false;
     }
 
     pub fn forget_everywhere(&mut self, var_name: &str) {

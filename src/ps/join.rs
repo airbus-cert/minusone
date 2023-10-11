@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::NodeMut;
+use tree::{NodeMut, BranchFlow};
 use error::{MinusOneResult, Error};
 use ps::Powershell::{Array, Raw};
 use ps::Value::{Str};
@@ -47,11 +47,11 @@ pub struct JoinComparison;
 impl<'a> RuleMut<'a> for JoinComparison {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "comparison_expression"  {
             if let (Some(left_expression), Some(operator), Some(right_expression)) = (view.child(0), view.child(1), view.child(2)) {
@@ -112,11 +112,11 @@ pub struct JoinStringMethod;
 impl<'a> RuleMut<'a> for JoinStringMethod {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "invokation_expression" {
             // Invokation must be done using argument list
@@ -189,11 +189,11 @@ pub struct JoinOperator;
 impl<'a> RuleMut<'a> for JoinOperator {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1)) {

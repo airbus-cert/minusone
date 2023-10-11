@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::NodeMut;
+use tree::{NodeMut, BranchFlow};
 use error::{MinusOneResult, Error};
 use ps::Powershell::Null;
 
@@ -32,12 +32,12 @@ impl<'a> RuleMut<'a> for Forward {
     type Language = Powershell;
 
     /// Nothing to do during top down exploration
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
     /// Forward the inferred type to the top node
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
             "unary_expression" | "array_literal_expression" |
