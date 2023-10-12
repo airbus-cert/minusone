@@ -7,12 +7,12 @@ use tree_sitter::{Parser};
 use tree_sitter_powershell::language as powershell_language;
 use ps::var::{Var, StaticVar};
 use ps::cast::{Cast, CastNull};
-use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr};
+use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr, ArrayLength};
 use ps::access::AccessString;
 use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
 use ps::foreach::{PSItemInferrator, ForEach};
 use ps::hash::ParseHash;
-use ps::bool::{ParseBool, Comparison};
+use ps::bool::{ParseBool, Comparison, Not};
 
 pub mod string;
 pub mod integer;
@@ -106,7 +106,9 @@ pub type RuleSet = (
     ParseHash,
     FormatString,
     ParseBool,
-    Comparison
+    Comparison,
+    ArrayLength,
+    Not
 );
 
 pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {

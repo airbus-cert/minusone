@@ -210,6 +210,29 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
     }
 }
 
+#[derive(Default)]
+pub struct ArrayLength;
+
+impl<'a> RuleMut<'a> for ArrayLength {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() == "member_access" {
+            if let (Some(primary_expression), Some(operator), Some(member_name)) = (view.child(0), view.child(1), view.child(2)) {
+                if let (Some(Array(value)), ".", "length") = (primary_expression.data(), operator.text()?, member_name.text()?.to_lowercase().as_str()) {
+                    node.set(Raw(Num(value.len() as i32)));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use ps::from_powershell_src;

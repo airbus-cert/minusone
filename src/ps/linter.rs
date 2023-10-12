@@ -55,7 +55,6 @@ impl Linter {
             "command_elements" | "foreach_statement" |
             "while_condition" |
             "trap_statement" | "data_statement" |
-            "expression_with_unary_operator" |
             "try_statement" | "catch_clauses" | "catch_clause" |
             "finally_clause" | "catch_type_list" |
             "if_statement" | "else_clause" | "elseif_clause" |
@@ -94,7 +93,7 @@ impl Linter {
             "range_expression" | "member_access" |
             "post_increment_expression" | "post_decrement_expression" |
             "type_literal" | "cast_expression" |
-            "member_name"  => self.transparent(node)?,
+            "member_name" | "expression_with_unary_operator" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 

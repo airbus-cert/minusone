@@ -123,3 +123,26 @@ impl<'a> RuleMut<'a> for Comparison {
         Ok(())
     }
 }
+
+#[derive(Default)]
+pub struct Not;
+
+impl<'a> RuleMut<'a> for Not {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+        let node_view = node.view();
+        if node_view.kind() == "expression_with_unary_operator" {
+            if let (Some(operator), Some(expression)) = (node_view.child(0), node_view.child(1)) {
+                if let ("!", Some(Raw(Bool(b)))) = (operator.text()?, expression.data()) {
+                    node.set(Raw(Bool(!(*b))));
+                }
+            }
+        }
+        Ok(())
+    }
+}

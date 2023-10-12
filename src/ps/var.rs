@@ -3,7 +3,7 @@ use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node, BranchFlow};
 use error::{MinusOneResult, Error};
-use ps::Powershell::Raw;
+use ps::Powershell::{Raw, Null};
 use ps::Value::{Str, Num, Bool};
 
 
@@ -161,7 +161,7 @@ impl<'a> RuleMut<'a> for Var {
                 // check if we are not on the left part of an assignment expression
                 // already handle by the previous case
                 // We also exclude member_access for now
-                if view.get_parent_of_types(vec!["left_assignment_expression", "member_access"]) == None {
+                if view.get_parent_of_types(vec!["left_assignment_expression"]) == None {
                     let var_name = view.text()?.to_lowercase();
                     // Try to assign variable member
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
@@ -257,6 +257,9 @@ impl<'a> RuleMut<'a> for StaticVar {
                 },
                 "$?" => {
                     node.set(Raw(Bool(true)))
+                },
+                "$null" => {
+                    node.set(Null)
                 },
                 _ => ()
             }

@@ -2,7 +2,7 @@ use rule::RuleMut;
 use ps::Powershell;
 use tree::{NodeMut, BranchFlow};
 use error::{MinusOneResult, Error};
-use ps::Value::{Num, Str};
+use ps::Value::{Num, Str, Bool};
 use ps::Powershell::{Raw, PSItem};
 
 /// Handle static cast operations
@@ -120,7 +120,25 @@ impl<'a> RuleMut<'a> for Cast {
                                 result.push(Str(casted_value.unwrap().to_string()));
                             }
                             node.set(PSItem(result));
-                        }
+                        },
+                        ("bool", Some(Raw(Num(v)))) => {
+                            node.set(Raw(Bool(*v != 0)));
+                        },
+                        ("bool", Some(Raw(Str(v)))) => {
+                            node.set(Raw(Bool(v.len() != 0)));
+                        },
+                        ("bool", Some(Raw(Bool(v)))) => {
+                            node.set(Raw(Bool(*v)));
+                        },
+                        ("bool", Some(Powershell::Null)) => {
+                            node.set(Raw(Bool(false)));
+                        },
+                        ("bool", Some(Powershell::Array(_))) | ("bool", Some(Powershell::HashMap))  => {
+                            node.set(Raw(Bool(true)));
+                        },
+                        ("bool", None) => {
+                            node.set(Raw(Bool(true)));
+                        },
                         _ => ()
                     }
                 }
