@@ -3,20 +3,15 @@ use std::collections::HashMap;
 #[derive(Clone)]
 pub struct Variable<T: Clone> {
     inferred_type: Option<T>,
-    // use to handle variable attributes
-    attributes: HashMap<String, T>
+    used: bool
 }
 
 impl<T: Clone> Variable<T> {
     pub fn new(inferred_type: Option<T>) -> Self {
         Variable {
             inferred_type,
-            attributes: HashMap::new()
+            used: false
         }
-    }
-
-    pub fn set_attr(&mut self, name: String, inferred_type: T) {
-        self.attributes.insert(name, inferred_type);
     }
 }
 
@@ -43,6 +38,12 @@ impl<T: Clone> Scope<T> {
     pub fn forget(&mut self, var_name: &str) {
         if let Some(var_value) = self.vars.get_mut(var_name) {
             var_value.inferred_type = None;
+        }
+    }
+
+    pub fn in_use(&mut self, var_name: &str) {
+        if let Some(var_value) = self.vars.get_mut(var_name) {
+            var_value.used = true;
         }
     }
 

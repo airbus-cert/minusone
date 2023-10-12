@@ -39,15 +39,13 @@ use ps::Value::{Str, Num, Bool};
 /// ");
 /// ```
 pub struct Var {
-    scope_manager : ScopeManager<Powershell>,
-    blank: bool
+    scope_manager : ScopeManager<Powershell>
 }
 
 impl Default for Var {
     fn default() -> Self {
         Var {
-            scope_manager: ScopeManager::new(),
-            blank: false
+            scope_manager: ScopeManager::new()
         }
     }
 }
@@ -164,9 +162,9 @@ impl<'a> RuleMut<'a> for Var {
                 // already handle by the previous case
                 // We also exclude member_access for now
                 if view.get_parent_of_types(vec!["left_assignment_expression", "member_access"]) == None {
-
+                    let var_name = view.text()?.to_lowercase();
                     // Try to assign variable member
-                    if let Some(data) = self.scope_manager.current().get_var(view.text()?.to_lowercase().as_str()) {
+                    if let Some(data) = self.scope_manager.current().get_var(&var_name) {
                         if flow == BranchFlow::Predictable {
                             node.set(data.clone());
                         }
@@ -174,13 +172,24 @@ impl<'a> RuleMut<'a> for Var {
                         // computation od depedent var is built on top find_assigned_variable_node
                         // if an assignment is found in the master statement, no reduction is applied
                         else if let Some(block) = view.get_parent_of_types(vec!["while_condition", "statement_block"]) {
-                            if let Some(statement) = block.get_parent_of_types(vec!["while_statement", "if_statement", "for_statement", "do_statement"]) {
+                            if let Some(statement) = block.get_parent_of_types(vec![
+                                "while_statement",
+                                "if_statement",
+                                "for_statement",
+                                "do_statement"
+                            ]) {
                                 // find assignment of this variable
-                                if find_assigned_variable_node(&statement, &view.text()?.to_lowercase()) == None {
+                                if find_assigned_variable_node(&statement, &var_name) == None {
                                     node.set(data.clone());
                                 }
                             }
                         }
+                        else {
+                            self.scope_manager.current().in_use(&var_name);
+                        }
+                    }
+                    else {
+                        self.scope_manager.current().in_use(&var_name);
                     }
                 }
             },
