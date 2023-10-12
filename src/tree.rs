@@ -433,7 +433,7 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BranchFlow {
     Predictable,
     Unpredictable

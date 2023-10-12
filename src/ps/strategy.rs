@@ -15,7 +15,7 @@ impl Strategy<Powershell> for PowershellStrategy {
             "statement_block" => {
                 let parent = node.parent().unwrap();
                 match parent.kind() {
-                    "while_statement" | "do_statement" => {
+                    "while_statement" => {
                         // Don't visit node inferred node with a branch set to false
                         if let Some(condition) = parent.named_child("condition") {
                             if condition.data() == Some(&Raw(Bool(false))) {
@@ -58,7 +58,6 @@ impl Strategy<Powershell> for PowershellStrategy {
                             return Ok(Branch(Unpredictable))
                         }
 
-                        // handle my case
                         // elseif ($true) control flow
                         if let Some(condition) = parent.named_child("condition") {
                             return match condition.data() {
@@ -76,7 +75,6 @@ impl Strategy<Powershell> for PowershellStrategy {
                         if let Some(elseif_clauses) = parent.parent().unwrap().named_child("elseif_clauses") {
                             for elseif_clause in elseif_clauses.iter() {
                                 if let Some(condition) = elseif_clause.named_child("condition") {
-                                    println!("{:?}", condition.data());
                                     match condition.data() {
                                         Some(Raw(Bool(false))) => continue,
                                         Some(Raw(Bool(true))) => return Ok(Break), // no need to evaluate the else branch
@@ -92,9 +90,10 @@ impl Strategy<Powershell> for PowershellStrategy {
                     },
                     // function are predictable
                     "function_statement" => Ok(Branch(Predictable)),
-                    _ => Ok(Branch(Unpredictable))
+                    _ => Ok(Branch(Predictable))
                 }
             },
+            // We can add condition to visit these node depending on the main if condition
             "elseif_clauses" | "else_clause" => {
                 let if_statement = node.parent().unwrap();
                 if let Some(condition) = if_statement.named_child("condition") {
@@ -108,9 +107,16 @@ impl Strategy<Powershell> for PowershellStrategy {
                         _ => Ok(Branch(Unpredictable))
                     }
                 }
+
                 // We were not able to infer type so we are in an unpredictable case
                 Ok(Branch(Unpredictable))
             },
+            // All this statement are labeled and not inferred at this moment
+            "trap_statement" | "try_statement" |
+            "catch_clause" | "finally_clause" |
+            "data_statement" | "parallel_statement" |
+            "sequence_statement" | "switch_statement" |
+            "foreach_statement" | "for_statement" | "while_statement" => Ok(Branch(Unpredictable)),
             // Any other node than statement block become unpredictable
             _ => Ok(Continue)
         }

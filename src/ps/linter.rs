@@ -66,7 +66,8 @@ impl Linter {
             "range_argument_expression" | "format_argument_expression" |
             "multiplicative_argument_expression" | "additive_argument_expression" |
             "comparison_argument_expression" | "bitwise_argument_expression" |
-            "logical_argument_expression" | "hash_literal_expression" => self.space_sep(node, None)?,
+            "logical_argument_expression" | "hash_literal_expression" |
+            "do_statement" | "elseif_clauses" => self.space_sep(node, None)?,
 
             "array_literal_expression" | "argument_expression_list" => self.list_sep(node)?,
 
@@ -93,7 +94,7 @@ impl Linter {
             "range_expression" | "member_access" |
             "post_increment_expression" | "post_decrement_expression" |
             "type_literal" | "cast_expression" |
-            "member_name" | "elseif_clauses" => self.transparent(node)?,
+            "member_name"  => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 
@@ -124,7 +125,7 @@ impl Linter {
                 }
             },
 
-            "while_statement" | "do_statement" => self.conditional_statement(node)?,
+            "while_statement" => self.conditional_statement(node)?,
 
             // Unmodified tokens
             _ => {

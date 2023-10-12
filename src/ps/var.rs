@@ -68,6 +68,20 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     None
 }
 
+fn find_assigned_variable_node<'a, T>(node: &Node<'a, T>, var_name: &str) -> Option<Node<'a, T>> {
+    for child in node.iter() {
+        if child.kind() == "variable" && child.text().ok()?.to_lowercase().as_str() == var_name {
+            if child.get_parent_of_types(vec!["left_assignment_expression"]) != None {
+                return Some(child);
+            }
+        }
+        else if let Some(new_node) = find_assigned_variable_node(&child, var_name){
+            return Some(new_node)
+        }
+    }
+    None
+}
+
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
@@ -80,6 +94,20 @@ impl<'a> RuleMut<'a> for Var {
                 if let Some(parent) = view.parent() {
                     if parent.kind() == "function_statement" {
                         self.scope_manager.leave();
+                    }
+                }
+            },
+            // forget assigned variable in enter function
+            // avoid $a = $a + 1 to be inferred
+            "assignment_expression" => {
+                if let Some(left) = view.child(0) {
+                    if let Some(var) = find_variable_node(&left) {
+                        // make assignment
+                        let var_name = var.text()?.to_lowercase();
+                        // forget variable that will be assigned in on unpredictable flow
+                        if flow == BranchFlow::Unpredictable {
+                            self.scope_manager.current().forget(&var_name)
+                        }
                     }
                 }
             },
@@ -119,15 +147,13 @@ impl<'a> RuleMut<'a> for Var {
                     if let Some(var) = find_variable_node(&left) {
                         // make assignment
                         let var_name = var.text()?.to_lowercase();
-                        match flow {
-                            BranchFlow::Unpredictable => self.scope_manager.current().forget(&var_name),
-                            BranchFlow::Predictable => {
-                                if let Some(data) = right.data() {
-                                    self.scope_manager.current().assign(&var_name, data.clone());
-                                }
-                                else {
-                                    self.scope_manager.current().forget(&var_name)
-                                }
+                        // only predictable assignment is handled
+                        if flow == BranchFlow::Predictable {
+                            if let Some(data) = right.data() {
+                                self.scope_manager.current().assign(&var_name, data.clone());
+                            }
+                            else {
+                                self.scope_manager.current().forget(&var_name)
                             }
                         }
                     }
@@ -138,9 +164,23 @@ impl<'a> RuleMut<'a> for Var {
                 // already handle by the previous case
                 // We also exclude member_access for now
                 if view.get_parent_of_types(vec!["left_assignment_expression", "member_access"]) == None {
+
                     // Try to assign variable member
                     if let Some(data) = self.scope_manager.current().get_var(view.text()?.to_lowercase().as_str()) {
-                        node.set(data.clone());
+                        if flow == BranchFlow::Predictable {
+                            node.set(data.clone());
+                        }
+                        // for unpredictable branch only independent variable can be replaced
+                        // computation od depedent var is built on top find_assigned_variable_node
+                        // if an assignment is found in the master statement, no reduction is applied
+                        else if let Some(block) = view.get_parent_of_types(vec!["while_condition", "statement_block"]) {
+                            if let Some(statement) = block.get_parent_of_types(vec!["while_statement", "if_statement", "for_statement", "do_statement"]) {
+                                // find assignment of this variable
+                                if find_assigned_variable_node(&statement, &view.text()?.to_lowercase()) == None {
+                                    node.set(data.clone());
+                                }
+                            }
+                        }
                     }
                 }
             },

@@ -190,7 +190,6 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
                     if statement.kind() == "empty_statement" {
                         continue
                     }
-
                     match statement.data() {
                         Some(Array(values)) => {
                             result.extend(values.clone());
