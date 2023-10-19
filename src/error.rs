@@ -12,7 +12,7 @@ pub struct MinusOneError {
     /// Kind of error
     kind: MinusOneErrorKind,
     /// Associated message of the context
-    message: String
+    pub message: String
 }
 
 impl MinusOneError {
