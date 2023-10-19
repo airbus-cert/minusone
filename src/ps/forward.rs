@@ -87,6 +87,15 @@ impl<'a> RuleMut<'a> for Forward {
                     }
                 }
             },
+            "command" => {
+                if let Some(sub_command) = view.child(0) {
+                    if sub_command.kind() == "foreach_command" {
+                        if let Some(expression_data) = sub_command.data() {
+                            node.set(expression_data.clone())
+                        }
+                    }
+                }
+            },
             _ => ()
         }
 

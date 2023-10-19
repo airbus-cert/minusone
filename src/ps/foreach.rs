@@ -24,25 +24,6 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
     }
 }
 
-fn parse_command(command: &Node<Powershell>) -> MinusOneResult<Option<String>> {
-    if let Some(command_name) = command.named_child("command_name") {
-        if command.child(0).unwrap().kind() == "command_invokation_operator" {
-            if let Some(Raw(Str(inferred_name))) = command_name.data() {
-                Ok(Some(inferred_name.to_lowercase()))
-            }
-            else{
-                Ok(None)
-            }
-        }
-        else {
-            Ok(Some(command_name.text()?.to_lowercase()))
-        }
-    }
-    else {
-        Ok(None)
-    }
-}
-
 /// This rule will stop on the special var $_
 /// And check if it's used into a foreach command
 /// And then will infer the result of the previous command
@@ -95,22 +76,17 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
         // find usage of magic variable
         if view.kind() == "variable" && view.text()? == "$_"{
             if let Some(script_block_expression) = view.get_parent_of_types(vec!["script_block_expression"]) {
-                if let Some(command) = script_block_expression.get_parent_of_types(vec!["command"]) {
-                    // it's part of a foreach command
-                    if let Some(command_name) = parse_command(&command)? {
-                        if command_name == "%" || command_name == "foreach-object" {
-                            if let Some(previous) = find_previous_expr(&command)? {
-                                // the previous in the pipeline
-                                match previous.data() {
-                                    Some(Array(values)) => {
-                                        node.set(PSItem(values.clone()));
-                                    },
-                                    Some(Raw(value)) => {
-                                        node.set(PSItem(vec![value.clone()]));
-                                    },
-                                    _ => ()
-                                }
-                            }
+                if let Some(foreach_command) = script_block_expression.get_parent_of_types(vec!["foreach_command"]) {
+                    if let Some(previous) = find_previous_expr(&foreach_command.parent().unwrap())? {
+                        // the previous in the pipeline
+                        match previous.data() {
+                            Some(Array(values)) => {
+                                node.set(PSItem(values.clone()));
+                            },
+                            Some(Raw(value)) => {
+                                node.set(PSItem(vec![value.clone()]));
+                            },
+                            _ => ()
                         }
                     }
                 }
@@ -170,62 +146,55 @@ impl<'a> RuleMut<'a> for ForEach {
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "command" {
-            if let Some(command_name) = parse_command(&view)? {
-                if command_name == "%" || command_name == "foreach-object" {
-                    if let Some(command_elements) = view.named_child("command_elements") {
-                        // we can only handle this pattern
-                        if command_elements.child_count() == 1 && command_elements.child(0).unwrap().kind() == "script_block_expression" {
-                            let script_block_expression = command_elements.child(0).unwrap();
-                            if let Some(previous_command) = find_previous_expr(&view)? {
-                                // if the previous pipeline was inferred as an array
-                                let mut previous_values = Vec::new();
-                                match previous_command.data() {
-                                    Some(Array(values)) => previous_values.extend(values.clone()),
-                                    // array of size 1
-                                    Some(Raw(value)) => previous_values.push(value.clone()),
-                                    _ => ()
-                                }
-                                let script_block_body = script_block_expression
-                                    .child(1).ok_or(Error::invalid_child())? // script_block node
-                                    .named_child("script_block_body");
+        if view.kind() == "foreach_command" {
+            if view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression" {
+                let script_block_expression = view.child(1).unwrap();
+                if let Some(previous_command) = find_previous_expr(&view.parent().unwrap())? {
+                    // if the previous pipeline was inferred as an array
+                    let mut previous_values = Vec::new();
+                    match previous_command.data() {
+                        Some(Array(values)) => previous_values.extend(values.clone()),
+                        // array of size 1
+                        Some(Raw(value)) => previous_values.push(value.clone()),
+                        _ => ()
+                    }
+                    let script_block_body = script_block_expression
+                        .child(1).ok_or(Error::invalid_child())? // script_block node
+                        .named_child("script_block_body");
 
-                                if let Some(script_block_body_node) = script_block_body {
-                                    if let Some(statement_list) = script_block_body_node.named_child("statement_list") {
-                                        // determine the number of loop
-                                        // by looping over the size of the array
+                    if let Some(script_block_body_node) = script_block_body {
+                        if let Some(statement_list) = script_block_body_node.named_child("statement_list") {
+                            // determine the number of loop
+                            // by looping over the size of the array
 
-                                        let mut result = Vec::new();
-                                        for i in 0..previous_values.len() {
-                                            for child_statement in statement_list.iter() {
-                                                if child_statement.kind() == "empty_statement" {
-                                                    continue
-                                                }
+                            let mut result = Vec::new();
+                            for i in 0..previous_values.len() {
+                                for child_statement in statement_list.iter() {
+                                    if child_statement.kind() == "empty_statement" {
+                                        continue
+                                    }
 
-                                                match child_statement.data() {
-                                                    Some(PSItem(values)) => {
-                                                        result.push(values[i].clone());
-                                                    },
-                                                    Some(Raw(r)) => {
-                                                        result.push(r.clone());
-                                                    },
-                                                    Some(Array(array_value)) => {
-                                                        for v in array_value {
-                                                            result.push(v.clone());
-                                                        }
-                                                    }
-                                                    _ => {
-                                                        // stop inferring we have not enough infos
-                                                        return Ok(())
-                                                    }
-                                                }
+                                    match child_statement.data() {
+                                        Some(PSItem(values)) => {
+                                            result.push(values[i].clone());
+                                        },
+                                        Some(Raw(r)) => {
+                                            result.push(r.clone());
+                                        },
+                                        Some(Array(array_value)) => {
+                                            for v in array_value {
+                                                result.push(v.clone());
                                             }
                                         }
-                                        if result.len() > 0 {
-                                            node.set(Array(result));
+                                        _ => {
+                                            // stop inferring we have not enough infos
+                                            return Ok(())
                                         }
                                     }
                                 }
+                            }
+                            if result.len() > 0 {
+                                node.set(Array(result));
                             }
                         }
                     }

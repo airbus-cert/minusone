@@ -4,7 +4,6 @@ use rule::{RuleMut, Rule};
 use std::str::Utf8Error;
 use error::{MinusOneResult};
 use std::ops;
-use std::ops::BitOr;
 
 /// Node components are stored following
 /// a storage pattern
@@ -224,7 +223,7 @@ impl<'a, T> NodeMut<'a, T> {
         self.storage.set(self.inner, data)
     }
 
-    fn apply(&mut self, rule: &mut (impl RuleMut<'a, Language=T>)) -> MinusOneResult<()> {
+    fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
         rule.enter(self, BranchFlow::Unpredictable)?;
         let mut cursor = self.inner.walk();
         let current_node = self.inner;
@@ -238,7 +237,7 @@ impl<'a, T> NodeMut<'a, T> {
         Ok(())
     }
 
-    fn apply_with_strategy(&mut self, rule: &mut (impl RuleMut<'a, Language=T>), strategy: &impl Strategy<T>, flow: BranchFlow) -> MinusOneResult<()> {
+    fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: BranchFlow) -> MinusOneResult<()> {
         let mut computed_flow = flow;
         match strategy.control(self.view())? {
             // Execution flow detected
@@ -383,7 +382,7 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
-    fn apply(&self, rule: &mut (impl Rule<'a, Language=T>)) -> MinusOneResult<()> {
+    fn apply(&self, rule: &mut impl Rule<'a, Language=T>) -> MinusOneResult<()> {
         rule.enter(self)?;
         for child in self.iter() {
             child.apply(rule)?;
@@ -488,7 +487,7 @@ impl<'a, S> Tree<'a, S> where S : Storage + Default {
     }
 
     pub fn apply<'b>(&'b self, rule: &mut (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
-        let mut node = Node::new(self.tree_sitter.root_node(), self.source, &self.storage);
+        let node = Node::new(self.tree_sitter.root_node(), self.source, &self.storage);
         node.apply(rule)
     }
 

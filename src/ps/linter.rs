@@ -57,7 +57,7 @@ impl Linter {
             "trap_statement" | "data_statement" |
             "try_statement" | "catch_clauses" | "catch_clause" |
             "finally_clause" | "catch_type_list" |
-            "if_statement" | "else_clause" | "elseif_clause" |
+            "else_clause" | "elseif_clause" |
             "named_block" | "logical_expression" | "bitwise_expression" |
             "comparison_expression" | "additive_expression" |
             "multiplicative_expression" | "format_expression" |
@@ -66,7 +66,8 @@ impl Linter {
             "multiplicative_argument_expression" | "additive_argument_expression" |
             "comparison_argument_expression" | "bitwise_argument_expression" |
             "logical_argument_expression" | "hash_literal_expression" |
-            "do_statement" | "elseif_clauses" => self.space_sep(node, None)?,
+            "do_statement" | "elseif_clauses" |
+            "function_name" => self.space_sep(node, None)?,
 
             "array_literal_expression" | "argument_expression_list" => self.list_sep(node)?,
 
@@ -112,8 +113,12 @@ impl Linter {
 
             "for_statement" => self.for_statement(node)?,
 
-            "function_statement" | "function_parameter_declaration" |
-            "param_block" => self.space_sep(node, Some(1))?,
+            "function_statement" => {
+                self.output += "\n";
+                self.space_sep(node, Some(1))?
+            },
+
+            "function_parameter_declaration" | "param_block" => self.space_sep(node, Some(1))?,
 
             "statement_list" => {
                 if self.is_inline_statement {
@@ -124,7 +129,8 @@ impl Linter {
                 }
             },
 
-            "while_statement" => self.conditional_statement(node)?,
+            "while_statement" => self.while_statement(node)?,
+            "if_statement" => self.if_statement(node)?,
 
             // Unmodified tokens
             _ => {
@@ -145,13 +151,20 @@ impl Linter {
     fn space_sep(&mut self, node: &Node<Powershell>, end: Option<usize>) -> MinusOneResult<()>{
         let mut nb_childs = node.child_count() - end.unwrap_or(0);
         for child in node.iter() {
-            self.print(&child)?;
             if nb_childs > 0 {
                 nb_childs -= 1;
-                if nb_childs > 0 {
-                    self.output += " ";
-                }
             }
+
+            if child.kind() == "command_argument_sep" {
+                continue;
+            }
+
+            self.print(&child)?;
+
+            if nb_childs > 0 {
+                self.output += " ";
+            }
+
         }
         Ok(())
     }
@@ -179,6 +192,12 @@ impl Linter {
             }
 
             if !is_first {
+                match child.kind() {
+                    "if_statement" | "try_statement" |
+                    "while_statement" => self.output += "\n",
+                    _ => ()
+                }
+
                 self.output += "\n";
                 self.output += &self.tab;
             }
@@ -188,6 +207,14 @@ impl Linter {
 
             //self.output += &self.tab;
             self.print(&child)?;
+
+            if !is_first {
+                match child.kind() {
+                    "if_statement" | "try_statement" |
+                    "while_statement" => self.output += "\n",
+                    _ => ()
+                }
+            }
         }
 
         Ok(())
@@ -345,11 +372,66 @@ impl Linter {
         Ok(())
     }
 
-    fn conditional_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+    fn while_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         if let Some(condition) = node.named_child("condition") {
             // dead code elysium
             if condition.data() != Some(&Raw(Bool(false))) {
                 self.space_sep(node, None)?
+            }
+        }
+        Ok(())
+    }
+
+    fn if_statement(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        if let Some(condition) = node.named_child("condition") {
+            // dead code elysium
+            // this branch is the only one
+            if let Some(&Raw(Bool(bool_condition))) = condition.data() {
+                if bool_condition {
+                    let statement_block = node.child(4).ok_or(Error::invalid_child())?;
+                    if let Some(statement_list) = statement_block.named_child("statement_list") {
+                        self.statement_list(&statement_list)?;
+                    }
+                }
+                else {
+                    if let Some(elsif_clauses) = node.named_child("elseif_clauses") {
+                        // handle multiple elseif clause
+                        for elsif_clause in elsif_clauses.iter() {
+                            if let Some(elsif_condition) = elsif_clause.named_child("condition") {
+                                if elsif_condition.data() == Some(&Raw(Bool(true))) {
+                                    let statement_block = elsif_clause.child(4).ok_or(Error::invalid_child())?;
+                                    if let Some(statement_list) = statement_block.named_child("statement_list") {
+                                        self.statement_list(&statement_list)?;
+                                    }
+                                    return Ok(());
+                                }
+                                else {
+                                    // Normal rendering
+                                    self.space_sep(node, None)?;
+                                    return Ok(());
+                                }
+                            }
+                            else {
+                                // Normal rendering
+                                self.space_sep(node, None)?;
+                                return Ok(());
+                            }
+                        }
+                    }
+
+                    if let Some(else_clause) = node.named_child("else_clause") {
+                        // in this case the else clause is the only branch that will be printed
+                        let statement_block = else_clause.child(1).ok_or(Error::invalid_child())?;
+                        if let Some(statement_list) = statement_block.named_child("statement_list") {
+                            self.statement_list(&statement_list)?;
+                        }
+                    }
+                    // Here there is nothing to print as the if condition is always false and no fallback condition
+                }
+            }
+            else {
+                // Normal rendering
+                self.space_sep(node, None)?;
             }
         }
         Ok(())
