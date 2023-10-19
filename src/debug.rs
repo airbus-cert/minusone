@@ -27,10 +27,10 @@ impl DebugView {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::debug::DebugView;
 ///
-/// let mut tree = from_powershell_src("4").unwrap();
+/// let mut tree = build_powershell_tree("4").unwrap();
 /// tree.apply(&mut DebugView::new()).unwrap(); // it will print you the tree over the console
 ///
 /// ```

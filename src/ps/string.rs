@@ -77,12 +77,12 @@ impl<'a> RuleMut<'a> for ParseString {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::{ConcatString, ParseString};
 ///
-/// let mut tree = from_powershell_src("'foo' + 'bar'").unwrap();
+/// let mut tree = build_powershell_tree("'foo' + 'bar'").unwrap();
 /// tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
@@ -186,13 +186,13 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::{ParseString, FormatString};
 /// use minusone::ps::array::ParseArrayLiteral;
 ///
-/// let mut tree = from_powershell_src("\"{1} {0}\" -f 'world', 'hello'").unwrap();
+/// let mut tree = build_powershell_tree("\"{1} {0}\" -f 'world', 'hello'").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(),
 ///     Forward::default(),
@@ -242,7 +242,7 @@ impl<'a> RuleMut<'a> for FormatString {
 
 #[cfg(test)]
 mod test {
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::forward::Forward;
     use ps::Powershell::Raw;
     use ps::Value::Str;
@@ -251,7 +251,7 @@ mod test {
 
     #[test]
     fn test_concat_two_elements() {
-        let mut tree = from_powershell_src("'a' + 'b'").unwrap();
+        let mut tree = build_powershell_tree("'a' + 'b'").unwrap();
         tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -262,7 +262,7 @@ mod test {
 
     #[test]
     fn test_infer_subexpression_elements() {
-        let mut tree = from_powershell_src("\"foo$(\"b\"+\"a\"+\"r\")\"").unwrap();
+        let mut tree = build_powershell_tree("\"foo$(\"b\"+\"a\"+\"r\")\"").unwrap();
         tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -273,7 +273,7 @@ mod test {
 
     #[test]
     fn test_replace_operator() {
-        let mut tree = from_powershell_src("\"hello world\" -replace \"world\", \"toto\"").unwrap();
+        let mut tree = build_powershell_tree("\"hello world\" -replace \"world\", \"toto\"").unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             Forward::default(),
@@ -289,7 +289,7 @@ mod test {
 
     #[test]
     fn test_format_operator() {
-        let mut tree = from_powershell_src("\"{1} {0}\" -f \"world\", \"hello\"").unwrap();
+        let mut tree = build_powershell_tree("\"{1} {0}\" -f \"world\", \"hello\"").unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             Forward::default(),

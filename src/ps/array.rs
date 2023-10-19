@@ -15,7 +15,7 @@ use ps::Value::Num;
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::linter::Linter;
@@ -24,7 +24,7 @@ use ps::Value::Num;
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseArrayLiteral;
 ///
-/// let mut tree = from_powershell_src("-join ('a','b','c')").unwrap();
+/// let mut tree = build_powershell_tree("-join ('a','b','c')").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     Forward::default(),
@@ -76,10 +76,9 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 /// # Example
 /// ```
 /// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::linter::Linter;
@@ -88,7 +87,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseRange;
 ///
-/// let mut tree = from_powershell_src("-join \"abc\"[0..2]").unwrap();
+/// let mut tree = build_powershell_tree("-join \"abc\"[0..2]").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     Forward::default(),
@@ -144,7 +143,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::linter::Linter;
@@ -153,7 +152,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
 ///
-/// let mut tree = from_powershell_src("-join \"abc\"[@(0, 1; 1+1)]").unwrap();
+/// let mut tree = build_powershell_tree("-join \"abc\"[@(0, 1; 1+1)]").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     AddInt::default(),
@@ -235,7 +234,7 @@ impl<'a> RuleMut<'a> for ArrayLength {
 
 #[cfg(test)]
 mod test {
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::integer::{ParseInt, AddInt};
     use ps::forward::Forward;
     use ps::array::{ParseArrayLiteral, ComputeArrayExpr};
@@ -245,7 +244,7 @@ mod test {
 
     #[test]
     fn test_init_num_array() {
-        let mut tree = from_powershell_src("@(1,2,3)").unwrap();
+        let mut tree = build_powershell_tree("@(1,2,3)").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -262,7 +261,7 @@ mod test {
 
     #[test]
     fn test_init_mix_array() {
-        let mut tree = from_powershell_src("@(1,2,'3')").unwrap();
+        let mut tree = build_powershell_tree("@(1,2,'3')").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
@@ -280,7 +279,7 @@ mod test {
 
     #[test]
     fn test_init_str_array() {
-        let mut tree = from_powershell_src("@('a','b','c')").unwrap();
+        let mut tree = build_powershell_tree("@('a','b','c')").unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             Forward::default(),
@@ -297,7 +296,7 @@ mod test {
 
     #[test]
     fn test_init_int_array_without_at() {
-        let mut tree = from_powershell_src("1,2,3").unwrap();
+        let mut tree = build_powershell_tree("1,2,3").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -314,7 +313,7 @@ mod test {
 
     #[test]
     fn test_init_array_with_multi_statement() {
-        let mut tree = from_powershell_src("@(1,2,3; 4 + 6)").unwrap();
+        let mut tree = build_powershell_tree("@(1,2,3; 4 + 6)").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             AddInt::default(),

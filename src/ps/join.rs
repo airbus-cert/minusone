@@ -17,7 +17,7 @@ use ps::Value::{Str};
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
@@ -26,7 +26,7 @@ use ps::Value::{Str};
 /// use minusone::ps::array::ParseArrayLiteral;
 /// use minusone::ps::access::AccessString;
 ///
-/// let mut tree = from_powershell_src("(\"3oFAIQdPcNvzU72CELRwGlMTDxfe1iVtp8OuWq-jsYyJHSakm69nb5XBZg4K0hr\")[29,51,10,1,47,27,38,27,25,32,62,27,40,40,29,1,51] -join ''").unwrap();
+/// let mut tree = build_powershell_tree("(\"3oFAIQdPcNvzU72CELRwGlMTDxfe1iVtp8OuWq-jsYyJHSakm69nb5XBZg4K0hr\")[29,51,10,1,47,27,38,27,25,32,62,27,40,40,29,1,51] -join ''").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(),
 ///     Forward::default(),
@@ -84,7 +84,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
@@ -92,7 +92,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::array::ParseArrayLiteral;
 ///
-/// let mut tree = from_powershell_src("[string]::join('', (\"a\",\"b\",\"c\"))").unwrap();
+/// let mut tree = build_powershell_tree("[string]::join('', (\"a\",\"b\",\"c\"))").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(),
 ///     Forward::default(),
@@ -162,14 +162,14 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::{ParseArrayLiteral, ComputeArrayExpr};
 ///
-/// let mut tree = from_powershell_src("-join @(\"a\",\"b\", \"c\")").unwrap();
+/// let mut tree = build_powershell_tree("-join @(\"a\",\"b\", \"c\")").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(),
 ///     Forward::default(),

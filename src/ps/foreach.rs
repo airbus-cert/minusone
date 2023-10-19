@@ -3,7 +3,6 @@ use ps::Powershell;
 use tree::{NodeMut, Node, BranchFlow};
 use error::{MinusOneResult, Error};
 use ps::Powershell::{Array, PSItem, Raw};
-use ps::Value::Str;
 
 fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Option<Node<'a, Powershell>>> {
     let pipeline = command.parent().ok_or(Error::invalid_child())?;
@@ -35,7 +34,7 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::linter::Linter;
@@ -44,7 +43,7 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseArrayLiteral;
 ///
-/// let mut tree = from_powershell_src("-join ((0x61, 0x62, 0x63)|% {[char]$_})").unwrap();
+/// let mut tree = build_powershell_tree("-join ((0x61, 0x62, 0x63)|% {[char]$_})").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     Forward::default(),
@@ -105,7 +104,7 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::linter::Linter;
@@ -115,7 +114,7 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 /// use minusone::ps::array::ParseArrayLiteral;
 /// use minusone::ps::string::ParseString;
 ///
-/// let mut tree = from_powershell_src("-join ((0x61, 0x62, 0x63)|% {'z'; [char]$_})").unwrap();
+/// let mut tree = build_powershell_tree("-join ((0x61, 0x62, 0x63)|% {'z'; [char]$_})").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     ParseString::default(),
@@ -213,14 +212,14 @@ mod test {
     use ps::integer::ParseInt;
     use ps::foreach::{PSItemInferrator, ForEach};
     use ps::Powershell::Array;
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::Value::{Num, Str};
     use ps::string::ParseString;
     use ps::cast::Cast;
 
     #[test]
     fn test_foreach_transparent() {
-        let mut tree = from_powershell_src("(1,2,3) | % {$_}").unwrap();
+        let mut tree = build_powershell_tree("(1,2,3) | % {$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -238,7 +237,7 @@ mod test {
 
     #[test]
     fn test_foreach_transparent_with_mixed_array() {
-        let mut tree = from_powershell_src("(\"a\",2,3) | % {$_}").unwrap();
+        let mut tree = build_powershell_tree("(\"a\",2,3) | % {$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -257,7 +256,7 @@ mod test {
 
     #[test]
     fn test_foreach_transparent_with_one_element() {
-        let mut tree = from_powershell_src("(1) | % {$_}").unwrap();
+        let mut tree = build_powershell_tree("(1) | % {$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -276,7 +275,7 @@ mod test {
 
     #[test]
     fn test_foreach_cast_with_one_element() {
-        let mut tree = from_powershell_src("(0x61) | % {[char]$_}").unwrap();
+        let mut tree = build_powershell_tree("(0x61) | % {[char]$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -296,7 +295,7 @@ mod test {
 
     #[test]
     fn test_foreach_cast_with_array() {
-        let mut tree = from_powershell_src("(0x61, 0x62) | % {[char]$_}").unwrap();
+        let mut tree = build_powershell_tree("(0x61, 0x62) | % {[char]$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -316,7 +315,7 @@ mod test {
 
     #[test]
     fn test_foreach_cast_with_array_and_static_result() {
-        let mut tree = from_powershell_src("(0x61, 0x62) | % {'z'; [char]$_}").unwrap();
+        let mut tree = build_powershell_tree("(0x61, 0x62) | % {'z'; [char]$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),

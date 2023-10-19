@@ -1,10 +1,10 @@
+use tree_sitter;
+use tree_sitter_powershell::language as powershell_language;
 use ps::integer::{ParseInt, AddInt, MultInt};
 use ps::forward::Forward;
 use ps::string::{ParseString, ConcatString, StringReplaceMethod, StringReplaceOp, FormatString};
 use error::MinusOneResult;
 use tree::{Tree, HashMapStorage};
-use tree_sitter::{Parser};
-use tree_sitter_powershell::language as powershell_language;
 use ps::var::{Var, StaticVar};
 use ps::cast::{Cast, CastNull};
 use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr, ArrayLength};
@@ -111,8 +111,8 @@ pub type RuleSet = (
     Not
 );
 
-pub fn from_powershell_src(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
-    let mut parser = Parser::new();
+pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
+    let mut parser = tree_sitter::Parser::new();
     parser.set_language(powershell_language()).unwrap();
 
     // Powershell is case insensitive

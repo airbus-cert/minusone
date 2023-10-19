@@ -19,11 +19,11 @@ pub struct Forward;
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 ///
-/// let mut tree = from_powershell_src("4").unwrap();
+/// let mut tree = build_powershell_tree("4").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
 ///
 /// assert_eq!(*(tree.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));

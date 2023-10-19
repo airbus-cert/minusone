@@ -18,14 +18,14 @@ use ps::Value::{Str, Num, Bool};
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::var::Var;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::strategy::PowershellStrategy;
 ///
-/// let mut tree = from_powershell_src("\
+/// let mut tree = build_powershell_tree("\
 /// $foo = 4
 /// Write-Debug $foo\
 /// ").unwrap();
@@ -86,26 +86,6 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
             }
         }
         else if let Some(new_node) = find_variable_node(&child){
-            return Some(new_node)
-        }
-    }
-    None
-}
-
-fn find_assigned_variable_node<'a, T>(node: &Node<'a, T>, var_name: &str) -> Option<Node<'a, T>> {
-    for child in node.iter() {
-        if child.kind() == "variable" && child.text().ok()?.to_lowercase().as_str() == var_name {
-            if child.get_parent_of_types(vec![
-                "left_assignment_expression",
-                "pre_increment_expression",
-                "pre_decrement_expression",
-                "post_increment_expression",
-                "post_decrement_expression"
-            ]) != None {
-                return Some(child);
-            }
-        }
-        else if let Some(new_node) = find_assigned_variable_node(&child, var_name){
             return Some(new_node)
         }
     }
@@ -248,14 +228,14 @@ impl<'a> RuleMut<'a> for Var {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::var::Var;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::strategy::PowershellStrategy;
 ///
-/// let mut tree = from_powershell_src("\
+/// let mut tree = build_powershell_tree("\
 /// $foo = 4
 /// Write-Debug $foo\
 /// ").unwrap();
@@ -302,7 +282,7 @@ impl<'a> RuleMut<'a> for StaticVar {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::integer::ParseInt;
     use ps::forward::Forward;
     use ps::Powershell::Raw;
@@ -313,7 +293,7 @@ mod test {
 
     #[test]
     fn test_static_replacement() {
-        let mut tree = from_powershell_src("$foo = 4\nWrite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 4\nWrite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (ParseInt::default(), Forward::default(), Var::default()), PowershellStrategy::default()).unwrap();
 
@@ -339,7 +319,7 @@ mod test {
 
     #[test]
     fn test_unfollow_var_use_unknow_var() {
-        let mut tree = from_powershell_src("$foo = $toto\nWrite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = $toto\nWrite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -368,7 +348,7 @@ mod test {
 
     #[test]
     fn test_static_var_shell_id() {
-        let mut tree = from_powershell_src("$shellid").unwrap();
+        let mut tree = build_powershell_tree("$shellid").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -385,7 +365,7 @@ mod test {
 
     #[test]
     fn test_unfollow_var_use_in_if_statement() {
-        let mut tree = from_powershell_src("$foo = 0\nif(unknown) { $foo = 5 }\n White-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif(unknown) { $foo = 5 }\n White-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -415,7 +395,7 @@ mod test {
 
     #[test]
     fn test_infer_var_use_in_if_statement_predictable() {
-        let mut tree = from_powershell_src("$foo = 0\nif($true) { $foo = 5 }\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif($true) { $foo = 5 }\nWhite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -446,7 +426,7 @@ mod test {
 
     #[test]
     fn test_infer_var_use_in_if_statement_predictable_false() {
-        let mut tree = from_powershell_src("$foo = 0\nif($false) { $foo = 5 }\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }\nWhite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -477,7 +457,7 @@ mod test {
 
     #[test]
     fn test_infer_var_use_in_if_else_statement_predictable() {
-        let mut tree = from_powershell_src("$foo = 0\nif($false) { $foo = 5 }else { $foo = 8 }\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }else { $foo = 8 }\nWhite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -508,7 +488,7 @@ mod test {
 
     #[test]
     fn test_infer_var_use_in_if_elseif_else_statement_predictable() {
-        let mut tree = from_powershell_src("$foo = 0\nif($false) { $foo = 5 }elseif($true) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }elseif($true) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -539,7 +519,7 @@ mod test {
 
     #[test]
     fn test_infer_var_use_in_if_elseif_else_statement_unpredictable() {
-        let mut tree = from_powershell_src("$foo = 0\nif($false) { $foo = 5 }elseif(unknown) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }elseif(unknown) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -570,7 +550,7 @@ mod test {
 
     #[test]
     fn test_infer_var_use_in_if_elseif_else_statement_predictable_in_else() {
-        let mut tree = from_powershell_src("$foo = 0\nif($false) { $foo = 5 }elseif($false) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }elseif($false) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -602,7 +582,7 @@ mod test {
     #[test]
     fn test_infer_var_use_in_while_statement_use_in_statement() {
         // var is used in the loop statement -> not inferred in the condition and forget
-        let mut tree = from_powershell_src("$a = 1\nwhile($a -gt 0) { $a = $a + 1 }\nWhite-Debug $a").unwrap();
+        let mut tree = build_powershell_tree("$a = 1\nwhile($a -gt 0) { $a = $a + 1 }\nWhite-Debug $a").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),
@@ -634,7 +614,7 @@ mod test {
     #[test]
     fn test_infer_var_use_in_while_statement_not_use_in_statement() {
         // var is used in the loop statement -> not inferred in the condition and forget
-        let mut tree = from_powershell_src("$a = 1\nwhile($a -gt 0) { $b = $a + 1 }\nWhite-Debug $a").unwrap();
+        let mut tree = build_powershell_tree("$a = 1\nwhile($a -gt 0) { $b = $a + 1 }\nWhite-Debug $a").unwrap();
 
         tree.apply_mut_with_strategy(&mut (
             ParseInt::default(),

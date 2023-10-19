@@ -33,7 +33,7 @@ fn get_at_index(s: &str, index: i32) -> Option<String> {
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::linter::Linter;
@@ -42,7 +42,7 @@ fn get_at_index(s: &str, index: i32) -> Option<String> {
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseArrayLiteral;
 ///
-/// let mut tree = from_powershell_src("-join 'abc'[2,1,0]").unwrap();
+/// let mut tree = build_powershell_tree("-join 'abc'[2,1,0]").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     Forward::default(),
@@ -105,7 +105,7 @@ impl<'a> RuleMut<'a> for AccessString {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::integer::ParseInt;
     use ps::string::ParseString;
     use ps::forward::Forward;
@@ -113,7 +113,7 @@ mod test {
 
     #[test]
     fn test_access_string_element_from_int() {
-        let mut tree = from_powershell_src("'abc'[0, 1]").unwrap();
+        let mut tree = build_powershell_tree("'abc'[0, 1]").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -131,7 +131,7 @@ mod test {
 
     #[test]
     fn test_access_string_element_from_negative_int() {
-        let mut tree = from_powershell_src("'abc'[-2, -1]").unwrap();
+        let mut tree = build_powershell_tree("'abc'[-2, -1]").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -149,7 +149,7 @@ mod test {
 
     #[test]
     fn test_access_string_element_from_negative_string() {
-        let mut tree = from_powershell_src("'abc'['-2']").unwrap();
+        let mut tree = build_powershell_tree("'abc'['-2']").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -166,7 +166,7 @@ mod test {
 
     #[test]
     fn test_access_string_element_from_string() {
-        let mut tree = from_powershell_src("'abc'['0']").unwrap();
+        let mut tree = build_powershell_tree("'abc'['0']").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -183,7 +183,7 @@ mod test {
 
     #[test]
     fn test_access_string_multi_element_from_int() {
-        let mut tree = from_powershell_src("'abc'[1, 2]").unwrap();
+        let mut tree = build_powershell_tree("'abc'[1, 2]").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),

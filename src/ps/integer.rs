@@ -15,12 +15,12 @@ use ps::Powershell::Raw;
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::linter::Linter;
 ///
-/// let mut tree = from_powershell_src("4 + 0x5").unwrap();
+/// let mut tree = build_powershell_tree("4 + 0x5").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
@@ -78,12 +78,12 @@ impl<'a> RuleMut<'a> for ParseInt {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::linter::Linter;
 ///
-/// let mut tree = from_powershell_src("4 + 5 - 2").unwrap();
+/// let mut tree = build_powershell_tree("4 + 5 - 2").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
@@ -127,12 +127,12 @@ impl<'a> RuleMut<'a> for AddInt {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, MultInt};
 /// use minusone::ps::linter::Linter;
 ///
-/// let mut tree = from_powershell_src("3 * 4 / 12").unwrap();
+/// let mut tree = build_powershell_tree("3 * 4 / 12").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
@@ -168,12 +168,12 @@ impl<'a> RuleMut<'a> for MultInt {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::forward::Forward;
 
     #[test]
     fn test_add_two_elements() {
-        let mut tree = from_powershell_src("4 + 5").unwrap();
+        let mut tree = build_powershell_tree("4 + 5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -184,7 +184,7 @@ mod test {
 
     #[test]
     fn test_add_three_elements() {
-        let mut tree = from_powershell_src("4 + 5 + 9").unwrap();
+        let mut tree = build_powershell_tree("4 + 5 + 9").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -195,7 +195,7 @@ mod test {
 
     #[test]
     fn test_minus_two_elements() {
-        let mut tree = from_powershell_src("4 - 5").unwrap();
+        let mut tree = build_powershell_tree("4 - 5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -206,7 +206,7 @@ mod test {
 
     #[test]
     fn test_minus_two_elements_with_unary_operators() {
-        let mut tree = from_powershell_src("4 + -5").unwrap();
+        let mut tree = build_powershell_tree("4 + -5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -217,7 +217,7 @@ mod test {
 
     #[test]
     fn test_minus_two_elements_with_two_unary_operators() {
-        let mut tree = from_powershell_src("-4 - 5").unwrap();
+        let mut tree = build_powershell_tree("-4 - 5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -228,7 +228,7 @@ mod test {
 
     #[test]
     fn test_mul_two_elements() {
-        let mut tree = from_powershell_src("4 * 5").unwrap();
+        let mut tree = build_powershell_tree("4 * 5").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()
@@ -239,7 +239,7 @@ mod test {
 
     #[test]
     fn test_mul_three_elements() {
-        let mut tree = from_powershell_src("4 * 5 * 10").unwrap();
+        let mut tree = build_powershell_tree("4 * 5 * 10").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
         assert_eq!(*tree.root().unwrap()
             .child(0).unwrap()

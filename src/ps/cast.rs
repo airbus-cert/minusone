@@ -18,14 +18,14 @@ pub struct Cast;
 /// extern crate tree_sitter_powershell;
 /// extern crate minusone;
 ///
-/// use minusone::ps::from_powershell_src;
+/// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::cast::Cast;
 ///
-/// let mut tree = from_powershell_src("[char]0x61").unwrap();
+/// let mut tree = build_powershell_tree("[char]0x61").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     Forward::default(),
@@ -187,7 +187,7 @@ impl<'a> RuleMut<'a> for CastNull {
 
 #[cfg(test)]
 mod test {
-    use ps::from_powershell_src;
+    use ps::build_powershell_tree;
     use ps::integer::{ParseInt, AddInt};
     use ps::forward::Forward;
     use ps::cast::Cast;
@@ -199,7 +199,7 @@ mod test {
 
     #[test]
     fn test_cast_int_to_char() {
-        let mut tree = from_powershell_src("[char]0x61").unwrap();
+        let mut tree = build_powershell_tree("[char]0x61").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
@@ -215,7 +215,7 @@ mod test {
 
     #[test]
     fn test_cast_char_to_int() {
-        let mut tree = from_powershell_src("[int]'61'").unwrap();
+        let mut tree = build_powershell_tree("[int]'61'").unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             Forward::default(),
@@ -231,7 +231,7 @@ mod test {
 
     #[test]
     fn test_cast_int_additive_to_char() {
-        let mut tree = from_powershell_src("[char](0x61 + 3)").unwrap();
+        let mut tree = build_powershell_tree("[char](0x61 + 3)").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             AddInt::default(),
@@ -248,7 +248,7 @@ mod test {
 
     #[test]
     fn test_cast_int_concat_char() {
-        let mut tree = from_powershell_src("[char]0x74 + [char]0x6f + [char]0x74 + [char]0x6f").unwrap();
+        let mut tree = build_powershell_tree("[char]0x74 + [char]0x6f + [char]0x74 + [char]0x6f").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             ConcatString::default(),
@@ -265,7 +265,7 @@ mod test {
 
     #[test]
     fn test_cast_foreach_char() {
-        let mut tree = from_powershell_src("(0x74, 0x6f, 0x74, 0x6f) | % {[char]$_}").unwrap();
+        let mut tree = build_powershell_tree("(0x74, 0x6f, 0x74, 0x6f) | % {[char]$_}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
