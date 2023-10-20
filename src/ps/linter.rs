@@ -7,6 +7,8 @@ use ps::Value::{Str, Num, Bool};
 pub struct Linter {
     pub output: String,
     tab: String,
+    tab_char: String,
+    new_line_chr: String,
     is_inline_statement: bool
 }
 
@@ -15,6 +17,18 @@ impl Linter {
         Linter {
             output: String::new(),
             tab: String::new(),
+            tab_char: " ".to_string(),
+            new_line_chr: "\n".to_string(),
+            is_inline_statement: false
+        }
+    }
+
+    pub fn from_custom_chr(tab_chr: &str, new_line_chr: &str) -> Self {
+        Linter {
+            output: String::new(),
+            tab: String::new(),
+            tab_char: tab_chr.to_string(),
+            new_line_chr: new_line_chr.to_string(),
             is_inline_statement: false
         }
     }
@@ -67,7 +81,7 @@ impl Linter {
             "comparison_argument_expression" | "bitwise_argument_expression" |
             "logical_argument_expression" | "hash_literal_expression" |
             "do_statement" | "elseif_clauses" |
-            "function_name" => self.space_sep(node, None)?,
+            "function_name" | "foreach_command" => self.space_sep(node, None)?,
 
             "array_literal_expression" | "argument_expression_list" => self.list_sep(node)?,
 
@@ -114,7 +128,7 @@ impl Linter {
             "for_statement" => self.for_statement(node)?,
 
             "function_statement" => {
-                self.output += "\n";
+                self.output += &self.new_line_chr;
                 self.space_sep(node, Some(1))?
             },
 
@@ -198,7 +212,7 @@ impl Linter {
                     _ => ()
                 }
 
-                self.output += "\n";
+                self.output += &self.new_line_chr;
                 self.output += &self.tab;
             }
             else {
@@ -211,7 +225,7 @@ impl Linter {
             if !is_first {
                 match child.kind() {
                     "if_statement" | "try_statement" |
-                    "while_statement" => self.output += "\n",
+                    "while_statement" => self.output += &self.new_line_chr,
                     _ => ()
                 }
             }
@@ -242,13 +256,13 @@ impl Linter {
 
     fn newline_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         let mut child_count = node.child_count();
-        self.output += "\n";
+        self.output += &self.new_line_chr;
         for child in node.iter() {
             self.output += &self.tab;
             self.print(&child)?;
             child_count -= 1;
             if child_count > 0 {
-                self.output += "\n";
+                self.output += &self.new_line_chr;
             }
         }
         Ok(())
@@ -256,16 +270,17 @@ impl Linter {
 
     fn statement_block(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         let old_tab = self.tab.clone();
-        self.tab.push_str(" ");
+        self.tab.push_str(&self.tab_char);
 
-        self.output += "{\n";
+        self.output += "{";
+        self.output += &self.new_line_chr;
         self.output += &self.tab;
 
         if let Some(statement_list) = node.named_child("statement_list") {
             self.statement_list(&statement_list)?;
         }
 
-        self.output += "\n";
+        self.output += &self.new_line_chr;
         self.output += &old_tab;
         self.output += "}";
 
@@ -360,13 +375,13 @@ impl Linter {
     }
 
     fn indent(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        self.output += "\n";
+        self.output += &self.new_line_chr;
         let old_tab = self.tab.clone();
-        self.tab += " ";
+        self.tab += &self.tab_char;
         for child in node.iter() {
             self.output += &self.tab;
             self.print(&child)?;
-            self.output += "\n";
+            self.output += &self.new_line_chr;
         }
         self.tab = old_tab;
         Ok(())
