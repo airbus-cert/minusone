@@ -78,7 +78,8 @@ impl Linter {
             "do_statement" | "elseif_clauses" |
             "function_name" | "foreach_command" => self.space_sep(node, None)?,
 
-            "array_literal_expression" | "argument_expression_list" => self.list_sep(node)?,
+            "array_literal_expression" | "argument_expression_list" |
+            "parameter_list" => self.list_sep(node)?,
 
             "statement_block" => self.statement_block(node)?,
 
@@ -103,7 +104,8 @@ impl Linter {
             "range_expression" | "member_access" |
             "post_increment_expression" | "post_decrement_expression" |
             "type_literal" | "cast_expression" |
-            "member_name" | "expression_with_unary_operator" => self.transparent(node)?,
+            "member_name" | "expression_with_unary_operator" |
+            "script_parameter" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 
@@ -127,7 +129,10 @@ impl Linter {
                 self.space_sep(node, Some(1))?
             },
 
-            "function_parameter_declaration" | "param_block" => self.space_sep(node, Some(1))?,
+            "function_parameter_declaration" | "param_block" => {
+                self.space_sep(node, Some(2))?;
+                self.output += &self.new_line_chr;
+            },
 
             "statement_list" => {
                 if self.is_inline_statement {

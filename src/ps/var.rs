@@ -272,6 +272,9 @@ impl<'a> RuleMut<'a> for StaticVar {
                 "$null" => {
                     node.set(Null)
                 },
+                "$pshome" => {
+                    node.set(Raw(Str(String::from("C:\\Windows\\System32\\WindowsPowerShell\\v1.0"))))
+                },
                 _ => ()
             }
         }
