@@ -76,7 +76,8 @@ impl Linter {
             "comparison_argument_expression" | "bitwise_argument_expression" |
             "logical_argument_expression" | "hash_literal_expression" |
             "do_statement" | "elseif_clauses" |
-            "function_name" | "foreach_command" => self.space_sep(node, None)?,
+            "function_name" | "foreach_command" |
+            "flow_control_statement" => self.space_sep(node, None)?,
 
             "array_literal_expression" | "argument_expression_list" |
             "parameter_list" => self.list_sep(node)?,
