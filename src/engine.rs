@@ -32,8 +32,8 @@ impl<'a> Engine<'a, HashMapStorage<ps::Powershell>>  {
         Ok(ps_litter_view.output)
     }
 
-    pub fn lint_custom_chr(&mut self, tab_chr: &str, new_line_chr: &str) -> MinusOneResult<String> {
-        let mut ps_litter_view = ps::linter::Linter::from_custom_chr(tab_chr, new_line_chr);
+    pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
+        let mut ps_litter_view = ps::linter::Linter::new().tab(tab_chr);
         ps_litter_view.print(&self.root.root()?)?;
         Ok(ps_litter_view.output)
     }

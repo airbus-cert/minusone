@@ -23,14 +23,9 @@ impl Linter {
         }
     }
 
-    pub fn from_custom_chr(tab_chr: &str, new_line_chr: &str) -> Self {
-        Linter {
-            output: String::new(),
-            tab: String::new(),
-            tab_char: tab_chr.to_string(),
-            new_line_chr: new_line_chr.to_string(),
-            is_inline_statement: false
-        }
+    pub fn tab(mut self, tab_chr: &str) -> Self{
+        self.tab_char = tab_chr.to_string();
+        self
     }
 
     pub fn print(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {

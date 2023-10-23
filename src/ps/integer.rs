@@ -156,7 +156,11 @@ impl<'a> RuleMut<'a> for MultInt {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
                     (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left * number_right))),
-                    (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => node.set(Raw(Num((number_left / number_right) as i32))),
+                    (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {
+                        if *number_right != 0 {
+                            node.set(Raw(Num((number_left / number_right) as i32)))
+                        }
+                    },
                     _ => {}
                 }
             }
