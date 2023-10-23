@@ -82,33 +82,33 @@ pub enum Powershell {
 /// inferred type in Powershell deobfuscation
 
 pub type RuleSet = (
-    Forward,
-    ParseInt,
-    AddInt,
-    MultInt,
-    ParseString,
-    ConcatString,
-    Var,
-    Cast,
-    ParseArrayLiteral,
-    ParseRange,
-    AccessString,
-    JoinComparison,
-    JoinStringMethod,
-    JoinOperator,
-    PSItemInferrator,
-    ForEach,
-    StringReplaceMethod,
-    ComputeArrayExpr,
-    StringReplaceOp,
-    StaticVar,
-    CastNull,
-    ParseHash,
-    FormatString,
-    ParseBool,
-    Comparison,
-    ArrayLength,
-    Not
+    Forward,                // Special rule that will forward inferred value in case the node is transparent
+    ParseInt,               // Parse integer
+    AddInt,                 // +, - operations on integer
+    MultInt,                // *, / operations on integer
+    ParseString,            // Parse string token, including multiline strings
+    ConcatString,           // String concatenation operation
+    Var,                    // Variable replacement in case of predictable flow
+    Cast,                   // cast operation, like [char]0x65
+    ParseArrayLiteral,      // It will parse array declared using separate value (integer or string) by a comma
+    ParseRange,             // It will parse .. operator and generate an array
+    AccessString,           // The access operator [] apply to a string : "foo"[0] => "f"
+    JoinComparison,         // It will infer join string operation using the -join operator : @('a', 'b', 'c') -join '' => "abc"
+    JoinStringMethod,       // It will infer join string operation using the [string]::join method : [string]::join('', @('a', 'b', 'c'))
+    JoinOperator,           // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
+    PSItemInferrator,       // PsItem is used to inferred commandlet pattern like % { [char] $_ }
+    ForEach,                // It will used PSItem rules to inferred foreach-object command
+    StringReplaceMethod,    // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
+    ComputeArrayExpr,       // It will infer array that start with @
+    StringReplaceOp,        // It will infer replace method apply to a string by using the -replace operator
+    StaticVar,              // It will infer value of known variable : $pshome, $shellid
+    CastNull,               // It will infer value of +$() or -$() which will produce 0
+    ParseHash,              // Parse hashtable
+    FormatString,           // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
+    ParseBool,              // It will infer boolean operator
+    Comparison,             // It will infer comparison when it's possible
+    ArrayLength,            // It will infer length value of a predictable array
+    Not                     // It will infer the ! operator
 );
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
