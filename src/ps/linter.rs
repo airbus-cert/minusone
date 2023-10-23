@@ -34,7 +34,7 @@ impl Linter {
             match inferred_type {
                 Raw(Str(str)) => {
                     self.output += "\"";
-                    self.output += str;
+                    self.output += &str.replace("\"", "`\"");
                     self.output += "\"";
                     return Ok(());
                 }
