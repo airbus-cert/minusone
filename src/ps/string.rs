@@ -22,16 +22,20 @@ impl<'a> RuleMut<'a> for ParseString {
             "verbatim_string_characters" => {
                 let value = String::from(view.text()?);
                 // Parse string by removing the double quote
-                node.set(Raw(Str(String::from(&value[1..value.len() - 1]))));
+                node.set(Raw(Str(String::from(&value[1..value.len() - 1]).replace("''", "'"))));
             },
             "expandable_string_literal" => {
                 // expand what is expandable
                 let value = String::from(view.text()?);
                 // Parse string by removing the double quote
-                let mut result = String::from(&value[1..value.len() - 1]);
+                let mut result = String::from(&value[1..value.len() - 1]).replace("\"\"", "\"");
 
                 // last child is the token \"
                 for child in view.range(None, Some(view.child_count() - 1), None) {
+                    if child.text()? == "\"\"" {
+                        continue;
+                    }
+
                     if let Some(v) = child.data() {
                         match v {
                             Raw(Str(s)) => {
@@ -53,7 +57,6 @@ impl<'a> RuleMut<'a> for ParseString {
                         }
                     }
                     else {
-
                         // the expandable string have non inferred child
                         // so can't be inferred
                         return Ok(())
