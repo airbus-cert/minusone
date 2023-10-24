@@ -4,6 +4,22 @@ use error::{MinusOneResult, Error};
 use ps::Powershell::Raw;
 use ps::Value::{Str, Num, Bool};
 
+fn escape_string(src: &str) -> String {
+    let mut result = String::new();
+    let mut previous = None;
+    for c in src.chars() {
+        if c == '"' {
+            if previous != Some('`') {
+                result.push('`');
+            }
+        }
+        result.push(c);
+        previous = Some(c);
+    }
+    result
+}
+
+
 pub struct Linter {
     pub output: String,
     tab: String,
@@ -34,7 +50,7 @@ impl Linter {
             match inferred_type {
                 Raw(Str(str)) => {
                     self.output += "\"";
-                    self.output += &str.replace("\"", "`\"");
+                    self.output += &escape_string(str);
                     self.output += "\"";
                     return Ok(());
                 }
