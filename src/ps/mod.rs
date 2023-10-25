@@ -7,12 +7,13 @@ use error::MinusOneResult;
 use tree::{Tree, HashMapStorage};
 use ps::var::{Var, StaticVar};
 use ps::cast::{Cast, CastNull};
-use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr, ArrayLength};
+use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr};
 use ps::access::AccessString;
 use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
 use ps::foreach::{PSItemInferrator, ForEach};
 use ps::hash::ParseHash;
 use ps::bool::{ParseBool, Comparison, Not};
+use ps::method::Length;
 
 pub mod string;
 pub mod integer;
@@ -27,6 +28,7 @@ pub mod join;
 pub mod hash;
 pub mod bool;
 pub mod strategy;
+pub mod method;
 
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
@@ -107,7 +109,7 @@ pub type RuleSet = (
     FormatString,           // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
     ParseBool,              // It will infer boolean operator
     Comparison,             // It will infer comparison when it's possible
-    ArrayLength,            // It will infer length value of a predictable array
+    Length,                 // It will infer length value of a predictable array or string
     Not                     // It will infer the ! operator
 );
 
