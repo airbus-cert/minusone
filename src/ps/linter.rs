@@ -8,10 +8,8 @@ fn escape_string(src: &str) -> String {
     let mut result = String::new();
     let mut previous = None;
     for c in src.chars() {
-        if c == '"' {
-            if previous != Some('`') {
-                result.push('`');
-            }
+        if c == '"' && previous != Some('`'){
+            result.push('`');
         }
         result.push(c);
         previous = Some(c);
@@ -182,9 +180,8 @@ impl Linter {
     fn space_sep(&mut self, node: &Node<Powershell>, end: Option<usize>) -> MinusOneResult<()>{
         let mut nb_childs = node.child_count() - end.unwrap_or(0);
         for child in node.iter() {
-            if nb_childs > 0 {
-                nb_childs -= 1;
-            }
+
+            nb_childs = nb_childs.saturating_sub(1);
 
             if child.kind() == "command_argument_sep" {
                 continue;
@@ -430,17 +427,22 @@ impl Linter {
                         // handle multiple elseif clause
                         for elsif_clause in elsif_clauses.iter() {
                             if let Some(elsif_condition) = elsif_clause.named_child("condition") {
-                                if elsif_condition.data() == Some(&Raw(Bool(true))) {
-                                    let statement_block = elsif_clause.child(4).ok_or(Error::invalid_child())?;
-                                    if let Some(statement_list) = statement_block.named_child("statement_list") {
-                                        self.statement_list(&statement_list)?;
+
+                                match elsif_condition.data() {
+                                    Some(&Raw(Bool(true))) => {
+                                        let statement_block = elsif_clause.child(4).ok_or(Error::invalid_child())?;
+                                        if let Some(statement_list) = statement_block.named_child("statement_list") {
+                                            self.statement_list(&statement_list)?;
+                                        }
+                                        return Ok(());
+                                    },
+                                    Some(&Raw(Bool(false))) => {
+                                        continue;
+                                    },
+                                    _ => {
+                                        self.space_sep(node, None)?;
+                                        return Ok(());
                                     }
-                                    return Ok(());
-                                }
-                                else {
-                                    // Normal rendering
-                                    self.space_sep(node, None)?;
-                                    return Ok(());
                                 }
                             }
                             else {

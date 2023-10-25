@@ -312,7 +312,8 @@ impl<'a, T> Node<'a, T> {
 
             current += 1;
         }
-        return None;
+        
+        None
     }
 
     pub fn named_child(&self, index: &str) -> Option<Node<'a, T>> {

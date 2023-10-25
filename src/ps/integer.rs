@@ -158,7 +158,7 @@ impl<'a> RuleMut<'a> for MultInt {
                     (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left * number_right))),
                     (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {
                         if *number_right != 0 {
-                            node.set(Raw(Num((number_left / number_right) as i32)))
+                            node.set(Raw(Num(number_left / number_right)))
                         }
                     },
                     _ => {}

@@ -48,7 +48,7 @@ impl ToString for Value {
 }
 
 impl Value {
-    fn to_i32(self) -> Option<i32> {
+    fn to_i32(&self) -> Option<i32> {
         match self {
             Value::Str(s) => {
                 if let Ok(number) = s.parse::<i32>() {
@@ -62,7 +62,7 @@ impl Value {
                 }
             },
             Value::Num(i) => {
-                Some(i)
+                Some(*i)
             },
             Value::Bool(_) => None
         }

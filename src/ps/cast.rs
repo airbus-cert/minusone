@@ -59,13 +59,13 @@ impl<'a> RuleMut<'a> for Cast {
                     {
                         ("int", Some(Raw(v))) => {
                             if let Some(number) = v.clone().to_i32() {
-                                node.set(Raw(Num(number as i32)));
+                                node.set(Raw(Num(number)));
                             }
                         },
                         ("byte", Some(Raw(v))) => {
                             if let Some(number) = v.clone().to_i32() {
                                 if number < 256 && number > 0 {
-                                    node.set(Raw(Num(number as i32)));
+                                    node.set(Raw(Num(number)));
                                 }
                             }
                         },
@@ -91,7 +91,7 @@ impl<'a> RuleMut<'a> for Cast {
                             for v in values {
                                 if let Some(n) = v.clone().to_i32() {
                                     // invalid cast
-                                    if n < 0 || n > 255 {
+                                    if !(0..=255).contains(&n) {
                                         return Ok(())
                                     }
                                     result.push(Num(n));
@@ -112,7 +112,7 @@ impl<'a> RuleMut<'a> for Cast {
                                     _ => None
                                 };
 
-                                if casted_value == None {
+                                if casted_value.is_none() {
                                     // Failed to cast -> stop the rule
                                     return Ok(())
                                 }
@@ -125,7 +125,7 @@ impl<'a> RuleMut<'a> for Cast {
                             node.set(Raw(Bool(*v != 0)));
                         },
                         ("bool", Some(Raw(Str(v)))) => {
-                            node.set(Raw(Bool(v.len() != 0)));
+                            node.set(Raw(Bool(!v.is_empty())));
                         },
                         ("bool", Some(Raw(Bool(v)))) => {
                             node.set(Raw(Bool(*v)));

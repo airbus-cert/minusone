@@ -76,18 +76,18 @@ impl<'a> RuleMut<'a> for Comparison {
                         node.set(Raw(Bool((left_value == "True" && *right_value == true) || (left_value == "False" && *right_value == false))))
                     },
                     (Some(Raw(Bool(left_value))), "-eq", Some(Raw(Str(right_value)))) => {
-                        node.set(Raw(Bool((right_value.len() != 0 && *left_value) || (right_value.len() == 0 && !*left_value))))
+                        node.set(Raw(Bool((!right_value.is_empty() && *left_value) || (right_value.is_empty() && !*left_value))))
                     },
                     (Some(Raw(Str(left_value))), "-ne", Some(Raw(Bool(right_value)))) => {
                         node.set(Raw(Bool(!((left_value == "True" && *right_value == true) || (left_value == "False" && *right_value == false)))))
                     },
                     (Some(Raw(Bool(left_value))), "-ne", Some(Raw(Str(right_value)))) => {
-                        node.set(Raw(Bool(!((right_value.len() != 0 && *left_value) || (right_value.len() == 0 && !*left_value)))))
+                        node.set(Raw(Bool(!((!right_value.is_empty() && *left_value) || (right_value.is_empty() && !*left_value)))))
                     },
 
                     // true or false compare to string
                     (Some(Raw(Bool(true))), "-gt", Some(Raw(Str(right_value)))) => {
-                        node.set(Raw(Bool(right_value.len()==0)))
+                        node.set(Raw(Bool(right_value.is_empty())))
                     },
                     (Some(Raw(Bool(true))), "-ge", Some(Raw(Str(_)))) => {
                         node.set(Raw(Bool(true)))
