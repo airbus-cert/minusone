@@ -14,6 +14,7 @@ use ps::foreach::{PSItemInferrator, ForEach};
 use ps::hash::ParseHash;
 use ps::bool::{ParseBool, Comparison, Not};
 use ps::method::Length;
+use ps::typing::ParseType;
 
 pub mod string;
 pub mod integer;
@@ -29,6 +30,7 @@ pub mod hash;
 pub mod bool;
 pub mod strategy;
 pub mod method;
+pub mod typing;
 
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
@@ -77,7 +79,8 @@ pub enum Powershell {
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
-    HashMap // We don't infer this time, but it's planed
+    HashMap, // We don't infer this time, but it's planed
+    Type(String) // Will infer type
 }
 
 /// This is the rule set use to perform
@@ -110,7 +113,8 @@ pub type RuleSet = (
     ParseBool,              // It will infer boolean operator
     Comparison,             // It will infer comparison when it's possible
     Length,                 // It will infer length value of a predictable array or string
-    Not                     // It will infer the ! operator
+    Not,                    // It will infer the ! operator
+    ParseType               // Parse type
 );
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
