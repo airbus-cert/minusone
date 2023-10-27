@@ -1,6 +1,6 @@
 use error::MinusOneResult;
 use ps::Powershell;
-use ps::Powershell::{Array, Raw};
+use ps::Powershell::{Array, Raw, Type};
 use ps::Value::{Num, Str};
 use rule::RuleMut;
 use tree::{BranchFlow, NodeMut};
@@ -29,15 +29,26 @@ impl<'a> RuleMut<'a> for FromUTF {
             if let (Some(member_access), Some(op), Some(member_name)) =
                 (view.child(0), view.child(1), view.child(2))
             {
+                if member_access.kind() != "member_access" {
+                    return Ok(());
+                }
+
                 match (
-                    member_access.text()?.to_lowercase().as_str(),
+                    member_access.child(0).unwrap().data(),
+                    member_access
+                        .child(2)
+                        .unwrap()
+                        .text()?
+                        .to_lowercase()
+                        .as_str(),
                     op.text()?,
                     member_name.text()?.to_lowercase().as_str(),
                 ) {
-                    ("[system.text.encoding]::utf8", ".", "getstring")
-                    | ("[text.encoding]::utf8", ".", "getstring")
-                    | ("[system.text.encoding]::unicode", ".", "getstring")
-                    | ("[text.encoding]::unicode", ".", "getstring") => {
+                    (Some(Type(typename)), member_name, ".", "getstring")
+                    | (Some(Type(typename)), member_name, ".", "getstring")
+                        if (typename == "system.text.encoding" || typename == "text.encoding")
+                            && (member_name == "utf8" || member_name == "unicode") =>
+                    {
                         let arg_list = view.child(3).unwrap().child(1).unwrap().child(0).unwrap();
 
                         match arg_list.data() {
@@ -55,8 +66,9 @@ impl<'a> RuleMut<'a> for FromUTF {
                             _ => {}
                         }
                     }
-                    ("[system.text.encoding]::utf16", ".", "getstring")
-                    | ("[text.encoding]::utf16", ".", "getstring") => {
+                    (Some(Type(typename)), "utf16", ".", "getstring")
+                        if typename == "system.text.encoding" || typename == "text.encoding" =>
+                    {
                         let arg_list = view.child(3).unwrap().child(1).unwrap().child(0).unwrap();
 
                         match arg_list.data() {

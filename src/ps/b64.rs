@@ -3,7 +3,7 @@ extern crate base64;
 use self::base64::{engine::general_purpose, Engine as _};
 use error::MinusOneResult;
 use ps::Powershell;
-use ps::Powershell::{Array, Raw};
+use ps::Powershell::{Array, Raw, Type};
 use ps::Value::{Num, Str};
 use rule::RuleMut;
 use tree::{BranchFlow, NodeMut};
@@ -33,12 +33,13 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 match (
-                    type_lit.text()?.to_lowercase().as_str(),
+                    type_lit.data(),
                     op.text()?,
                     member_name.text()?.to_lowercase().as_str(),
                 ) {
-                    ("[system.convert]", "::", "frombase64string")
-                    | ("[convert]", "::", "frombase64string") => {
+                    (Some(Type(typename)), "::", "frombase64string")
+                        if typename == "system.convert" || typename == "convert" =>
+                    {
                         // get the argument list if present
                         if let Some(argument_expression_list) =
                             args_list.named_child("argument_expression_list")
