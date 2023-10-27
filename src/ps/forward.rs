@@ -96,6 +96,13 @@ impl<'a> RuleMut<'a> for Forward {
                     }
                 }
             },
+            "type_literal" => {
+                if let Some(expression) = view.child(1) {
+                    if let Some(expression_data) = expression.data() {
+                        node.set(expression_data.clone())
+                    }
+                }
+            },
             _ => ()
         }
 

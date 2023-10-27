@@ -1,6 +1,6 @@
 use error::MinusOneResult;
 use ps::access::AccessString;
-use ps::array::{ArrayLength, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
+use ps::array::{ComputeArrayExpr, ParseArrayLiteral, ParseRange};
 use ps::b64::DecodeBase64;
 use ps::bool::{Comparison, Not, ParseBool};
 use ps::cast::{Cast, CastNull};
@@ -11,6 +11,7 @@ use ps::hash::ParseHash;
 use ps::integer::{AddInt, MultInt, ParseInt};
 use ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
 use ps::string::{ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp};
+use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
 use tree_sitter;
@@ -28,8 +29,10 @@ pub mod hash;
 pub mod integer;
 pub mod join;
 pub mod linter;
+pub mod method;
 pub mod strategy;
 pub mod string;
+pub mod typing;
 pub mod var;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
@@ -51,7 +54,7 @@ impl ToString for Value {
 }
 
 impl Value {
-    fn to_i32(self) -> Option<i32> {
+    fn to_i32(&self) -> Option<i32> {
         match self {
             Value::Str(s) => {
                 if let Ok(number) = s.parse::<i32>() {
@@ -62,7 +65,7 @@ impl Value {
                     None
                 }
             }
-            Value::Num(i) => Some(i),
+            Value::Num(i) => Some(*i),
             Value::Bool(_) => None,
         }
     }
@@ -74,7 +77,8 @@ pub enum Powershell {
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
-    HashMap, // We don't infer this time, but it's planed
+    HashMap,      // We don't infer this time, but it's planed
+    Type(String), // Will infer type
 }
 
 /// This is the rule set use to perform
@@ -106,8 +110,8 @@ pub type RuleSet = (
     FormatString, // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
     ParseBool,    // It will infer boolean operator
     Comparison,   // It will infer comparison when it's possible
-    ArrayLength,  // It will infer length value of a predictable array
     Not,          // It will infer the ! operator
+    ParseType,    // Parse type
     DecodeBase64, // Decodes calls to FromBase64
     FromUTF,      // Decode calls to FromUTF{8,16}.GetText
 );

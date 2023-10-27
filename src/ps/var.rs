@@ -44,7 +44,7 @@ pub struct Var {
 }
 
 impl Var {
-    fn forget_assigned_var<'a, T>(&mut self, node: &Node<'a, T>) -> MinusOneResult<()> {
+    fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             if child.kind() == "variable" {
                 if child.get_parent_of_types(vec![
@@ -53,7 +53,7 @@ impl Var {
                     "pre_decrement_expression",
                     "post_increment_expression",
                     "post_decrement_expression"
-                ]) != None {
+                ]).is_some() {
                     self.scope_manager.current().forget(child.text()?.to_lowercase().as_str());
                 }
             }
@@ -127,10 +127,10 @@ impl<'a> RuleMut<'a> for Var {
                     let var_name = variable.text()?.to_lowercase();
                     if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(&var_name) {
                         if view.kind() == "pre_increment_expression" {
-                            *v = *v + 1;
+                            *v += 1;
                         }
                         else {
-                            *v = *v - 1;
+                            *v -= 1;
                         }
                     }
                     else {
@@ -168,7 +168,7 @@ impl<'a> RuleMut<'a> for Var {
                 // check if we are not on the left part of an assignment expression
                 // already handle by the previous case
                 // We also exclude member_access for now
-                if view.get_parent_of_types(vec!["left_assignment_expression"]) == None {
+                if view.get_parent_of_types(vec!["left_assignment_expression"]).is_none() {
                     let var_name = view.text()?.to_lowercase();
                     // Try to assign variable member
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
@@ -200,10 +200,10 @@ impl<'a> RuleMut<'a> for Var {
                         }
                         // ... assign it
                         if kind == "post_increment_expression" {
-                            *v = *v + 1;
+                            *v += 1;
                         }
                         else {
-                            *v = *v - 1;
+                            *v -= 1;
                         }
                     }
                     else {

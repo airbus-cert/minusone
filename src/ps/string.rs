@@ -225,10 +225,8 @@ impl<'a> RuleMut<'a> for FormatString {
                 match (format_str_node.data(), format_args_node.data()) {
                     (Some(Raw(Str(format_str))), Some(Array(format_args))) => {
                         let mut result = format_str.clone();
-                        let mut index = 0;
-                        for new in format_args.iter() {
+                        for (index, new) in format_args.iter().enumerate() {
                             result = result.replace(format!("{{{}}}", index).as_str(), new.to_string().as_str());
-                            index += 1;
                         }
                         node.set(Raw(Str(result)));
                     },

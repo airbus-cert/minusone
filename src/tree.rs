@@ -131,7 +131,6 @@ impl<T> Storage for HashMapStorage<T> {
     fn start(&mut self) {
         self.is_updated = false;
     }
-
     fn end(&mut self) -> bool {
         self.is_updated
     }
@@ -223,7 +222,54 @@ impl<'a, T> NodeMut<'a, T> {
         self.storage.set(self.inner, data)
     }
 
-    fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
+    /// Apply a rule to each node by sequentially visit the tree
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow};
+    /// use minusone::rule::RuleMut;
+    /// use minusone::error::MinusOneResult;
+    ///
+    ///
+    /// #[derive(Default)]
+    /// pub struct MyRule;
+    /// // This rule will only try to parse the text of each token to recognize a u32
+    /// impl<'a> RuleMut<'a> for MyRule {
+    ///     type Language = u32;
+    ///
+    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///         let view = node.view();
+    ///         if let Ok(number) = view.text().unwrap().parse::<u32>() {
+    ///             node.set(number);
+    ///         }
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let source = "5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+    ///
+    /// node.apply(&mut MyRule::default()).unwrap();
+    ///
+    /// assert_eq!(node.view().data(), Some(&5));
+    /// ```
+    pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
         rule.enter(self, BranchFlow::Unpredictable)?;
         let mut cursor = self.inner.walk();
         let current_node = self.inner;
@@ -237,7 +283,70 @@ impl<'a, T> NodeMut<'a, T> {
         Ok(())
     }
 
-    fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: BranchFlow) -> MinusOneResult<()> {
+    /// Apply a rule to each node by sequentially visit the tree
+    /// But some part of the tree could not be visited depending
+    /// of the strategy
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
+    /// use minusone::rule::RuleMut;
+    /// use minusone::error::MinusOneResult;
+    /// use minusone::tree::ControlFlow::Branch;
+    /// use minusone::tree::BranchFlow::Predictable;
+    ///
+    ///
+    /// #[derive(Default)]
+    /// pub struct MyRule;
+    /// // This rule will only try to parse the text of each token to recognize a u32
+    /// impl<'a> RuleMut<'a> for MyRule {
+    ///     type Language = u32;
+    ///
+    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///         let view = node.view();
+    ///         if let Ok(number) = view.text().unwrap().parse::<u32>() {
+    ///             if flow == BranchFlow::Predictable {
+    ///                 node.set(number);
+    ///             }
+    ///         }
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// #[derive(Default)]
+    /// pub struct MyStrategy;
+    ///
+    /// impl Strategy<u32> for MyStrategy {
+    ///     fn control(&self, node: Node<u32>) -> MinusOneResult<ControlFlow> {
+    ///         Ok(Branch(Predictable))
+    ///     }
+    /// }
+    ///
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let source = "5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+    ///
+    /// node.apply_with_strategy(&mut MyRule::default(), &MyStrategy::default(), Predictable).unwrap();
+    ///
+    /// assert_eq!(node.view().data(), Some(&5));
+    /// ```
+    pub fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: BranchFlow) -> MinusOneResult<()> {
         let mut computed_flow = flow;
         match strategy.control(self.view())? {
             // Execution flow detected
@@ -301,7 +410,7 @@ impl<'a, T> Node<'a, T> {
                 break
             }
 
-            // ignore extra node when requesting child at particumar index
+            // ignore extra node when requesting child at particular index
             if child.unwrap().is_extra() {
                 continue;
             }
@@ -312,7 +421,8 @@ impl<'a, T> Node<'a, T> {
 
             current += 1;
         }
-        return None;
+
+        None
     }
 
     pub fn named_child(&self, index: &str) -> Option<Node<'a, T>> {
@@ -432,10 +542,15 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     }
 }
 
+/// A branch flow will inform a rule
+/// on the status of the strategy
+/// If the node the rule is visiting is part of
+/// a predictable (sure this branch will be executed)
+/// to unpredictable (maybe depend of the execution)
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BranchFlow {
-    Predictable,
-    Unpredictable
+    Predictable,    // This branch is sure to be executed at runtime
+    Unpredictable   // This branch could be executed depending of runtime context
 }
 
 impl ops::BitOr<BranchFlow> for BranchFlow {
@@ -451,13 +566,17 @@ impl ops::BitOr<BranchFlow> for BranchFlow {
     }
 }
 
+/// Strategy control flow
 pub enum ControlFlow {
-    Branch(BranchFlow),
-    Break,
-    Continue
+    Branch(BranchFlow), // We are visiting a branch
+    Break,              // We don't want to continue the visit of the tree
+    Continue            // We want to continue the visit
 }
 
+/// A strategy will decide how to visit a tree
+/// Depending of the current node before visiting it
 pub trait Strategy<T> {
+    /// This is the main function that will control the visit flo
     fn control(&self, node: Node<T>) -> MinusOneResult<ControlFlow>;
 }
 

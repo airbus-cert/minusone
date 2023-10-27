@@ -210,7 +210,7 @@ pub type RuleSet = (
     FormatString,           // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
     ParseBool,              // It will infer boolean operator
     Comparison,             // It will infer comparison when it's possible
-    ArrayLength,            // It will infer length value of a predictable array
+    Length,                 // It will infer length value of a predictable array or string
     Not                     // It will infer the ! operator
 );
 ```

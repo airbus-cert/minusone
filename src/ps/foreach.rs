@@ -192,7 +192,7 @@ impl<'a> RuleMut<'a> for ForEach {
                                     }
                                 }
                             }
-                            if result.len() > 0 {
+                            if !result.is_empty() {
                                 node.set(Array(result));
                             }
                         }
