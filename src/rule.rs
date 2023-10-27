@@ -1,13 +1,19 @@
-use tree::{NodeMut, Node, BranchFlow};
 use error::MinusOneResult;
-
+use tree::{BranchFlow, Node, NodeMut};
 
 pub trait RuleMut<'a> {
     type Language;
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>;
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>;
+    fn enter(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: BranchFlow,
+    ) -> MinusOneResult<()>;
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: BranchFlow,
+    ) -> MinusOneResult<()>;
 }
-
 
 /// Rule that will not change the node component
 /// Use for displaying or statistic
@@ -15,10 +21,9 @@ pub trait RuleMut<'a> {
 /// te down to top exploring is handling by the leave function
 pub trait Rule<'a> {
     type Language;
-    fn enter(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<bool>;
-    fn leave(&mut self, node : &Node<'a, Self::Language>) -> MinusOneResult<()>;
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool>;
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()>;
 }
-
 
 macro_rules! impl_data {
     ( $($ty:ident),* ) => {
@@ -78,5 +83,6 @@ mod impl_data {
     impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y);
     impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z);
     impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA);
+    impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB);
+    impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC);
 }
-

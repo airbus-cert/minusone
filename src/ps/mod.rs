@@ -1,39 +1,42 @@
+use error::MinusOneResult;
+use ps::access::AccessString;
+use ps::array::{ArrayLength, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
+use ps::b64::DecodeBase64;
+use ps::bool::{Comparison, Not, ParseBool};
+use ps::cast::{Cast, CastNull};
+use ps::foreach::{ForEach, PSItemInferrator};
+use ps::forward::Forward;
+use ps::fromutf::FromUTF;
+use ps::hash::ParseHash;
+use ps::integer::{AddInt, MultInt, ParseInt};
+use ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
+use ps::string::{ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp};
+use ps::var::{StaticVar, Var};
+use tree::{HashMapStorage, Tree};
 use tree_sitter;
 use tree_sitter_powershell::language as powershell_language;
-use ps::integer::{ParseInt, AddInt, MultInt};
-use ps::forward::Forward;
-use ps::string::{ParseString, ConcatString, StringReplaceMethod, StringReplaceOp, FormatString};
-use error::MinusOneResult;
-use tree::{Tree, HashMapStorage};
-use ps::var::{Var, StaticVar};
-use ps::cast::{Cast, CastNull};
-use ps::array::{ParseArrayLiteral, ParseRange, ComputeArrayExpr, ArrayLength};
-use ps::access::AccessString;
-use ps::join::{JoinComparison, JoinStringMethod, JoinOperator};
-use ps::foreach::{PSItemInferrator, ForEach};
-use ps::hash::ParseHash;
-use ps::bool::{ParseBool, Comparison, Not};
 
-pub mod string;
-pub mod integer;
-pub mod forward;
-pub mod var;
-pub mod linter;
-pub mod cast;
-pub mod array;
-pub mod foreach;
 pub mod access;
-pub mod join;
-pub mod hash;
+pub mod array;
+pub mod b64;
 pub mod bool;
+pub mod cast;
+pub mod foreach;
+pub mod forward;
+pub mod fromutf;
+pub mod hash;
+pub mod integer;
+pub mod join;
+pub mod linter;
 pub mod strategy;
-
+pub mod string;
+pub mod var;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub enum Value {
     Num(i32),
     Str(String),
-    Bool(bool)
+    Bool(bool),
 }
 
 impl ToString for Value {
@@ -42,7 +45,7 @@ impl ToString for Value {
             Value::Num(e) => e.to_string(),
             Value::Str(s) => s.clone(),
             Value::Bool(true) => "True".to_string(),
-            Value::Bool(false) => "False".to_string()
+            Value::Bool(false) => "False".to_string(),
         }
     }
 }
@@ -53,18 +56,14 @@ impl Value {
             Value::Str(s) => {
                 if let Ok(number) = s.parse::<i32>() {
                     Some(number)
-                }
-                else if s.len() > 2 {
+                } else if s.len() > 2 {
                     u32::from_str_radix(&s[2..], 16).map(|e| e as i32).ok()
-                }
-                else {
+                } else {
                     None
                 }
-            },
-            Value::Num(i) => {
-                Some(i)
-            },
-            Value::Bool(_) => None
+            }
+            Value::Num(i) => Some(i),
+            Value::Bool(_) => None,
         }
     }
 }
@@ -75,40 +74,42 @@ pub enum Powershell {
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
-    HashMap // We don't infer this time, but it's planed
+    HashMap, // We don't infer this time, but it's planed
 }
 
 /// This is the rule set use to perform
 /// inferred type in Powershell deobfuscation
 
 pub type RuleSet = (
-    Forward,                // Special rule that will forward inferred value in case the node is transparent
-    ParseInt,               // Parse integer
-    AddInt,                 // +, - operations on integer
-    MultInt,                // *, / operations on integer
-    ParseString,            // Parse string token, including multiline strings
-    ConcatString,           // String concatenation operation
-    Var,                    // Variable replacement in case of predictable flow
-    Cast,                   // cast operation, like [char]0x65
-    ParseArrayLiteral,      // It will parse array declared using separate value (integer or string) by a comma
-    ParseRange,             // It will parse .. operator and generate an array
-    AccessString,           // The access operator [] apply to a string : "foo"[0] => "f"
-    JoinComparison,         // It will infer join string operation using the -join operator : @('a', 'b', 'c') -join '' => "abc"
-    JoinStringMethod,       // It will infer join string operation using the [string]::join method : [string]::join('', @('a', 'b', 'c'))
-    JoinOperator,           // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
-    PSItemInferrator,       // PsItem is used to inferred commandlet pattern like % { [char] $_ }
-    ForEach,                // It will used PSItem rules to inferred foreach-object command
-    StringReplaceMethod,    // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
-    ComputeArrayExpr,       // It will infer array that start with @
-    StringReplaceOp,        // It will infer replace method apply to a string by using the -replace operator
-    StaticVar,              // It will infer value of known variable : $pshome, $shellid
-    CastNull,               // It will infer value of +$() or -$() which will produce 0
-    ParseHash,              // Parse hashtable
-    FormatString,           // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
-    ParseBool,              // It will infer boolean operator
-    Comparison,             // It will infer comparison when it's possible
-    ArrayLength,            // It will infer length value of a predictable array
-    Not                     // It will infer the ! operator
+    Forward,      // Special rule that will forward inferred value in case the node is transparent
+    ParseInt,     // Parse integer
+    AddInt,       // +, - operations on integer
+    MultInt,      // *, / operations on integer
+    ParseString,  // Parse string token, including multiline strings
+    ConcatString, // String concatenation operation
+    Var,          // Variable replacement in case of predictable flow
+    Cast,         // cast operation, like [char]0x65
+    ParseArrayLiteral, // It will parse array declared using separate value (integer or string) by a comma
+    ParseRange,        // It will parse .. operator and generate an array
+    AccessString,      // The access operator [] apply to a string : "foo"[0] => "f"
+    JoinComparison, // It will infer join string operation using the -join operator : @('a', 'b', 'c') -join '' => "abc"
+    JoinStringMethod, // It will infer join string operation using the [string]::join method : [string]::join('', @('a', 'b', 'c'))
+    JoinOperator, // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
+    PSItemInferrator, // PsItem is used to inferred commandlet pattern like % { [char] $_ }
+    ForEach,      // It will used PSItem rules to inferred foreach-object command
+    StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
+    ComputeArrayExpr,    // It will infer array that start with @
+    StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
+    StaticVar,       // It will infer value of known variable : $pshome, $shellid
+    CastNull,        // It will infer value of +$() or -$() which will produce 0
+    ParseHash,       // Parse hashtable
+    FormatString, // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
+    ParseBool,    // It will infer boolean operator
+    Comparison,   // It will infer comparison when it's possible
+    ArrayLength,  // It will infer length value of a predictable array
+    Not,          // It will infer the ! operator
+    DecodeBase64, // Decodes calls to FromBase64
+    FromUTF,      // Decode calls to FromUTF{8,16}.GetText
 );
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
@@ -117,6 +118,9 @@ pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase
-    let tree_sitter = parser.parse( source.to_lowercase().as_str(), None).unwrap();
-    Ok(Tree::<HashMapStorage<Powershell>>::new(source.as_bytes(), tree_sitter))
+    let tree_sitter = parser.parse(source.to_lowercase().as_str(), None).unwrap();
+    Ok(Tree::<HashMapStorage<Powershell>>::new(
+        source.as_bytes(),
+        tree_sitter,
+    ))
 }

@@ -26,3 +26,4 @@ minusone-cli = ["clap"]
 tree-sitter = "0.20.10"
 tree-sitter-powershell = { git = "https://github.com/airbus-cert/tree-sitter-powershell" }
 clap = { version = "^2.33", optional = true}
+base64 = "0.21.5"

@@ -2,7 +2,6 @@ pub trait Init {
     fn init() -> Self;
 }
 
-
 macro_rules! impl_init {
     ( $($ty:ident),* ) => {
         impl<$($ty),*> Init for ( $( $ty , )* )
@@ -49,4 +48,6 @@ mod impl_init {
     impl_init!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y);
     impl_init!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z);
     impl_init!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA);
+    impl_init!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB);
+    impl_init!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC);
 }
