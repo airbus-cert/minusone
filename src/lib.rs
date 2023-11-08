@@ -1,5 +1,6 @@
 #![feature(macro_metavar_expr)]
 
+extern crate base64;
 extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 

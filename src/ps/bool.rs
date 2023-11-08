@@ -5,6 +5,33 @@ use error::MinusOneResult;
 use ps::Value::{Bool, Str, Num};
 use ps::Powershell::Raw;
 
+/// This rule will infer boolean variable $true $false
+///
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::bool::{ParseBool, BoolAlgebra};
+///
+/// let mut tree = build_powershell_tree("$true -or $false").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseBool::default(),
+///     Forward::default(),
+///     BoolAlgebra::default(),
+/// )).unwrap();
+///
+/// let mut ps_litter_view = Linter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "$true");
+/// ```
 #[derive(Default)]
 pub struct ParseBool;
 
@@ -29,6 +56,88 @@ impl<'a> RuleMut<'a> for ParseBool {
     }
 }
 
+/// This rule will infer boolean algebra involve -or and -and operator
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::bool::{ParseBool, BoolAlgebra};
+///
+/// let mut tree = build_powershell_tree("$true -and $false").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseBool::default(),
+///     Forward::default(),
+///     BoolAlgebra::default(),
+/// )).unwrap();
+///
+/// let mut ps_litter_view = Linter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "$false");
+/// ```
+#[derive(Default)]
+pub struct BoolAlgebra;
+
+impl<'a> RuleMut<'a> for BoolAlgebra {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+        let view = node.view();
+        // Booleans in powershell are variables
+        if view.kind() == "logical_expression" {
+            if let (Some(left_node), Some(operator), Some(right_node)) = (view.child(0), view.child(1), view.child(2)) {
+                match (left_node.data(), operator.text()?.to_lowercase().as_str(), right_node.data()) {
+                    (Some(Raw(Bool(left_value))), "-or", Some(Raw(Bool(right_value)))) => node.set(Raw(Bool(*left_value || *right_value))),
+                    (Some(Raw(Bool(left_value))), "-and", Some(Raw(Bool(right_value)))) => node.set(Raw(Bool(*left_value && *right_value))),
+                    _ => ()
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+
+/// This rule will infer boolean comparaise involve integer or $null operator
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::bool::{Comparison};
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::string::ParseString;
+///
+/// let mut tree = build_powershell_tree("4 -le '5'").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     ParseString::default(),
+///     Forward::default(),
+///     Comparison::default(),
+/// )).unwrap();
+///
+/// let mut ps_litter_view = Linter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "$true");
+/// ```
 #[derive(Default)]
 pub struct Comparison;
 
@@ -73,13 +182,13 @@ impl<'a> RuleMut<'a> for Comparison {
                     // Mixed type comparison
                     // Str and bool comparison
                     (Some(Raw(Str(left_value))), "-eq", Some(Raw(Bool(right_value)))) => {
-                        node.set(Raw(Bool((left_value == "True" && *right_value == true) || (left_value == "False" && *right_value == false))))
+                        node.set(Raw(Bool((left_value.to_lowercase() == "true" && *right_value == true) || (left_value.to_lowercase() == "false" && *right_value == false))))
                     },
                     (Some(Raw(Bool(left_value))), "-eq", Some(Raw(Str(right_value)))) => {
                         node.set(Raw(Bool((!right_value.is_empty() && *left_value) || (right_value.is_empty() && !*left_value))))
                     },
                     (Some(Raw(Str(left_value))), "-ne", Some(Raw(Bool(right_value)))) => {
-                        node.set(Raw(Bool(!((left_value == "True" && *right_value == true) || (left_value == "False" && *right_value == false)))))
+                        node.set(Raw(Bool(!((left_value.to_lowercase() == "true" && *right_value == true) || (left_value.to_lowercase() == "false" && *right_value == false)))))
                     },
                     (Some(Raw(Bool(left_value))), "-ne", Some(Raw(Str(right_value)))) => {
                         node.set(Raw(Bool(!((!right_value.is_empty() && *left_value) || (right_value.is_empty() && !*left_value)))))
@@ -144,5 +253,196 @@ impl<'a> RuleMut<'a> for Not {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ps::bool::{ParseBool, BoolAlgebra, Comparison};
+    use ps::forward::Forward;
+    use ps::Powershell::Raw;
+    use ps::Value::Bool;
+    use ps::build_powershell_tree;
+    use ps::integer::ParseInt;
+    use ps::string::ParseString;
+
+    #[test]
+    fn test_parse_bool_true() {
+        let mut tree = build_powershell_tree("$true").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            Forward::default(),
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_parse_bool_false() {
+        let mut tree = build_powershell_tree("$false").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            Forward::default(),
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(false))
+        );
+    }
+
+    #[test]
+    fn test_boolean_algebra_or() {
+        let mut tree = build_powershell_tree("$true -or $false").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            Forward::default(),
+            BoolAlgebra::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_boolean_algebra_and() {
+        let mut tree = build_powershell_tree("$true -and $false").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            Forward::default(),
+            BoolAlgebra::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(false))
+        );
+    }
+
+    #[test]
+    fn test_comparison_int_int() {
+        let mut tree = build_powershell_tree("4 -le 5").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_comparison_int_str() {
+        let mut tree = build_powershell_tree("4 -le '5'").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_comparison_special_case_1() {
+        let mut tree = build_powershell_tree("'True' -eq $true").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            ParseString::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_comparison_special_case_2() {
+        let mut tree = build_powershell_tree("'False' -eq $false").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            ParseString::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
+    }
+
+    #[test]
+    fn test_comparison_special_case_3() {
+        let mut tree = build_powershell_tree("'' -eq $true").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            ParseString::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(false))
+        );
+    }
+
+    #[test]
+    fn test_comparison_special_case_4() {
+        let mut tree = build_powershell_tree("'' -eq $false").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            ParseString::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(false))
+        );
+    }
+
+    #[test]
+    fn test_comparison_special_case_5() {
+        let mut tree = build_powershell_tree("$false -eq ''").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            ParseString::default(),
+            Forward::default(),
+            Comparison::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Bool(true))
+        );
     }
 }

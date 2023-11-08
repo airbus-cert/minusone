@@ -119,7 +119,7 @@ impl Linter {
             "post_increment_expression" | "post_decrement_expression" |
             "type_literal" | "cast_expression" |
             "member_name" | "expression_with_unary_operator" |
-            "script_parameter" => self.transparent(node)?,
+            "script_parameter" | "string_literal" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 
@@ -159,6 +159,7 @@ impl Linter {
 
             "while_statement" => self.while_statement(node)?,
             "if_statement" => self.if_statement(node)?,
+            "expandable_string_literal" | "expandable_here_string_literal" => self.expandable_string_literal(node)?,
 
             // Unmodified tokens
             _ => {
@@ -467,6 +468,35 @@ impl Linter {
                 self.space_sep(node, None)?;
             }
         }
+        Ok(())
+    }
+
+    fn expandable_string_literal(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
+        let mut result = String::new();
+        let mut index = 0;
+        for child in node.iter() {
+            result.push_str(&node.text()?[index..child.start()]);
+            index = child.end();
+            match child.data(){
+                Some(Raw(Str(s))) => result.push_str(&s),
+                Some(Raw(Num(v))) => result.push_str(&v.to_string()),
+
+                _ => {
+                    if child.kind() == "sub_expression" {
+                        // invoke linter in case of subexpression to output accurate deobfuscation
+                        let mut linter = Self::new();
+                        linter.print(&child)?;
+                        result.push_str(&escape_string(&linter.output));
+                    }
+                    else {
+                        result.push_str(child.text()?)
+                    }
+                }
+            }
+        }
+        // add the end
+        result.push_str(&node.text()?[index..]);
+        self.output += &result;
         Ok(())
     }
 }

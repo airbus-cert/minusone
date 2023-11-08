@@ -21,12 +21,18 @@ pub struct Forward;
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
+/// use minusone::ps::linter::Linter;
 /// use minusone::ps::integer::ParseInt;
+/// let mut tree = build_powershell_tree("42").unwrap();
+/// tree.apply_mut(&mut (
+///     Forward::default(),
+///     ParseInt::default(),
+/// )).unwrap();
 ///
-/// let mut tree = build_powershell_tree("4").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
+/// let mut ps_litter_view = Linter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
 ///
-/// assert_eq!(*(tree.root().unwrap().child(0).expect("At least one child").data().expect("A data in the first child")), Number(4));
+/// assert_eq!(ps_litter_view.output, "42");
 /// ```
 impl<'a> RuleMut<'a> for Forward {
     type Language = Powershell;

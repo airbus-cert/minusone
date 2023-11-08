@@ -451,6 +451,14 @@ impl<'a, T> Node<'a, T> {
         self.node.kind()
     }
 
+    pub fn start(&self) -> usize {
+        self.node.start_byte() - self.node.parent().unwrap().start_byte()
+    }
+
+    pub fn end(&self) -> usize {
+        self.node.end_byte() - self.node.parent().unwrap().start_byte()
+    }
+
     pub fn is_extra(&self) -> bool {
         self.node.is_extra()
     }

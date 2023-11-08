@@ -104,6 +104,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// use minusone::ps::join::JoinStringMethod;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::array::ParseArrayLiteral;
+/// use minusone::ps::typing::ParseType;
 ///
 /// let mut tree = build_powershell_tree("[string]::join('', (\"a\",\"b\",\"c\"))").unwrap();
 /// tree.apply_mut(&mut (
@@ -111,7 +112,8 @@ impl<'a> RuleMut<'a> for JoinComparison {
 ///     Forward::default(),
 ///     ParseInt::default(),
 ///     ParseArrayLiteral::default(),
-///     JoinStringMethod::default()
+///     JoinStringMethod::default(),
+///     ParseType::default()
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
