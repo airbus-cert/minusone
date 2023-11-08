@@ -3,7 +3,7 @@ use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node, BranchFlow};
 use error::{MinusOneResult, Error};
-use ps::Powershell::{Raw, Null};
+use ps::Powershell::{Raw, Null, Type};
 use ps::Value::{Str, Num, Bool};
 
 
@@ -165,11 +165,21 @@ impl<'a> RuleMut<'a> for Var {
                 }
             },
             "variable" => {
+                let var_name = view.text()?.to_lowercase();
+
+                // forget variable with [ref] operator
+                if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"]) {
+                    if let Some(Type(typename)) = cast_expression.child(0).unwrap().data() {
+                        if typename.to_lowercase() == "ref" {
+                            self.scope_manager.current().forget(&var_name)
+                        }
+                    }
+                }
+
                 // check if we are not on the left part of an assignment expression
                 // already handle by the previous case
                 // We also exclude member_access for now
                 if view.get_parent_of_types(vec!["left_assignment_expression"]).is_none() {
-                    let var_name = view.text()?.to_lowercase();
                     // Try to assign variable member
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
                         node.set(data.clone());

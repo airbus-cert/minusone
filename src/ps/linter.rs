@@ -92,8 +92,7 @@ impl Linter {
             "do_statement" | "elseif_clauses" |
             "foreach_command" | "flow_control_statement" => self.space_sep(node, None)?,
 
-            "array_literal_expression" | "argument_expression_list" |
-            "parameter_list" => self.list_sep(node)?,
+            "array_literal_expression" | "argument_expression_list"  => self.list_sep(node)?,
 
             "statement_block" => self.statement_block(node)?,
 
@@ -123,7 +122,7 @@ impl Linter {
 
             "empty_statement" => {}, // Do nothing
 
-            "named_block_list" => self.newline_sep(node)?,
+            "named_block_list" => self.newline_sep(node, None)?,
 
             "script_block" => {
                 if self.is_inline_statement {
@@ -142,11 +141,29 @@ impl Linter {
                 self.output += &self.new_line_chr;
                 self.space_sep(node, Some(1))?
             },
+            "function_parameter_declaration" => self.space_sep(node, None)?,
 
-            "function_parameter_declaration" | "param_block" => {
-                self.space_sep(node, Some(2))?;
-                self.output += &self.new_line_chr;
+            "param_block" => {
+                self.space_sep(node, Some(1))?;
             },
+
+            "parameter_list" => {
+                if node.parent().unwrap().kind() == "function_parameter_declaration" {
+                    self.list_sep(node)?
+                }
+                else {
+                    let old_ab = self.tab.clone();
+                    self.tab += &self.tab_char;
+                    self.output += "\n";
+                    self.output += &self.tab;
+                    self.list_sep_newline(node)?;
+                    self.tab = old_ab;
+                    self.output += "\n";
+                    self.output += &self.tab;
+                }
+            },
+
+            "attribute_list" => self.newline_sep(node, None)?,
 
             "statement_list" => {
                 if self.is_inline_statement {
@@ -211,6 +228,21 @@ impl Linter {
         Ok(())
     }
 
+    fn list_sep_newline(&mut self, node: &Node<Powershell>) -> MinusOneResult<()>{
+        let mut nb_childs = node.child_count();
+        for child in node.range(None, None, Some(2)) {
+            self.print(&child)?;
+            if nb_childs > 1 {
+                nb_childs -= 2;
+                if nb_childs > 0 {
+                    self.output += ",\n";
+                    self.output += &self.tab;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn statement_list(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
         let mut is_first = true;
         for child in node.iter() {
@@ -268,15 +300,15 @@ impl Linter {
         Ok(())
     }
 
-    fn newline_sep(&mut self, node: &Node<Powershell>) -> MinusOneResult<()> {
-        let mut child_count = node.child_count();
-        self.output += &self.new_line_chr;
+    fn newline_sep(&mut self, node: &Node<Powershell>, end: Option<usize>) -> MinusOneResult<()> {
+        let mut nb_childs = node.child_count() - end.unwrap_or(0);
         for child in node.iter() {
-            self.output += &self.tab;
             self.print(&child)?;
-            child_count -= 1;
-            if child_count > 0 {
+
+            nb_childs = nb_childs.saturating_sub(1);
+            if nb_childs > 0 {
                 self.output += &self.new_line_chr;
+                self.output += &self.tab;
             }
         }
         Ok(())

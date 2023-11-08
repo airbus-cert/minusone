@@ -88,7 +88,6 @@ pub type RuleSet = (
     MultInt,            // *, / operations on integer
     ParseString,        // Parse string token, including multiline strings
     ConcatString,       // String concatenation operation
-    Var,                // Variable replacement in case of predictable flow
     Cast,               // cast operation, like [char]0x65
     ParseArrayLiteral,  // It will parse array declared using separate value (integer or string) by a comma
     ParseRange,         // It will parse .. operator and generate an array
@@ -112,7 +111,8 @@ pub type RuleSet = (
     DecodeBase64,       // Decode calls to FromBase64
     FromUTF,            // Decode calls to FromUTF{8,16}.GetText
     Length,             // Decode attribute length of string and array
-    BoolAlgebra         // Add support to boolean algebra (or and)
+    BoolAlgebra,         // Add support to boolean algebra (or and)
+    Var,                // Variable replacement in case of predictable flow
 );
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
