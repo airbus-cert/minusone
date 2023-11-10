@@ -116,8 +116,14 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
-                                    if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
-                                        node.set(Array(bytes.iter().map(|b| Num(*b as i32)).collect()));
+                                    // Powershell allow to not complete with the proper number of =
+                                    let mut source = s.clone();
+                                    for _ in 0..3 {
+                                        if let Ok(bytes) = general_purpose::STANDARD.decode(&source) {
+                                            node.set(Array(bytes.iter().map(|b| Num(*b as i32)).collect()));
+                                            break;
+                                        }
+                                        source += &"=";
                                     }
                                 }
                             }
@@ -177,75 +183,71 @@ impl<'a> RuleMut<'a> for FromUTF {
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "invokation_expression" {
-            if let (Some(member_access), Some(op), Some(member_name)) =
-                (view.child(0), view.child(1), view.child(2))
+            if let (Some(member_access), Some(op), Some(member_name), Some(args_list)) =
+                (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 if member_access.kind() != "member_access" {
                     return Ok(());
                 }
 
-                match (
-                    member_access.child(0).unwrap().data(),
-                    member_access
-                        .child(2)
-                        .unwrap()
-                        .text()?
-                        .to_lowercase()
-                        .as_str(),
-                    op.text()?,
-                    member_name.text()?.to_lowercase().as_str(),
-                ) {
-                    (Some(Type(typename)), member_name, ".", "getstring")
-                    | (Some(Type(typename)), member_name, ".", "getstring")
-                        if (typename == "system.text.encoding" || typename == "text.encoding")
-                            && (member_name == "utf8" || member_name == "unicode") =>
-                    {
-                        let arg_list = view.child(3).unwrap().child(1).unwrap().child(0).unwrap();
-
-                        match arg_list.data() {
-                            Some(Array(a)) => {
-                                let mut int_vec = Vec::new();
-                                for value in a.iter() {
-                                    if let Num(n) = value {
-                                        int_vec.push(*n as u8);
+                if let Some(argument_expression_list) = args_list.named_child("argument_expression_list")
+                {
+                    if let Some(arg_1) = argument_expression_list.child(0) {
+                        match (
+                            member_access.child(0).unwrap().data(),
+                            member_access
+                                .child(2)
+                                .unwrap()
+                                .text()?
+                                .to_lowercase()
+                                .as_str(),
+                            op.text()?,
+                            member_name.text()?.to_lowercase().as_str(),
+                        ) {
+                            (Some(Type(typename)), "utf8", ".", "getstring") if (typename == "system.text.encoding" || typename == "text.encoding") => {
+                                match arg_1.data() {
+                                    Some(Array(a)) => {
+                                        let mut int_vec = Vec::new();
+                                        for value in a.iter() {
+                                            if let Num(n) = value {
+                                                int_vec.push(*n as u8);
+                                            }
+                                        }
+                                        if let Ok(s) = String::from_utf8(int_vec) {
+                                            node.set(Raw(Str(s)));
+                                        }
                                     }
+                                    _ => {}
                                 }
-                                if let Ok(s) = String::from_utf8(int_vec) {
-                                    node.set(Raw(Str(s)));
+                            }
+                            (Some(Type(typename)), "utf16", ".", "getstring") |
+                            (Some(Type(typename)), "unicode", ".", "getstring") if typename == "system.text.encoding" || typename == "text.encoding" => {
+                                match arg_1.data() {
+                                    Some(Array(a)) => {
+                                        let mut int_vec = Vec::new();
+                                        for value in a.iter() {
+                                            if let Num(n) = value {
+                                                int_vec.push(*n as u8);
+                                            }
+                                        }
+
+                                        let int_vec: Vec<u16> = int_vec
+                                            .chunks_exact(2)
+                                            .into_iter()
+                                            .map(|a| u16::from_ne_bytes([a[0], a[1]]))
+                                            .collect();
+                                        let int_vec = int_vec.as_slice();
+
+                                        if let Ok(s) = String::from_utf16(&int_vec) {
+                                            node.set(Raw(Str(s)));
+                                        }
+                                    }
+                                    _ => {}
                                 }
                             }
                             _ => {}
                         }
                     }
-                    (Some(Type(typename)), "utf16", ".", "getstring")
-                        if typename == "system.text.encoding" || typename == "text.encoding" =>
-                    {
-                        let arg_list = view.child(3).unwrap().child(1).unwrap().child(0).unwrap();
-
-                        match arg_list.data() {
-                            Some(Array(a)) => {
-                                let mut int_vec = Vec::new();
-                                for value in a.iter() {
-                                    if let Num(n) = value {
-                                        int_vec.push(*n as u8);
-                                    }
-                                }
-
-                                let int_vec: Vec<u16> = int_vec
-                                    .chunks_exact(2)
-                                    .into_iter()
-                                    .map(|a| u16::from_ne_bytes([a[0], a[1]]))
-                                    .collect();
-                                let int_vec = int_vec.as_slice();
-
-                                if let Ok(s) = String::from_utf16(&int_vec) {
-                                    node.set(Raw(Str(s)));
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
                 }
             }
         }
