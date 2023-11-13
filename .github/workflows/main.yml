@@ -34,5 +34,5 @@ jobs:
           channel: 'nightly'
           
       # Test
-      - name: Unit tets
+      - name: Unit tests
         run: cargo test
