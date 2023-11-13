@@ -116,14 +116,8 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
-                                    // Powershell allow to not complete with the proper number of =
-                                    let mut source = s.clone();
-                                    for _ in 0..3 {
-                                        if let Ok(bytes) = general_purpose::STANDARD.decode(&source) {
-                                            node.set(Array(bytes.iter().map(|b| Num(*b as i32)).collect()));
-                                            break;
-                                        }
-                                        source += &"=";
+                                    if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
+                                        node.set(Array(bytes.iter().map(|b| Num(*b as i32)).collect()));
                                     }
                                 }
                             }
