@@ -518,7 +518,9 @@ impl Linter {
                         // invoke linter in case of subexpression to output accurate deobfuscation
                         let mut linter = Self::new();
                         linter.print(&child)?;
-                        result.push_str(&escape_string(&linter.output));
+                        // Don't escape char in subexpression...
+                        // Powershell allows both but with tree-sitter we can't
+                        result.push_str(&linter.output);
                     }
                     else {
                         result.push_str(child.text()?)
