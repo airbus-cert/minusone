@@ -42,6 +42,7 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
 /// use minusone::ps::foreach::{PSItemInferrator, ForEach};
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseArrayLiteral;
+/// use minusone::ps::typing::ParseType;
 ///
 /// let mut tree = build_powershell_tree("-join ((0x61, 0x62, 0x63)|% {[char]$_})").unwrap();
 /// tree.apply_mut(&mut (
@@ -51,7 +52,8 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
 ///     PSItemInferrator::default(),
 ///     ForEach::default(),
 ///     JoinOperator::default(),
-///     ParseArrayLiteral::default()
+///     ParseArrayLiteral::default(),
+///     ParseType::default()
 ///     )
 /// ).unwrap();
 ///
@@ -113,6 +115,7 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseArrayLiteral;
 /// use minusone::ps::string::ParseString;
+/// use minusone::ps::typing::ParseType;
 ///
 /// let mut tree = build_powershell_tree("-join ((0x61, 0x62, 0x63)|% {'z'; [char]$_})").unwrap();
 /// tree.apply_mut(&mut (
@@ -123,7 +126,8 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 ///     PSItemInferrator::default(),
 ///     ForEach::default(),
 ///     JoinOperator::default(),
-///     ParseArrayLiteral::default()
+///     ParseArrayLiteral::default(),
+///     ParseType::default()
 ///     )
 /// ).unwrap();
 ///
@@ -216,6 +220,7 @@ mod test {
     use ps::Value::{Num, Str};
     use ps::string::ParseString;
     use ps::cast::Cast;
+    use ps::typing::ParseType;
 
     #[test]
     fn test_foreach_transparent() {
@@ -283,7 +288,8 @@ mod test {
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
             ForEach::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
@@ -303,7 +309,8 @@ mod test {
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
             ForEach::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
@@ -323,7 +330,8 @@ mod test {
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
             ForEach::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()

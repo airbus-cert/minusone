@@ -56,7 +56,7 @@ impl<'a> RuleMut<'a> for Forward {
             "multiplicative_argument_expression" | "additive_argument_expression" |
             "comparison_argument_expression" | "bitwise_argument_expression" |
             "logical_argument_expression" | "command_name_expr" | "expression_with_unary_operator" |
-            "while_condition" => {
+            "while_condition" | "member_name" => {
                 if view.child_count() == 1 {
                     if let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
                         node.set(child_data.clone());

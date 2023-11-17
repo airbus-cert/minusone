@@ -48,9 +48,14 @@ impl<'a> RuleMut<'a> for Length {
         let view = node.view();
         if view.kind() == "member_access" {
             if let (Some(primary_expression), Some(operator), Some(member_name)) = (view.child(0), view.child(1), view.child(2)) {
-                match (primary_expression.data(), operator.text()?, member_name.text()?.to_lowercase().as_str()) {
-                    (Some(Array(value)), ".", "length") => node.set(Raw(Num(value.len() as i32))),
-                    (Some(Raw(Str(s))), ".", "length") => node.set(Raw(Num(s.len() as i32))),
+
+                match (primary_expression.data(), operator.text()?, &member_name.text()?.to_lowercase(), member_name.data()) {
+                    (Some(Array(value)), ".", m, _)
+                    | (Some(Array(value)), ".", _, Some(Raw(Str(m)))) if m.to_lowercase() == "length"
+                        => node.set(Raw(Num(value.len() as i32))),
+                    (Some(Raw(Str(s))), ".", m, None)
+                    | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))  if m.to_lowercase() == "length"
+                        => node.set(Raw(Num(s.len() as i32))),
                     _ => ()
                 }
             }
@@ -103,12 +108,31 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "invokation_expression" {
+
+        // infer type of function pointer
+        if view.kind() == "member_access" {
+            if let (Some(type_lit), Some(op), Some(member_name)) = (view.child(0), view.child(1), view.child(2))
+            {
+                match (type_lit.data(), op.text()?, &member_name.text()?.to_string(), member_name.data()) {
+                    (Some(Type(typename)), "::", m, _)
+                    | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
+                    if m.to_lowercase() == "frombase64string" && (typename == "system.convert" || typename == "convert") => {
+                        // infer type of member access
+                        node.set(Type(String::from("convert::frombase64string")));
+                    },
+                    _ => ()
+                }
+            }
+        }
+        else if view.kind() == "invokation_expression" {
             if let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 match (type_lit.data(), op.text()?, member_name.text()?.to_lowercase().as_str()) {
-                    (Some(Type(typename)), "::", "frombase64string") if typename == "system.convert" || typename == "convert" =>
+                    (Some(Type(typename)), "::", m) |
+                    (Some(Type(typename)), ".", m)
+                    if ((typename == "system.convert" || typename == "convert") && m == "frombase64string")
+                        || (typename == "convert::frombase64string" && m == "invoke") =>
                     {
                         // get the argument list if present
                         if let Some(argument_expression_list) =
@@ -176,29 +200,40 @@ impl<'a> RuleMut<'a> for FromUTF {
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "invokation_expression" {
-            if let (Some(member_access), Some(op), Some(member_name), Some(args_list)) =
-                (view.child(0), view.child(1), view.child(2), view.child(3))
+        if view.kind() == "member_access" {
+            if let (Some(type_lit), Some(op), Some(member_name)) = (view.child(0), view.child(1), view.child(2))
             {
-                if member_access.kind() != "member_access" {
-                    return Ok(());
-                }
+                match (type_lit.data(), op.text()?, &member_name.text()?.to_string(), member_name.data()) {
+                    (Some(Type(typename)), "::", m, _)
+                    | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
+                    if vec!["utf8", "utf16", "unicode"].contains(&m.to_lowercase().as_str()) && (typename == "system.text.encoding" || typename == "text.encoding") => {
+                        // infer type of member access
+                        let mut function_typename = String::from("text.encoding.");
+                        function_typename += &m.to_lowercase();
+                        node.set(Type(function_typename));
+                    },
 
-                if let Some(argument_expression_list) = args_list.named_child("argument_expression_list")
-                {
-                    if let Some(arg_1) = argument_expression_list.child(0) {
-                        match (
-                            member_access.child(0).unwrap().data(),
-                            member_access
-                                .child(2)
-                                .unwrap()
-                                .text()?
-                                .to_lowercase()
-                                .as_str(),
-                            op.text()?,
-                            member_name.text()?.to_lowercase().as_str(),
-                        ) {
-                            (Some(Type(typename)), "utf8", ".", "getstring") if (typename == "system.text.encoding" || typename == "text.encoding") => {
+                    (Some(Type(typename)), ".", m, _)
+                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
+                    if vec!["text.encoding.utf8", "text.encoding.utf16", "text.encoding.unicode"].contains(&typename.as_str()) && m.to_lowercase() == "getstring" => {
+                        let mut function_typename = typename.clone();
+                        function_typename += ".getstring";
+                        node.set(Type(function_typename));
+                    }
+                    _ => ()
+                }
+            }
+        }
+        else if view.kind() == "invokation_expression" {
+            if let (Some(type_node), Some(op), Some(member_name), Some(args_list)) =
+                (view.child(0), view.child(1), view.child(2), view.child(3)) {
+
+                match (type_node.data(), op.text()?, &member_name.text()?.to_string(), member_name.data()) {
+                    (Some(Type(typename)), ".", m, _ )
+                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
+                    if (typename == "text.encoding.utf8" && m.to_lowercase() == "getstring") || (typename == "text.encoding.utf8.getstring" && m.to_lowercase() == "invoke") => {
+                        if let Some(argument_expression_list) = args_list.named_child("argument_expression_list") {
+                            if let Some(arg_1) = argument_expression_list.child(0) {
                                 match arg_1.data() {
                                     Some(Array(a)) => {
                                         let mut int_vec = Vec::new();
@@ -214,8 +249,14 @@ impl<'a> RuleMut<'a> for FromUTF {
                                     _ => {}
                                 }
                             }
-                            (Some(Type(typename)), "utf16", ".", "getstring") |
-                            (Some(Type(typename)), "unicode", ".", "getstring") if typename == "system.text.encoding" || typename == "text.encoding" => {
+                        }
+                    },
+                    (Some(Type(typename)), ".", m, _ )
+                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
+                    if ((typename == "text.encoding.utf16" || typename == "text.encoding.unicode") && m.to_lowercase() == "getstring")
+                        || ((typename == "text.encoding.utf16.getstring" || typename == "text.encoding.unicode.getstring") && m.to_lowercase() == "invoke") => {
+                        if let Some(argument_expression_list) = args_list.named_child("argument_expression_list") {
+                            if let Some(arg_1) = argument_expression_list.child(0) {
                                 match arg_1.data() {
                                     Some(Array(a)) => {
                                         let mut int_vec = Vec::new();
@@ -239,9 +280,9 @@ impl<'a> RuleMut<'a> for FromUTF {
                                     _ => {}
                                 }
                             }
-                            _ => {}
                         }
                     }
+                    _ => ()
                 }
             }
         }
@@ -333,6 +374,23 @@ mod test {
     }
 
     #[test]
+    fn test_error_decode_base64_with_invoke() {
+        let mut tree = build_powershell_tree("[System.Convert]::'FromBase64String'.invoke('AAAAAAAAAA')").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            DecodeBase64::default(),
+            ParseType::default()
+        )).unwrap();
+
+        assert_eq!(tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data(), None
+        );
+    }
+
+    #[test]
     fn test_decode_utf8() {
         let mut tree = build_powershell_tree("[System.Text.Encoding]::utf8.getstring(@(102, 111, 111))").unwrap();
         tree.apply_mut(&mut (
@@ -359,6 +417,26 @@ mod test {
             FromUTF::default(),
             ParseType::default(),
             ParseInt::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Raw(Str("foo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_decode_utf16_with_invoke() {
+        let mut tree = build_powershell_tree("[System.Text.Encoding]::'utf16'.'getstring'.invoke(@(102, 0, 111, 0, 111, 0))").unwrap();
+        tree.apply_mut(&mut (
+            Forward::default(),
+            FromUTF::default(),
+            ParseType::default(),
+            ParseInt::default(),
+            ParseString::default(),
             ParseArrayLiteral::default(),
             ComputeArrayExpr::default(),
         )).unwrap();

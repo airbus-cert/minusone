@@ -1,9 +1,9 @@
 use rule::RuleMut;
 use ps::Powershell;
 use tree::{NodeMut, BranchFlow};
-use error::{MinusOneResult, Error};
+use error::{MinusOneResult};
 use ps::Value::{Num, Str, Bool};
-use ps::Powershell::{Raw, PSItem};
+use ps::Powershell::{Raw, PSItem, Type};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -24,13 +24,15 @@ pub struct Cast;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::cast::Cast;
+/// use minusone::ps::typing::ParseType;
 ///
 /// let mut tree = build_powershell_tree("[char]0x61").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     Forward::default(),
 ///     ParseString::default(),
-///     Cast::default()
+///     Cast::default(),
+///     ParseType::default()
 ///     )
 /// ).unwrap();
 ///
@@ -51,30 +53,26 @@ impl<'a> RuleMut<'a> for Cast {
         match view.kind() {
             "cast_expression" => {
                 if let (Some(type_literal), Some(expression)) = (view.child(0), view.child(1)) {
-                    match (type_literal
-                        .child(1).ok_or(Error::invalid_child())? // type_spec
-                        .child(0).ok_or(Error::invalid_child())? // type_name
-                        .child(0).ok_or(Error::invalid_child())?.text()?.to_lowercase().as_str(),
-                           expression.data()) // type_identifier
+                    match (type_literal.data(), expression.data()) // type_identifier
                     {
-                        ("int", Some(Raw(v))) => {
+                        (Some(Type(t)), Some(Raw(v))) if t == "int" => {
                             if let Some(number) = v.clone().to_i32() {
                                 node.set(Raw(Num(number)));
                             }
                         },
-                        ("byte", Some(Raw(v))) => {
+                        (Some(Type(t)), Some(Raw(v))) if t == "byte" => {
                             if let Some(number) = v.clone().to_i32() {
                                 if number < 256 && number > 0 {
                                     node.set(Raw(Num(number)));
                                 }
                             }
                         },
-                        ("char", Some(Raw(Num(num)))) => {
+                        (Some(Type(t)), Some(Raw(Num(num)))) if t == "char" => {
                             let mut result = String::new();
                             result.push(char::from(*num as u8));
                             node.set(Raw(Str(result)));
                         },
-                        ("int", Some(PSItem(values))) => {
+                        (Some(Type(t)), Some(PSItem(values))) if t == "int" => {
                             let mut result = Vec::new();
                             for v in values {
                                 if let Some(n) = v.clone().to_i32() {
@@ -86,7 +84,7 @@ impl<'a> RuleMut<'a> for Cast {
                             }
                             node.set(PSItem(result));
                         },
-                        ("byte", Some(PSItem(values))) => {
+                        (Some(Type(t)), Some(PSItem(values))) if t == "byte" => {
                             let mut result = Vec::new();
                             for v in values {
                                 if let Some(n) = v.clone().to_i32() {
@@ -102,7 +100,7 @@ impl<'a> RuleMut<'a> for Cast {
                             }
                             node.set(PSItem(result));
                         },
-                        ("char", Some(PSItem(values))) => {
+                        (Some(Type(t)), Some(PSItem(values))) => if t == "char" {
                             let mut result = Vec::new();
                             for e in values {
                                 let casted_value = match e {
@@ -121,22 +119,22 @@ impl<'a> RuleMut<'a> for Cast {
                             }
                             node.set(PSItem(result));
                         },
-                        ("bool", Some(Raw(Num(v)))) => {
+                        (Some(Type(t)), Some(Raw(Num(v)))) => if t == "bool" {
                             node.set(Raw(Bool(*v != 0)));
                         },
-                        ("bool", Some(Raw(Str(v)))) => {
+                        (Some(Type(t)), Some(Raw(Str(v)))) => if t == "bool" {
                             node.set(Raw(Bool(!v.is_empty())));
                         },
-                        ("bool", Some(Raw(Bool(v)))) => {
+                        (Some(Type(t)), Some(Raw(Bool(v)))) => if t == "bool" {
                             node.set(Raw(Bool(*v)));
                         },
-                        ("bool", Some(Powershell::Null)) => {
+                        (Some(Type(t)), Some(Powershell::Null)) => if t == "bool"{
                             node.set(Raw(Bool(false)));
                         },
-                        ("bool", Some(Powershell::Array(_))) | ("bool", Some(Powershell::HashMap))  => {
+                        (Some(Type(t)), Some(Powershell::Array(_))) | (Some(Type(t)), Some(Powershell::HashMap)) => if t == "bool" {
                             node.set(Raw(Bool(true)));
                         },
-                        ("bool", None) => {
+                        (Some(Type(t)), None) => if t == "bool" {
                             node.set(Raw(Bool(true)));
                         },
                         _ => ()
@@ -196,6 +194,7 @@ mod test {
     use ps::string::{ConcatString, ParseString};
     use ps::foreach::{ForEach, PSItemInferrator};
     use ps::array::ParseArrayLiteral;
+    use ps::typing::ParseType;
 
     #[test]
     fn test_cast_int_to_char() {
@@ -203,7 +202,8 @@ mod test {
         tree.apply_mut(&mut (
             ParseInt::default(),
             Forward::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
@@ -219,7 +219,8 @@ mod test {
         tree.apply_mut(&mut (
             ParseString::default(),
             Forward::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
@@ -236,7 +237,8 @@ mod test {
             ParseInt::default(),
             AddInt::default(),
             Forward::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
@@ -253,7 +255,8 @@ mod test {
             ParseInt::default(),
             ConcatString::default(),
             Forward::default(),
-            Cast::default()
+            Cast::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
@@ -272,7 +275,8 @@ mod test {
             Cast::default(),
             ForEach::default(),
             ParseArrayLiteral::default(),
-            PSItemInferrator::default()
+            PSItemInferrator::default(),
+            ParseType::default()
         )).unwrap();
 
         assert_eq!(*tree.root().unwrap()
