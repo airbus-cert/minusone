@@ -117,8 +117,8 @@ impl Linter {
             "range_expression" | "member_access" |
             "post_increment_expression" | "post_decrement_expression" |
             "type_literal" | "cast_expression" |
-            "member_name" | "expression_with_unary_operator" |
-            "script_parameter" | "string_literal" => self.transparent(node)?,
+            "member_name" | "script_parameter" |
+            "string_literal" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 
@@ -177,6 +177,17 @@ impl Linter {
             "while_statement" => self.while_statement(node)?,
             "if_statement" => self.if_statement(node)?,
             "expandable_string_literal" | "expandable_here_string_literal" => self.expandable_string_literal(node)?,
+            "expression_with_unary_operator" => {
+                if let Some(operator) = node.child(0) {
+                    match operator.text()? {
+                        "-join" | "-not" | "-bnot" | "-split" => self.space_sep(node, None)?,
+                        _ => self.transparent(node)?
+                    }
+                }
+                else {
+                    self.transparent(node)?
+                }
+            }
 
             // Unmodified tokens
             _ => {
