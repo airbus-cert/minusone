@@ -187,8 +187,10 @@ impl Linter {
                 else {
                     self.transparent(node)?
                 }
-            }
-
+            },
+            "command_invokation_operator" => {
+                self.output += "&"
+            },
             // Unmodified tokens
             _ => {
                 self.output += &node.text()?.to_lowercase()
