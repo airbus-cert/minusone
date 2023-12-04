@@ -31,11 +31,7 @@ impl<'a> RuleMut<'a> for ParseString {
                 let mut result = String::from(&value[1..value.len() - 1]).replace("\"\"", "\"");
 
                 // last child is the token \"
-                for child in view.range(None, Some(view.child_count() - 1), None) {
-                    if child.text()? == "\"\"" {
-                        continue;
-                    }
-
+                for child in view.iter() {
                     if let Some(v) = child.data() {
                         match v {
                             Raw(Str(s)) => {

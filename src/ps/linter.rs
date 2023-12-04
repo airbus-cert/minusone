@@ -118,7 +118,7 @@ impl Linter {
             "post_increment_expression" | "post_decrement_expression" |
             "type_literal" | "cast_expression" |
             "member_name" | "script_parameter" |
-            "string_literal" => self.transparent(node)?,
+            "string_literal" | "path_command_name" => self.transparent(node)?,
 
             "empty_statement" => {}, // Do nothing
 
