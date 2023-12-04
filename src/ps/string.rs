@@ -30,7 +30,6 @@ impl<'a> RuleMut<'a> for ParseString {
                 // Parse string by removing the double quote
                 let mut result = String::from(&value[1..value.len() - 1]).replace("\"\"", "\"");
 
-                // last child is the token \"
                 for child in view.iter() {
                     if let Some(v) = child.data() {
                         match v {
