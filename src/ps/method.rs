@@ -290,7 +290,6 @@ impl<'a> RuleMut<'a> for FromUTF {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use ps::method::{Length, DecodeBase64, FromUTF};

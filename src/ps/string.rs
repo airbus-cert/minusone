@@ -31,6 +31,11 @@ impl<'a> RuleMut<'a> for ParseString {
                 let mut result = String::from(&value[1..value.len() - 1]).replace("\"\"", "\"");
 
                 for child in view.iter() {
+                    // relicate token from tree-sitter
+                    if child.kind() == "$" {
+                        continue;
+                    }
+
                     if let Some(v) = child.data() {
                         match v {
                             Raw(Str(s)) => {

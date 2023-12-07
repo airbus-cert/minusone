@@ -3,7 +3,7 @@ use ps::Powershell;
 use rule::{RuleMut};
 use tree::{NodeMut, Node, BranchFlow};
 use error::{MinusOneResult, Error};
-use ps::Powershell::{Raw, Null, Type};
+use ps::Powershell::{Raw, Null, Type, Array};
 use ps::Value::{Str, Num, Bool};
 
 
@@ -221,6 +221,41 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             },
+            // Some function change the value of variables
+            // [array]::reverse is handled
+            "invokation_expression" => {
+                if let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
+                    (view.child(0), view.child(1), view.child(2), view.child(3))
+                {
+                    match (type_lit.data(), op.text()?, member_name.text()?.to_lowercase().as_str()) {
+                        (Some(Type(typename)), "::", m) if (typename == "array" && m.to_lowercase() == "reverse") =>
+                        {
+                            // get the argument list if present
+                            if let Some(argument_expression_list) = args_list.named_child("argument_expression_list")
+                            {
+                                if let Some(arg_1) = argument_expression_list.child(0) {
+                                    let var_name = arg_1.text()?.to_lowercase();
+                                    if let Some(Array(data)) = self.scope_manager.current().get_var_mut(&var_name) {
+                                        data.reverse();
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            // Any array passed as param is forgotten
+                            if let Some(argument_expression_list) = args_list.named_child("argument_expression_list")
+                            {
+                                for arg in argument_expression_list.iter() {
+                                    let var_name = arg.text()?.to_lowercase();
+                                    if let Some(Array(_)) = self.scope_manager.current().get_var(&var_name) {
+                                        self.scope_manager.current().forget(&var_name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => ()
         }
         Ok(())
@@ -284,6 +319,9 @@ impl<'a> RuleMut<'a> for StaticVar {
                 },
                 "$pshome" => {
                     node.set(Raw(Str(String::from("C:\\Windows\\System32\\WindowsPowerShell\\v1.0"))))
+                },
+                "$verbosepreference" => {
+                    node.set(Raw(Str(String::from("SilentlyContinue"))))
                 },
                 _ => ()
             }

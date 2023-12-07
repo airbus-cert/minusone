@@ -47,29 +47,17 @@ pub struct JoinComparison;
 impl<'a> RuleMut<'a> for JoinComparison {
     type Language = Powershell;
 
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: BranchFlow,
-    ) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: BranchFlow,
-    ) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "comparison_expression" {
             if let (Some(left_expression), Some(operator), Some(right_expression)) =
                 (view.child(0), view.child(1), view.child(2))
             {
-                match (
-                    left_expression.data(),
-                    operator.text()?,
-                    right_expression.data(),
-                ) {
+                match (left_expression.data(), operator.text()?.to_lowercase().as_str(), right_expression.data()) {
                     (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) => {
                         let result = src_array
                             .iter()

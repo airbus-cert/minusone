@@ -3,7 +3,7 @@ use ps::Powershell;
 use tree::{NodeMut, BranchFlow};
 use error::{MinusOneResult};
 use ps::Value::{Num, Str, Bool};
-use ps::Powershell::{Raw, PSItem, Type};
+use ps::Powershell::{Raw, PSItem, Type, Array};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -77,8 +77,7 @@ impl<'a> RuleMut<'a> for Cast {
                             for v in values {
                                 if let Some(n) = v.clone().to_i32() {
                                     result.push(Num(n));
-                                }
-                                else {
+                                } else {
                                     return Ok(())
                                 }
                             }
@@ -93,8 +92,7 @@ impl<'a> RuleMut<'a> for Cast {
                                         return Ok(())
                                     }
                                     result.push(Num(n));
-                                }
-                                else {
+                                } else {
                                     return Ok(())
                                 }
                             }
@@ -124,11 +122,15 @@ impl<'a> RuleMut<'a> for Cast {
                         },
                         (Some(Type(t)), Some(Raw(Str(v)))) => if t == "bool" {
                             node.set(Raw(Bool(!v.is_empty())));
+                        } else if t == "char[]" {
+                            node.set(Array(v.chars().map(|c| Str(c.to_string())).collect()));
+                        } else if t == "string" {
+                            node.set(Raw(Str(v.clone())));
                         },
                         (Some(Type(t)), Some(Raw(Bool(v)))) => if t == "bool" {
                             node.set(Raw(Bool(*v)));
                         },
-                        (Some(Type(t)), Some(Powershell::Null)) => if t == "bool"{
+                        (Some(Type(t)), Some(Powershell::Null)) => if t == "bool" {
                             node.set(Raw(Bool(false)));
                         },
                         (Some(Type(t)), Some(Powershell::Array(_))) | (Some(Type(t)), Some(Powershell::HashMap)) => if t == "bool" {
@@ -139,7 +141,7 @@ impl<'a> RuleMut<'a> for Cast {
                         },
                         _ => ()
                     }
-                }
+                } else {}
             },
 
             // Forward inferred type in case of cast expression

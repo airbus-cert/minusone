@@ -381,9 +381,6 @@ impl Linter {
 
             loop {
                 if let Some(son_node) = &son {
-                    if son_node.kind() == "unary_expression" {
-                        break;
-                    }
                     if son_node.child_count() > 1 {
                         is_priority = true;
                         break;

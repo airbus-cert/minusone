@@ -209,15 +209,81 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
     }
 }
 
+/// This rule will array concat using + operator
+///
+/// "foo"[0,1] + 'x' => ['f', 'o', 'x']
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::{ParseInt, AddInt};
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::access::AccessString;
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::array::{ComputeArrayExpr, ParseArrayLiteral, AddArray};
+///
+/// let mut tree = build_powershell_tree("-join ('foo'[0,1] + 'x')").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     ComputeArrayExpr::default(),
+///     ParseString::default(),
+///     JoinOperator::default(),
+///     AccessString::default(),
+///     ParseArrayLiteral::default(),
+///     AddArray::default()
+///     )
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Linter::new();
+/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"fox\"");
+/// ```
+#[derive(Default)]
+pub struct AddArray;
+
+impl<'a> RuleMut<'a> for AddArray {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+        let node_view = node.view();
+        if node_view.kind() == "additive_expression" || node_view.kind() == "additive_argument_expression" {
+            if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
+                match (left_op.data(), operator.text()?, right_op.data()) {
+                    (Some(Array(array)), "+", Some(Raw(v))) => {
+                        let mut new_array = array.clone();
+                        new_array.push(v.clone());
+                        node.set(Array(new_array));
+                    },
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use ps::build_powershell_tree;
     use ps::integer::{ParseInt, AddInt};
     use ps::forward::Forward;
-    use ps::array::{ParseArrayLiteral, ComputeArrayExpr};
+    use ps::array::{ParseArrayLiteral, ComputeArrayExpr, AddArray};
     use ps::Powershell::Array;
     use ps::Value::{Num, Str};
     use ps::string::ParseString;
+    use ps::access::AccessString;
 
     #[test]
     fn test_init_num_array() {
@@ -303,6 +369,26 @@ mod test {
             .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Num(1), Num(2), Num(3), Num(10)])
+        );
+    }
+
+    #[test]
+    fn test_concat_array() {
+        let mut tree = build_powershell_tree("'foo'[0,1] + 'x'").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            AddArray::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default(),
+            AccessString::default(),
+            ParseString::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Str("f".to_string()), Str("o".to_string()), Str("x".to_string())])
         );
     }
 }
