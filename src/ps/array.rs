@@ -120,9 +120,25 @@ impl<'a> RuleMut<'a> for ParseRange {
                 if let (Some(Raw(left_value)), Some(Raw(right_value))) = (left_node.data(), right_node.data()) {
                     if let (Some(from), Some(to)) = (left_value.clone().to_i32(), right_value.clone().to_i32()) {
                         let mut result = Vec::new();
-                        for i in from .. to + 1 {
-                            result.push(Num(i));
+
+                        let mut index = from;
+                        let end = if from <= to {
+                            to + 1
                         }
+                        else {
+                            to - 1
+                        };
+
+                        while index != end {
+                            result.push(Num(index));
+                            if from <= to {
+                                index += 1
+                            }
+                            else {
+                                index -= 1
+                            }
+                        }
+
                         node.set(Array(result));
                     }
                 }
@@ -279,7 +295,7 @@ mod test {
     use ps::build_powershell_tree;
     use ps::integer::{ParseInt, AddInt};
     use ps::forward::Forward;
-    use ps::array::{ParseArrayLiteral, ComputeArrayExpr, AddArray};
+    use ps::array::{ParseArrayLiteral, ComputeArrayExpr, AddArray, ParseRange};
     use ps::Powershell::Array;
     use ps::Value::{Num, Str};
     use ps::string::ParseString;
@@ -389,6 +405,26 @@ mod test {
             .child(0).unwrap()
             .child(0).unwrap()
             .data().expect("Inferred type"), Array(vec![Str("f".to_string()), Str("o".to_string()), Str("x".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_negative_range() {
+        let mut tree = build_powershell_tree("-1..-3").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ComputeArrayExpr::default(),
+            ParseArrayLiteral::default(),
+            AccessString::default(),
+            ParseString::default(),
+            ParseRange::default()
+        )).unwrap();
+
+        assert_eq!(*tree.root().unwrap()
+            .child(0).unwrap()
+            .child(0).unwrap()
+            .data().expect("Inferred type"), Array(vec![Num(-1), Num(-2), Num(-3)])
         );
     }
 }
