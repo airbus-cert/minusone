@@ -34,7 +34,7 @@ macro_rules! impl_data {
 
                 fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
                     $(
-                        ${ignore(ty)}
+                        ${ignore($ty)}
                         self.${index()}.enter(node, flow)?;
                     )*
                     Ok(())
@@ -42,7 +42,7 @@ macro_rules! impl_data {
 
                 fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
                     $(
-                        ${ignore(ty)}
+                        ${ignore($ty)}
                         self.${index()}.leave(node, flow)?;
                     )*
                     Ok(())

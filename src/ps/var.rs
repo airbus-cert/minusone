@@ -336,8 +336,6 @@ mod test {
     use ps::build_powershell_tree;
     use ps::integer::ParseInt;
     use ps::forward::Forward;
-    use ps::Powershell::Raw;
-    use ps::Value::Num;
     use ps::strategy::PowershellStrategy;
     use ps::bool::ParseBool;
 
