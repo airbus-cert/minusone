@@ -48,7 +48,13 @@ impl Linter {
             match inferred_type {
                 Raw(Str(str)) => {
                     self.output += "\"";
-                    self.output += &escape_string(str);
+                    // normalisation of command
+                    if node.kind() == "command_name_expr" {
+                        self.output += &escape_string(&str.to_lowercase());
+                    }
+                    else {
+                        self.output += &escape_string(str);
+                    }
                     self.output += "\"";
                     return Ok(());
                 }
