@@ -128,10 +128,12 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
             if let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
-                match (type_lit.data(), op.text()?, member_name.text()?.to_lowercase().as_str()) {
-                    (Some(Type(typename)), "::", m) |
-                    (Some(Type(typename)), ".", m)
-                    if ((typename == "system.convert" || typename == "convert") && m == "frombase64string")
+                match (type_lit.data(), op.text()?, &member_name.text()?.to_lowercase(), member_name.data()) {
+                    (Some(Type(typename)), "::", m, _) |
+                    (Some(Type(typename)), ".", m, _) |
+                    (Some(Type(typename)), ".", _, Some(Raw(Str(m)))) |
+                    (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
+                    if ((typename == "system.convert" || typename == "convert") && m.to_lowercase() == "frombase64string")
                         || (typename == "convert::frombase64string" && m == "invoke") =>
                     {
                         // get the argument list if present
