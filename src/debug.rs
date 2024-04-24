@@ -2,17 +2,20 @@ use rule::Rule;
 use tree::{Node};
 use ps::Powershell;
 use error::MinusOneResult;
+use std::fmt::Debug;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type
-pub struct DebugView {
-    tab_space: u32
+pub struct DebugView<T> {
+    tab_space: u32,
+    _use: Option<T>
 }
 
-impl DebugView {
+impl<T> DebugView<T> {
     pub fn new() -> Self {
         DebugView {
-            tab_space: 0
+            tab_space: 0,
+            _use: None
         }
     }
 }
@@ -34,8 +37,8 @@ impl DebugView {
 /// tree.apply(&mut DebugView::new()).unwrap(); // it will print you the tree over the console
 ///
 /// ```
-impl<'a> Rule<'a> for DebugView {
-    type Language = Powershell;
+impl<'a, T> Rule<'a> for DebugView<T> where T : Debug {
+    type Language = T;
 
     /// During the top down travel we will manage tab
     /// increment and general print

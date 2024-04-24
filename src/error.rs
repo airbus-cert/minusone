@@ -4,6 +4,7 @@ use std::str::Utf8Error;
 pub enum MinusOneErrorKind {
     Parsing,
     InvalidChildIndex,
+    InvalidParent,
     Unknown
 }
 
@@ -60,6 +61,10 @@ impl Error {
 
     pub fn invalid_child() -> Self {
         Error::MinusOneError(MinusOneError::new(MinusOneErrorKind::InvalidChildIndex, "A child was expected at this index"))
+    }
+
+    pub fn invalid_parent() -> Self {
+        Error::MinusOneError(MinusOneError::new(MinusOneErrorKind::InvalidParent, "A parent node is expected"))
     }
 }
 

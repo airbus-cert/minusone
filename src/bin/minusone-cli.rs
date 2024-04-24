@@ -4,7 +4,7 @@ extern crate minusone;
 
 use std::fs;
 use clap::{Arg, App};
-use minusone::engine::Engine;
+use minusone::engine::{DeobfuscateEngine, DetectionEngine};
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -21,19 +21,33 @@ fn main() {
         .arg(Arg::with_name("debug")
                  .long("debug")
                  .help("Print the tree-sitter tree with inferred value on each node"))
+        .arg(Arg::with_name("detect")
+                 .long("detect")
+                 .help("Detection mode of obfuscated pattern"))
         .get_matches();
 
 
     let source = fs::read_to_string(matches.value_of("path").expect("Path arguments is mandatory")).unwrap();
 
-    let mut engine =
-        Engine::from_powershell(&source).unwrap()
-        .deobfuscate().unwrap();
+    if matches.is_present("detect") {
+        let mut engine =
+            DetectionEngine::from_powershell(&source).unwrap()
+            .detect().unwrap();
 
-    if matches.is_present("debug") {
-        engine.debug();
+        if matches.is_present("debug") {
+            engine.debug();
+        }
     }
     else {
-        println!("{}", engine.lint().unwrap());
+        let mut engine =
+            DeobfuscateEngine::from_powershell(&source).unwrap()
+            .deobfuscate().unwrap();
+
+        if matches.is_present("debug") {
+            engine.debug();
+        }
+        else {
+            println!("{}", engine.lint().unwrap());
+        }
     }
 }

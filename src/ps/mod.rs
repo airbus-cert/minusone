@@ -31,6 +31,7 @@ pub mod strategy;
 pub mod string;
 pub mod typing;
 pub mod var;
+pub mod detect;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub enum Value {
@@ -116,14 +117,14 @@ pub type RuleSet = (
     AddArray,           // Array concat using +, operator
 );
 
-pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
+pub fn build_powershell_tree<T>(source: &str) -> MinusOneResult<Tree<HashMapStorage<T>>> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(powershell_language()).unwrap();
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase
     let tree_sitter = parser.parse(source.to_lowercase().as_str(), None).unwrap();
-    Ok(Tree::<HashMapStorage<Powershell>>::new(
+    Ok(Tree::<HashMapStorage<T>>::new(
         source.as_bytes(),
         tree_sitter,
     ))

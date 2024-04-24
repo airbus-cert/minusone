@@ -523,8 +523,8 @@ impl Linter {
         let mut result = String::new();
         let mut index = 0;
         for child in node.iter() {
-            result.push_str(&node.text()?[index..child.start()]);
-            index = child.end();
+            result.push_str(&node.text()?[index..child.start_rel()]);
+            index = child.end_rel();
             match child.data(){
                 Some(Raw(Str(s))) => result.push_str(&s),
                 Some(Raw(Num(v))) => result.push_str(&v.to_string()),
