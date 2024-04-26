@@ -1,12 +1,11 @@
 use rule::RuleMut;
 use tree::{NodeMut, BranchFlow, Node};
 use error::{MinusOneResult, Error};
-use error::Error::MinusOneError;
-use std::any::Any;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum PowershellDetect {
-    Static(bool)
+    Static(bool),
+    StaticCast(String)
 }
 
 pub struct Pattern {
@@ -50,7 +49,7 @@ impl<'a> RuleMut<'a> for Static {
             "format_argument_expression" | "comparison_argument_expression" |
             "bitwise_argument_expression" | "logical_argument_expression" |
             "command_name_expr" | "pipeline" |
-            "statement_list" => {
+            "statement_list" | "expression_with_unary_operator" => {
                 if view.child_count() == 1 {
                     if let Some(PowershellDetect::Static(data)) = view.child(0).ok_or(Error::invalid_child())?.data() {
                         node.set(PowershellDetect::Static(data.clone()))
@@ -90,6 +89,13 @@ impl<'a> RuleMut<'a> for Static {
                 if view.child_count() == 0 {
                     node.set(PowershellDetect::Static(true))
                 }
+            },
+            "cast_expression" => {
+                if let (Some(type_literal), Some(unary_expression)) = (view.child(0), view.child(1)) {
+                    if unary_expression.data() == Some(&PowershellDetect::Static(true)) {
+                        node.set(PowershellDetect::Static(true))
+                    }
+                }
             }
             _ => ()
         }
@@ -127,11 +133,11 @@ impl Detection for StaticArray {
 }
 
 #[derive(Default)]
-pub struct FormatObfucation {
+pub struct StaticFormat {
     detected_nodes : Vec<Pattern>
 }
 
-impl<'a> RuleMut<'a> for FormatObfucation {
+impl<'a> RuleMut<'a> for StaticFormat {
     type Language = PowershellDetect;
 
     fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
@@ -140,7 +146,7 @@ impl<'a> RuleMut<'a> for FormatObfucation {
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
         let view = node.view();
-        if view.kind() == "format_expression "  {
+        if view.kind() == "format_expression"  {
             if let (Some(expression), Some(range_expression )) = (view.child(0), view.child(2)) {
                 match (expression.data(), range_expression.data()) {
                     (Some(PowershellDetect::Static(true)), Some(PowershellDetect::Static(true))) => {
@@ -154,7 +160,7 @@ impl<'a> RuleMut<'a> for FormatObfucation {
     }
 }
 
-impl Detection for FormatObfucation {
+impl Detection for StaticFormat {
     fn get_nodes(&self) -> &Vec<Pattern> {
         &self.detected_nodes
     }
@@ -163,5 +169,5 @@ impl Detection for FormatObfucation {
 pub type RuleSet = (
     Static,
     StaticArray,
-    FormatObfucation
+    StaticFormat,
 );

@@ -30,12 +30,14 @@ fn main() {
     let source = fs::read_to_string(matches.value_of("path").expect("Path arguments is mandatory")).unwrap();
 
     if matches.is_present("detect") {
-        let mut engine =
-            DetectionEngine::from_powershell(&source).unwrap()
-            .detect().unwrap();
+        let mut engine = DetectionEngine::from_powershell(&source).unwrap();
+        let detected_nodes = engine.detect().unwrap();
 
         if matches.is_present("debug") {
             engine.debug();
+        }
+        else {
+            println!("{}", serde_json::to_string(&detected_nodes).unwrap());
         }
     }
     else {

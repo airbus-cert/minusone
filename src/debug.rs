@@ -1,6 +1,5 @@
 use rule::Rule;
 use tree::{Node};
-use ps::Powershell;
 use error::MinusOneResult;
 use std::fmt::Debug;
 
@@ -30,11 +29,12 @@ impl<T> DebugView<T> {
 /// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::{build_powershell_tree, Powershell};
 /// use minusone::debug::DebugView;
 ///
-/// let mut tree = build_powershell_tree("4").unwrap();
-/// tree.apply(&mut DebugView::new()).unwrap(); // it will print you the tree over the console
+/// let mut tree = build_powershell_tree::<Powershell>("4").unwrap();
+/// let mut debub_view = DebugView::new();
+/// tree.apply(&mut debub_view).unwrap(); // it will print you the tree over the console
 ///
 /// ```
 impl<'a, T> Rule<'a> for DebugView<T> where T : Debug {

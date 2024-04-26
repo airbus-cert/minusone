@@ -4,14 +4,22 @@ use error::MinusOneResult;
 use init::Init;
 use debug::DebugView;
 use ps::build_powershell_tree;
-use ps::detect::Detection;
+use ps::r#static::{Detection, Pattern};
+use serde::{Serialize};
+
+#[derive(Serialize)]
+pub struct DetectNode {
+    name: &'static str,
+    start: usize,
+    end: usize
+}
 
 pub struct Engine<'a, S: Storage> {
     root: Tree<'a, S>
 }
 
 pub type DeobfuscateEngine<'a> = Engine<'a, HashMapStorage<ps::Powershell>>;
-pub type DetectionEngine<'a> = Engine<'a, HashMapStorage<ps::detect::PowershellDetect>>;
+pub type DetectionEngine<'a> = Engine<'a, HashMapStorage<ps::r#static::PowershellDetect>>;
 
 impl<'a> DeobfuscateEngine<'a>  {
     pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
@@ -50,16 +58,29 @@ impl<'a> DetectionEngine<'a>  {
         })
     }
 
-    pub fn detect(mut self) -> MinusOneResult<Self> {
-        let mut detection_rule_set = ps::detect::RuleSet::init();
+    pub fn detect(&mut self) -> MinusOneResult<Vec<DetectNode>> {
+        let mut detection_rule_set = ps::r#static::RuleSet::init();
         self.root.apply_mut(&mut detection_rule_set)?;
+
+        let mut results = Vec::new();
+
         for m in detection_rule_set.1.get_nodes() {
-            println!("find static array at {}:{}", m.start_offset, m.end_offset);
+            results.push(DetectNode {
+                name: "static_array",
+                start: m.start_offset,
+                end: m.end_offset
+            });
         }
+
         for m in detection_rule_set.2.get_nodes() {
-            println!("find static format expression at {}:{}", m.start_offset, m.end_offset);
+            results.push(DetectNode {
+                name: "static_format",
+                start: m.start_offset,
+                end: m.end_offset
+            });
         }
-        Ok(self)
+
+        Ok(results)
     }
 
     pub fn debug(&self) {

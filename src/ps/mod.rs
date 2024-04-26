@@ -31,7 +31,7 @@ pub mod strategy;
 pub mod string;
 pub mod typing;
 pub mod var;
-pub mod detect;
+pub mod r#static;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub enum Value {
