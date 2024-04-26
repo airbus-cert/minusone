@@ -40,7 +40,8 @@ jobs:
 
       # Build backage
       - name: Build backage
-        run: maturin build pyminusone
+        working-directory: ./pyminusone
+        run: maturin build
 
       - name: Push python package to s3
         uses: CERT/s3-sync-action@7ed8b112447abb09f1da74f3466e4194fc7a6311
