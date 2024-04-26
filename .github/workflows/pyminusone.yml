@@ -50,5 +50,5 @@ jobs:
           AWS_REGION: "eu-west-1"
           AWS_ACCESS_KEY_ID: ${{ secrets.PYPI_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PYPI_AWS_SECRET_ACCESS_KEY }}
-          SOURCE_DIR: "target/wheels/"
+          SOURCE_DIR: "pyminusone/target/wheels/"
           DEST_DIR: "pyminusone"
