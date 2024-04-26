@@ -4,7 +4,7 @@ use error::MinusOneResult;
 use init::Init;
 use debug::DebugView;
 use ps::build_powershell_tree;
-use ps::r#static::{Detection, Pattern};
+use ps::r#static::{Detection};
 use serde::{Serialize};
 
 #[derive(Serialize)]

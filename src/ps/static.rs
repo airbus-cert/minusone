@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use tree::{NodeMut, BranchFlow, Node};
+use tree::{NodeMut, BranchFlow};
 use error::{MinusOneResult, Error};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -91,7 +91,7 @@ impl<'a> RuleMut<'a> for Static {
                 }
             },
             "cast_expression" => {
-                if let (Some(type_literal), Some(unary_expression)) = (view.child(0), view.child(1)) {
+                if let (Some(_type_literal), Some(unary_expression)) = (view.child(0), view.child(1)) {
                     if unary_expression.data() == Some(&PowershellDetect::Static(true)) {
                         node.set(PowershellDetect::Static(true))
                     }
