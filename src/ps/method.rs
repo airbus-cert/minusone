@@ -52,10 +52,10 @@ impl<'a> RuleMut<'a> for Length {
                 match (primary_expression.data(), operator.text()?, &member_name.text()?.to_lowercase(), member_name.data()) {
                     (Some(Array(value)), ".", m, _)
                     | (Some(Array(value)), ".", _, Some(Raw(Str(m)))) if m.to_lowercase() == "length"
-                        => node.set(Raw(Num(value.len() as i32))),
+                        => node.set(Raw(Num(value.len() as i64))),
                     (Some(Raw(Str(s))), ".", m, None)
                     | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))  if m.to_lowercase() == "length"
-                        => node.set(Raw(Num(s.len() as i32))),
+                        => node.set(Raw(Num(s.len() as i64))),
                     _ => ()
                 }
             }
@@ -143,7 +143,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
                                     if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
-                                        node.set(Array(bytes.iter().map(|b| Num(*b as i32)).collect()));
+                                        node.set(Array(bytes.iter().map(|b| Num(*b as i64)).collect()));
                                     }
                                 }
                             }

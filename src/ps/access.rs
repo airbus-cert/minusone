@@ -8,12 +8,12 @@ use ps::Value::Str;
 /// This function get char at index position
 /// even if the index is negative
 /// to seemless powershell engine
-fn get_at_index(s: &str, index: i32) -> Option<String> {
+fn get_at_index(s: &str, index: i64) -> Option<String> {
     let mut uz_index = index as usize;
 
     // negative value is allowed by powershell
     if index < 0 {
-        uz_index = (s.len() as i32 + index) as usize;
+        uz_index = (s.len() as i64 + index) as usize;
     }
 
     s.chars().nth(uz_index).map(|c| c.to_string())
@@ -78,7 +78,7 @@ impl<'a> RuleMut<'a> for AccessString {
                     (Some(Raw(Str(string_element))), Some(Array(index))) => {
                         let mut result = vec![];
                         for index_value in index {
-                            if let Some(parsed_index_value) = index_value.clone().to_i32() {
+                            if let Some(parsed_index_value) = index_value.clone().to_i64() {
                                 if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                     result.push(Str(string_result));
                                 }
@@ -88,7 +88,7 @@ impl<'a> RuleMut<'a> for AccessString {
                     },
                     // "foo"[0]
                     (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
-                        if let Some(parsed_index_value) = index_value.clone().to_i32() {
+                        if let Some(parsed_index_value) = index_value.clone().to_i64() {
                             if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                 node.set(Raw(Str(string_result)));
                             }

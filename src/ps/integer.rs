@@ -44,11 +44,11 @@ impl<'a> RuleMut<'a> for ParseInt {
         match view.kind() {
             "hexadecimal_integer_literal" => {
                 if let Ok(number) = u32::from_str_radix(&token[2..], 16) {
-                    node.set(Raw(Num(number as i32)));
+                    node.set(Raw(Num(number as i64)));
                 }
             },
             "decimal_integer_literal" => {
-                if let Ok(number) = token.parse::<i32>() {
+                if let Ok(number) = token.parse::<i64>() {
                     node.set(Raw(Num(number)));
                 }
             },
@@ -106,8 +106,16 @@ impl<'a> RuleMut<'a> for AddInt {
         if node_view.kind() == "additive_expression" || node_view.kind() == "additive_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left + number_right))),
-                    (Some(Raw(Num(number_left))), "-", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left - number_right))),
+                    (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => {
+                        if let Some(result) = number_left.checked_add(*number_right) {
+                            node.set(Raw(Num(result)))
+                        }
+                    },
+                    (Some(Raw(Num(number_left))), "-", Some(Raw(Num(number_right)))) => {
+                        if let Some(result) = number_left.checked_sub(*number_right) {
+                            node.set(Raw(Num(result)))
+                        }
+                    },
                     _ => {}
                 }
             }
@@ -155,10 +163,14 @@ impl<'a> RuleMut<'a> for MultInt {
         if node_view.kind() == "multiplicative_expression" || node_view.kind() == "multiplicative_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => node.set(Raw(Num(number_left * number_right))),
+                    (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => {
+                        if let Some(result) = number_left.checked_mul(*number_right) {
+                            node.set(Raw(Num(result)))
+                        }
+                    },
                     (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {
-                        if *number_right != 0 {
-                            node.set(Raw(Num(number_left / number_right)))
+                        if let Some(result) = number_left.checked_div(*number_right) {
+                            node.set(Raw(Num(result)))
                         }
                     },
                     _ => {}

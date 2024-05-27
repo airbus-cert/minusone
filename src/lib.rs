@@ -4,6 +4,7 @@ extern crate base64;
 extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 extern crate serde;
+extern crate num;
 
 #[macro_use]
 pub mod ps;

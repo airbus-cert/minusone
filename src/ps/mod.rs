@@ -35,7 +35,7 @@ pub mod r#static;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub enum Value {
-    Num(i32),
+    Num(i64),
     Str(String),
     Bool(bool),
 }
@@ -52,13 +52,13 @@ impl ToString for Value {
 }
 
 impl Value {
-    fn to_i32(&self) -> Option<i32> {
+    fn to_i64(&self) -> Option<i64> {
         match self {
             Value::Str(s) => {
-                if let Ok(number) = s.parse::<i32>() {
+                if let Ok(number) = s.parse::<i64>() {
                     Some(number)
                 } else if s.len() > 2 {
-                    u32::from_str_radix(&s[2..], 16).map(|e| e as i32).ok()
+                    u32::from_str_radix(&s[2..], 16).map(|e| e as i64).ok()
                 } else {
                     None
                 }

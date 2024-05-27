@@ -56,12 +56,12 @@ impl<'a> RuleMut<'a> for Cast {
                     match (type_literal.data(), expression.data()) // type_identifier
                     {
                         (Some(Type(t)), Some(Raw(v))) if t == "int" => {
-                            if let Some(number) = v.clone().to_i32() {
+                            if let Some(number) = v.clone().to_i64() {
                                 node.set(Raw(Num(number)));
                             }
                         },
                         (Some(Type(t)), Some(Raw(v))) if t == "byte" => {
-                            if let Some(number) = v.clone().to_i32() {
+                            if let Some(number) = v.clone().to_i64() {
                                 if number < 256 && number > 0 {
                                     node.set(Raw(Num(number)));
                                 }
@@ -75,7 +75,7 @@ impl<'a> RuleMut<'a> for Cast {
                         (Some(Type(t)), Some(PSItem(values))) if t == "int" => {
                             let mut result = Vec::new();
                             for v in values {
-                                if let Some(n) = v.clone().to_i32() {
+                                if let Some(n) = v.clone().to_i64() {
                                     result.push(Num(n));
                                 } else {
                                     return Ok(())
@@ -86,7 +86,7 @@ impl<'a> RuleMut<'a> for Cast {
                         (Some(Type(t)), Some(PSItem(values))) if t == "byte" => {
                             let mut result = Vec::new();
                             for v in values {
-                                if let Some(n) = v.clone().to_i32() {
+                                if let Some(n) = v.clone().to_i64() {
                                     // invalid cast
                                     if !(0..=255).contains(&n) {
                                         return Ok(())

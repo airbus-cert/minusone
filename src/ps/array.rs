@@ -118,7 +118,7 @@ impl<'a> RuleMut<'a> for ParseRange {
         if view.kind() == "range_expression" {
             if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
                 if let (Some(Raw(left_value)), Some(Raw(right_value))) = (left_node.data(), right_node.data()) {
-                    if let (Some(from), Some(to)) = (left_value.clone().to_i32(), right_value.clone().to_i32()) {
+                    if let (Some(from), Some(to)) = (left_value.clone().to_i64(), right_value.clone().to_i64()) {
                         let mut result = Vec::new();
 
                         let mut index = from;
