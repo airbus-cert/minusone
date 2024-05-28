@@ -24,6 +24,9 @@ fn main() {
         .arg(Arg::with_name("detect")
                  .long("detect")
                  .help("Detection mode of obfuscated pattern"))
+        .arg(Arg::with_name("strategy")
+                 .long("strategy")
+                 .help("Use branch strategy : May cause stack overflow"))
         .get_matches();
 
 
@@ -41,9 +44,13 @@ fn main() {
         }
     }
     else {
-        let mut engine =
-            DeobfuscateEngine::from_powershell(&source).unwrap()
-            .deobfuscate().unwrap();
+        let mut engine = DeobfuscateEngine::from_powershell(&source).unwrap();
+        if matches.is_present("strategy") {
+            engine.deobfuscate_with_strategy().unwrap();
+        }
+        else {
+            engine.deobfuscate().unwrap();
+        }
 
         if matches.is_present("debug") {
             engine.debug();

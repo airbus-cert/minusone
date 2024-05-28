@@ -4,6 +4,7 @@ use rule::{RuleMut, Rule};
 use std::str::Utf8Error;
 use error::{MinusOneResult};
 use std::ops;
+use tree_sitter_traversal::{traverse, traverse_tree, Order};
 
 /// Node components are stored following
 /// a storage pattern
@@ -270,16 +271,11 @@ impl<'a, T> NodeMut<'a, T> {
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
     pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
-        rule.enter(self, BranchFlow::Unpredictable)?;
-        let mut cursor = self.inner.walk();
-        let current_node = self.inner;
-        for child in self.inner.children(&mut cursor) {
-            self.inner = child;
-            self.apply(rule)?;
+        let postorder= traverse(self.inner.walk(), Order::Post).collect::<Vec<_>>();
+        for node in &postorder {
+            self.inner = *node ;
+            rule.leave(self, BranchFlow::Unpredictable)?;
         }
-
-        self.inner = current_node;
-        rule.leave(self, BranchFlow::Unpredictable)?;
         Ok(())
     }
 

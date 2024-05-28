@@ -33,9 +33,14 @@ impl<'a> DeobfuscateEngine<'a>  {
         self.root.apply(&mut debub_view).unwrap();
     }
 
-    pub fn deobfuscate(mut self) -> MinusOneResult<Self> {
+    pub fn deobfuscate_with_strategy(&mut self) -> MinusOneResult<()> {
         self.root.apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy::default())?;
-        Ok(self)
+        Ok(())
+    }
+
+    pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
+        self.root.apply_mut(&mut ps::RuleSet::init())?;
+        Ok(())
     }
 
     pub fn lint(&mut self) -> MinusOneResult<String> {
