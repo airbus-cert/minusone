@@ -12,7 +12,6 @@ use ps::string::{ConcatString, FormatString, ParseString, StringReplaceMethod, S
 use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
-use tree_sitter;
 use tree_sitter_powershell::language as powershell_language;
 use ps::method::{DecodeBase64, FromUTF, Length};
 

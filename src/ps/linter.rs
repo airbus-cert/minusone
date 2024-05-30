@@ -17,6 +17,15 @@ fn escape_string(src: &str) -> String {
     result
 }
 
+fn remove_useless_token(src: &str) -> String {
+    let mut result = String::new();
+    for c in src.chars() {
+        if c != '`' {
+            result.push(c);
+        }
+    }
+    result
+}
 
 pub struct Linter {
     pub output: String,
@@ -144,8 +153,14 @@ impl Linter {
             "for_statement" => self.for_statement(node)?,
 
             "function_statement" => {
+                let old_tab = self.tab.clone();
                 self.output += &self.new_line_chr;
-                self.space_sep(node, Some(1))?
+                self.output += &self.tab;
+                self.tab += &self.tab_char;
+                self.space_sep(node, Some(1))?;
+                self.tab = old_tab;
+                self.output += &self.tab;
+                self.output += "}";
             },
             "function_parameter_declaration" => self.space_sep(node, None)?,
 
@@ -199,7 +214,7 @@ impl Linter {
             },
             // Unmodified tokens
             _ => {
-                self.output += &node.text()?.to_lowercase()
+                self.output += &remove_useless_token(&node.text()?.to_lowercase())
             }
         }
 
@@ -227,6 +242,9 @@ impl Linter {
 
             if nb_childs > 0 {
                 self.output += " ";
+            }
+            else {
+                break;
             }
 
         }

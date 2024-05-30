@@ -4,7 +4,7 @@ use rule::{RuleMut, Rule};
 use std::str::Utf8Error;
 use error::{MinusOneResult};
 use std::ops;
-use tree_sitter_traversal::{traverse, traverse_tree, Order};
+use tree_sitter_traversal::{traverse, Order};
 
 /// Node components are stored following
 /// a storage pattern
