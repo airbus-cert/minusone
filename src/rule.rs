@@ -1,17 +1,17 @@
 use error::MinusOneResult;
-use tree::{BranchFlow, Node, NodeMut};
+use tree::{ControlFlow, Node, NodeMut};
 
 pub trait RuleMut<'a> {
     type Language;
     fn enter(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
-        flow: BranchFlow,
+        flow: ControlFlow,
     ) -> MinusOneResult<()>;
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
-        flow: BranchFlow,
+        flow: ControlFlow,
     ) -> MinusOneResult<()>;
 }
 
@@ -32,7 +32,7 @@ macro_rules! impl_data {
             {
                 type Language = Data;
 
-                fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+                fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
                     $(
                         ${ignore($ty)}
                         self.${index()}.enter(node, flow)?;
@@ -40,7 +40,7 @@ macro_rules! impl_data {
                     Ok(())
                 }
 
-                fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+                fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
                     $(
                         ${ignore($ty)}
                         self.${index()}.leave(node, flow)?;
@@ -88,4 +88,6 @@ mod impl_data {
     impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD);
     impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE);
     impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF);
+    impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF, AG);
+    impl_data!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF, AG, AH);
 }

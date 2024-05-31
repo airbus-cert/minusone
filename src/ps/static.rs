@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use tree::{NodeMut, BranchFlow};
+use tree::{NodeMut, ControlFlow};
 use error::{MinusOneResult, Error};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -32,11 +32,11 @@ pub struct Static;
 impl<'a> RuleMut<'a> for Static {
     type Language = PowershellDetect;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         match view.kind() {
             "decimal_integer_literal" | "hexadecimal_integer_literal" => node.set(PowershellDetect::Static(true)),
@@ -111,11 +111,11 @@ pub struct StaticArray {
 impl<'a> RuleMut<'a> for StaticArray {
     type Language = PowershellDetect;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "array_literal_expression" && view.parent().ok_or(Error::invalid_child())?.kind() != "array_literal_expression" && view.child_count() > 1 {
             if let Some(PowershellDetect::Static(true)) = view.data() {
@@ -140,11 +140,11 @@ pub struct StaticFormat {
 impl<'a> RuleMut<'a> for StaticFormat {
     type Language = PowershellDetect;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "format_expression"  {
             if let (Some(expression), Some(range_expression )) = (view.child(0), view.child(2)) {

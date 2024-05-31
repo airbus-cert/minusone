@@ -1,7 +1,7 @@
 use tree::{Strategy, Node, ControlFlow};
 use ps::Powershell;
 use error::MinusOneResult;
-use tree::ControlFlow::{Break, Branch, Continue};
+use tree::ControlFlow::{Break, Continue};
 use ps::Powershell::Raw;
 use ps::Value::Bool;
 use tree::BranchFlow::{Unpredictable, Predictable};
@@ -23,18 +23,18 @@ impl Strategy<Powershell> for PowershellStrategy {
                             }
                         }
                         // Any other inferred type led to unpredictable branch visit
-                        Ok(Branch(Unpredictable))
+                        Ok(Continue(Unpredictable))
                     },
                     "if_statement" => {
                         // if ($true) control flow
                         if let Some(condition) = parent.named_child("condition") {
                             return match condition.data() {
-                                Some(Raw(Bool(true))) => Ok(Branch(Predictable)),
+                                Some(Raw(Bool(true))) => Ok(Continue(Predictable)),
                                 Some(Raw(Bool(false))) => Ok(Break),
-                                _ => Ok(Branch(Unpredictable))
+                                _ => Ok(Continue(Unpredictable))
                             }
                         }
-                        Ok(Branch(Unpredictable))
+                        Ok(Continue(Unpredictable))
                     },
                     "elseif_clause" => {
                         // elseif_clause is evaluated only if the if statement if false or unpredictable
@@ -51,23 +51,23 @@ impl Strategy<Powershell> for PowershellStrategy {
                                 return match condition.data() {
                                     Some(Raw(Bool(false))) => continue,
                                     Some(Raw(Bool(true))) => return Ok(Break),
-                                    _ => Ok(Branch(Unpredictable))
+                                    _ => Ok(Continue(Unpredictable))
                                 }
                             }
 
-                            return Ok(Branch(Unpredictable))
+                            return Ok(Continue(Unpredictable))
                         }
 
                         // elseif ($true) control flow
                         if let Some(condition) = parent.named_child("condition") {
                             return match condition.data() {
-                                Some(Raw(Bool(true))) => Ok(Branch(Predictable)),
+                                Some(Raw(Bool(true))) => Ok(Continue(Predictable)),
                                 Some(Raw(Bool(false))) => Ok(Break),
-                                _ => Ok(Branch(Unpredictable))
+                                _ => Ok(Continue(Unpredictable))
                             }
                         }
 
-                        Ok(Branch(Unpredictable))
+                        Ok(Continue(Unpredictable))
                     },
                     "else_clause" => {
                         // else clause is visited only if the main if is false
@@ -78,19 +78,19 @@ impl Strategy<Powershell> for PowershellStrategy {
                                     match condition.data() {
                                         Some(Raw(Bool(false))) => continue,
                                         Some(Raw(Bool(true))) => return Ok(Break), // no need to evaluate the else branch
-                                        _ => return Ok(Branch(Unpredictable))
+                                        _ => return Ok(Continue(Unpredictable))
                                     }
                                 }
                                 else {
-                                    return Ok(Branch(Unpredictable))
+                                    return Ok(Continue(Unpredictable))
                                 }
                             }
                         }
-                        Ok(Branch(Predictable))
+                        Ok(Continue(Predictable))
                     },
                     // function are predictable
-                    "function_statement" => Ok(Branch(Predictable)),
-                    _ => Ok(Branch(Predictable))
+                    "function_statement" => Ok(Continue(Predictable)),
+                    _ => Ok(Continue(Predictable))
                 }
             },
             // We can add condition to visit these node depending on the main if condition
@@ -101,24 +101,24 @@ impl Strategy<Powershell> for PowershellStrategy {
                         // don't visit elseif_clauses if the main if is true
                         Some(Raw(Bool(true))) => Ok(Break),
                         // We have to evaluate all elseif_clause
-                        Some(Raw(Bool(false))) => Ok(Continue),
+                        Some(Raw(Bool(false))) => Ok(Continue(Predictable)),
                         // The inferred type is not boolean
                         // We don't known which clauses will be used
-                        _ => Ok(Branch(Unpredictable))
+                        _ => Ok(Continue(Unpredictable))
                     }
                 }
 
                 // We were not able to infer type so we are in an unpredictable case
-                Ok(Branch(Unpredictable))
+                Ok(Continue(Unpredictable))
             },
             // All this statement are labeled and not inferred at this moment
             "trap_statement" | "try_statement" |
             "catch_clause" | "finally_clause" |
             "data_statement" | "parallel_statement" |
             "sequence_statement" | "switch_statement" |
-            "foreach_statement" | "for_statement" | "while_statement" => Ok(Branch(Unpredictable)),
+            "foreach_statement" | "for_statement" | "while_statement" => Ok(Continue(Unpredictable)),
             // Any other node than statement block become unpredictable
-            _ => Ok(Continue)
+            _ => Ok(Continue(Predictable))
         }
     }
 }

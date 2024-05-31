@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::{NodeMut, BranchFlow};
+use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
 use ps::Value::Num;
 use ps::Powershell::Raw;
@@ -34,11 +34,11 @@ pub struct ParseInt;
 impl<'a> RuleMut<'a> for ParseInt {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         let token = view.text()?;
         match view.kind() {
@@ -97,11 +97,11 @@ pub struct AddInt;
 impl<'a> RuleMut<'a> for AddInt {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let node_view = node.view();
         if node_view.kind() == "additive_expression" || node_view.kind() == "additive_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {
@@ -154,11 +154,11 @@ pub struct MultInt;
 impl<'a> RuleMut<'a> for MultInt {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let node_view = node.view();
         if node_view.kind() == "multiplicative_expression" || node_view.kind() == "multiplicative_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {

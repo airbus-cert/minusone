@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::{NodeMut, BranchFlow};
+use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
 use ps::Value::Num;
@@ -45,11 +45,11 @@ pub struct ParseArrayLiteral;
 impl<'a> RuleMut<'a> for ParseArrayLiteral {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "array_literal_expression" {
             if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
@@ -109,11 +109,11 @@ pub struct ParseRange;
 impl<'a> RuleMut<'a> for ParseRange {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "range_expression" {
             if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
@@ -192,11 +192,11 @@ pub struct ComputeArrayExpr;
 impl<'a> RuleMut<'a> for ComputeArrayExpr {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "array_expression" {
             if let Some(statement_list) = view.named_child("statements") {
@@ -268,11 +268,11 @@ pub struct AddArray;
 impl<'a> RuleMut<'a> for AddArray {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let node_view = node.view();
         if node_view.kind() == "additive_expression" || node_view.kind() == "additive_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (node_view.child(0), node_view.child(1), node_view.child(2)) {

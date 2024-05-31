@@ -3,7 +3,7 @@ use ps::Powershell;
 use ps::Powershell::{Array, Raw, Type};
 use ps::Value::Str;
 use rule::RuleMut;
-use tree::{BranchFlow, NodeMut};
+use tree::{ControlFlow, NodeMut};
 
 /// This rule will infer the -join opoerator
 /// in the context of comparison operator
@@ -47,11 +47,11 @@ pub struct JoinComparison;
 impl<'a> RuleMut<'a> for JoinComparison {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "comparison_expression" {
             if let (Some(left_expression), Some(operator), Some(right_expression)) =
@@ -118,7 +118,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
     fn enter(
         &mut self,
         _node: &mut NodeMut<'a, Self::Language>,
-        _flow: BranchFlow,
+        _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         Ok(())
     }
@@ -126,7 +126,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
-        _flow: BranchFlow,
+        _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "invokation_expression" {
@@ -218,7 +218,7 @@ impl<'a> RuleMut<'a> for JoinOperator {
     fn enter(
         &mut self,
         _node: &mut NodeMut<'a, Self::Language>,
-        _flow: BranchFlow,
+        _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         Ok(())
     }
@@ -226,7 +226,7 @@ impl<'a> RuleMut<'a> for JoinOperator {
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
-        _flow: BranchFlow,
+        _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "expression_with_unary_operator" {

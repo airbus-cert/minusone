@@ -1,6 +1,6 @@
 use rule::RuleMut;
-use ps::Powershell;
-use tree::{NodeMut, BranchFlow};
+use ps::{Powershell, Value};
+use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
 use ps::Powershell::{Raw, Array};
 use ps::Value::Str;
@@ -17,7 +17,17 @@ fn get_at_index(s: &str, index: i64) -> Option<String> {
     }
 
     s.chars().nth(uz_index).map(|c| c.to_string())
+}
 
+fn get_array_at_index(s: &Vec<Value>, index: i64) -> Option<&Value> {
+    let mut uz_index = index as usize;
+
+    // negative value is allowed by powershell
+    if index < 0 {
+        uz_index = (s.len() as i64 + index) as usize;
+    }
+
+    s.get(uz_index)
 }
 
 
@@ -64,11 +74,11 @@ pub struct AccessString;
 impl<'a> RuleMut<'a> for AccessString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "element_access"  {
             if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
@@ -91,6 +101,48 @@ impl<'a> RuleMut<'a> for AccessString {
                         if let Some(parsed_index_value) = index_value.clone().to_i64() {
                             if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
                                 node.set(Raw(Str(string_result)));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct AccessArray;
+
+impl<'a> RuleMut<'a> for AccessArray {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "element_access"  {
+            if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+                match (element.data(), expression.data()) {
+                    (Some(Array(array_element)), Some(Array(index))) => {
+                        let mut result = vec![];
+                        for index_value in index {
+                            if let Some(parsed_index_value) = index_value.clone().to_i64() {
+                                if let Some(value) = get_array_at_index(array_element, parsed_index_value) {
+                                    result.push(value.clone());
+                                }
+                            }
+                        }
+                        node.set(Array(result));
+                    },
+                    // "foo"[0]
+                    (Some(Array(array_element)), Some(Raw(index_value))) => {
+                        if let Some(parsed_index_value) = index_value.clone().to_i64() {
+                            if let Some(value) = get_array_at_index(array_element, parsed_index_value) {
+                                node.set(Raw(value.clone()));
                             }
                         }
                     }

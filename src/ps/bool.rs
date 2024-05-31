@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::{NodeMut, BranchFlow};
+use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
 use ps::Value::{Bool, Str, Num};
 use ps::Powershell::Raw;
@@ -38,11 +38,11 @@ pub struct ParseBool;
 impl<'a> RuleMut<'a> for ParseBool {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         // Booleans in powershell are variables
         if view.kind() == "variable" {
@@ -88,11 +88,11 @@ pub struct BoolAlgebra;
 impl<'a> RuleMut<'a> for BoolAlgebra {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         // Booleans in powershell are variables
         if view.kind() == "logical_expression" {
@@ -144,11 +144,11 @@ pub struct Comparison;
 impl<'a> RuleMut<'a> for Comparison {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         // Booleans in powershell are variables
         if view.kind() == "comparison_expression" {
@@ -239,11 +239,11 @@ pub struct Not;
 impl<'a> RuleMut<'a> for Not {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let node_view = node.view();
         if node_view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(expression)) = (node_view.child(0), node_view.child(1)) {

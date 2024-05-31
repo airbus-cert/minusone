@@ -1,7 +1,7 @@
 use scope::ScopeManager;
 use ps::Powershell;
 use rule::{RuleMut};
-use tree::{NodeMut, Node, BranchFlow};
+use tree::{NodeMut, Node, ControlFlow, BranchFlow};
 use error::{MinusOneResult, Error};
 use ps::Powershell::{Raw, Null, Type, Array};
 use ps::Value::{Str, Num, Bool};
@@ -95,7 +95,7 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         match view.kind() {
             "program" => self.scope_manager.reset(),
@@ -110,7 +110,7 @@ impl<'a> RuleMut<'a> for Var {
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
             "statement_block" => {
-                if flow == BranchFlow::Unpredictable {
+                if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
                     self.forget_assigned_var(&view)?;
                 }
             },
@@ -143,7 +143,7 @@ impl<'a> RuleMut<'a> for Var {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         match view.kind() {
             "assignment_expression" => {
@@ -153,7 +153,7 @@ impl<'a> RuleMut<'a> for Var {
                         // make assignment
                         let var_name = var.text()?.to_lowercase();
                         // only predictable assignment is handled
-                        if flow == BranchFlow::Predictable {
+                        if flow == ControlFlow::Continue(BranchFlow::Predictable) {
                             if let Some(data) = right.data() {
                                 self.scope_manager.current().assign(&var_name, data.clone());
                             }
@@ -165,8 +165,8 @@ impl<'a> RuleMut<'a> for Var {
                 }
             },
             "variable" => {
-                let var_name = view.text()?.to_lowercase();
 
+                let var_name = view.text()?.to_lowercase();
                 // forget variable with [ref] operator
                 if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"]) {
                     if let Some(Type(typename)) = cast_expression.child(0).unwrap().data() {
@@ -300,11 +300,11 @@ pub struct StaticVar;
 impl<'a> RuleMut<'a> for StaticVar {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "variable" {
             match view.text()?.to_lowercase().as_str() {

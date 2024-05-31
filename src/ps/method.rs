@@ -1,6 +1,6 @@
 use rule::RuleMut;
 use ps::Powershell;
-use tree::{NodeMut, BranchFlow};
+use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
 use ps::Powershell::{Array, Raw, Type};
 use ps::Value::{Num, Str};
@@ -40,11 +40,11 @@ pub struct Length;
 impl<'a> RuleMut<'a> for Length {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "member_access" {
             if let (Some(primary_expression), Some(operator), Some(member_name)) = (view.child(0), view.child(1), view.child(2)) {
@@ -102,11 +102,11 @@ pub struct DecodeBase64;
 impl<'a> RuleMut<'a> for DecodeBase64 {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
 
         // infer type of function pointer
@@ -196,11 +196,11 @@ pub struct FromUTF;
 impl<'a> RuleMut<'a> for FromUTF {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "member_access" {
             if let (Some(type_lit), Some(op), Some(member_name)) = (view.child(0), view.child(1), view.child(2))

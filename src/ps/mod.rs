@@ -1,5 +1,5 @@
 use error::MinusOneResult;
-use ps::access::AccessString;
+use ps::access::{AccessString, AccessArray};
 use ps::array::{ComputeArrayExpr, ParseArrayLiteral, ParseRange, AddArray};
 use ps::bool::{Comparison, Not, ParseBool, BoolAlgebra};
 use ps::cast::{Cast, CastNull};
@@ -8,7 +8,7 @@ use ps::forward::Forward;
 use ps::hash::ParseHash;
 use ps::integer::{AddInt, MultInt, ParseInt};
 use ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
-use ps::string::{ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp};
+use ps::string::{ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp, StringSplitMethod};
 use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
@@ -114,6 +114,8 @@ pub type RuleSet = (
     BoolAlgebra,        // Add support to boolean algebra (or and)
     Var,                // Variable replacement in case of predictable flow
     AddArray,           // Array concat using +, operator
+    StringSplitMethod,  // Handle split method
+    AccessArray,        // Handle static array element access
 );
 
 pub fn build_powershell_tree<T>(source: &str) -> MinusOneResult<Tree<HashMapStorage<T>>> {

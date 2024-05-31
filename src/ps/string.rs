@@ -1,5 +1,5 @@
 use rule::RuleMut;
-use tree::{NodeMut, BranchFlow};
+use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
 use ps::Value::{Str, Num, Bool};
 use ps::Powershell;
@@ -11,11 +11,11 @@ pub struct ParseString;
 impl<'a> RuleMut<'a> for ParseString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
 
         match view.kind() {
@@ -99,11 +99,11 @@ pub struct ConcatString;
 impl<'a> RuleMut<'a> for ConcatString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "additive_expression" ||  view.kind() == "additive_argument_expression" {
             if let (Some(left_op), Some(operator), Some(right_op)) = (view.child(0), view.child(1), view.child(2)) {
@@ -124,11 +124,11 @@ pub struct StringReplaceMethod;
 impl<'a> RuleMut<'a> for StringReplaceMethod {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "invokation_expression" {
             if let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) = (view.child(0), view.child(1), view.child(2), view.child(3)) {
@@ -156,11 +156,11 @@ pub struct StringReplaceOp;
 impl<'a> RuleMut<'a> for StringReplaceOp {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "comparison_expression" {
             if let (Some(left_expression), Some(operator), Some(right_expression)) = (view.child(0), view.child(1), view.child(2)) {
@@ -215,11 +215,11 @@ pub struct FormatString;
 impl<'a> RuleMut<'a> for FormatString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: BranchFlow) -> MinusOneResult<()>{
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         if view.kind() == "format_expression" {
             if let (Some(format_str_node), Some(format_args_node)) = (view.child(0), view.child(2)) {
@@ -235,6 +235,44 @@ impl<'a> RuleMut<'a> for FormatString {
                         node.set(Raw(Str(format_str.replace("{0}", format_arg.to_string().as_str()))));
                     },
                     _ => ()
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct StringSplitMethod;
+
+impl<'a> RuleMut<'a> for StringSplitMethod {
+    type Language = Powershell;
+
+    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+        Ok(())
+    }
+
+    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+        let view = node.view();
+        if view.kind() == "invokation_expression" {
+            if let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) = (view.child(0), view.child(1), view.child(2), view.child(3)) {
+                match (expression.data(), operator.text()?, member_name.text()?.to_lowercase().as_str()) {
+                     (Some(Raw(Str(src))), ".", "split") => {
+                         if let Some(argument_expression_list) = arguments_list.named_child("argument_expression_list") {
+                            if let Some(arg_1) = argument_expression_list.child(0) {
+                                if let Some(Raw(Str(separator))) = arg_1.data() {
+                                    node.set(Array(src
+                                        .split(separator)
+                                        .collect::<Vec<&str>>()
+                                        .iter()
+                                        .map(|e| Str(e.to_string()))
+                                        .collect()
+                                    ));
+                                }
+                            }
+                         }
+                     },
+                    _ => {}
                 }
             }
         }

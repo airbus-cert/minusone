@@ -5,6 +5,7 @@ use std::str::Utf8Error;
 use error::{MinusOneResult};
 use std::ops;
 use tree_sitter_traversal::{traverse, Order};
+use tree::BranchFlow::Predictable;
 
 /// Node components are stored following
 /// a storage pattern
@@ -233,7 +234,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::language as powershell_language;
-    /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow};
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut, ControlFlow};
     /// use minusone::rule::RuleMut;
     /// use minusone::error::MinusOneResult;
     ///
@@ -244,11 +245,11 @@ impl<'a, T> NodeMut<'a, T> {
     /// impl<'a> RuleMut<'a> for MyRule {
     ///     type Language = u32;
     ///
-    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
     ///         Ok(())
     ///     }
     ///
-    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
     ///         let view = node.view();
     ///         if let Ok(number) = view.text().unwrap().parse::<u32>() {
     ///             node.set(number);
@@ -271,10 +272,9 @@ impl<'a, T> NodeMut<'a, T> {
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
     pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
-        let postorder= traverse(self.inner.walk(), Order::Post).collect::<Vec<_>>();
-        for node in &postorder {
-            self.inner = *node ;
-            rule.leave(self, BranchFlow::Unpredictable)?;
+        for node in traverse(self.inner.walk(), Order::Post) {
+            self.inner = node ;
+            rule.leave(self, ControlFlow::Continue(BranchFlow::Unpredictable))?;
         }
         Ok(())
     }
@@ -294,7 +294,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
     /// use minusone::rule::RuleMut;
     /// use minusone::error::MinusOneResult;
-    /// use minusone::tree::ControlFlow::Branch;
     /// use minusone::tree::BranchFlow::Predictable;
     ///
     ///
@@ -304,14 +303,14 @@ impl<'a, T> NodeMut<'a, T> {
     /// impl<'a> RuleMut<'a> for MyRule {
     ///     type Language = u32;
     ///
-    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
     ///         Ok(())
     ///     }
     ///
-    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: BranchFlow) -> MinusOneResult<()>{
+    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
     ///         let view = node.view();
     ///         if let Ok(number) = view.text().unwrap().parse::<u32>() {
-    ///             if flow == BranchFlow::Predictable {
+    ///             if flow == ControlFlow::Continue(BranchFlow::Predictable) {
     ///                 node.set(number);
     ///             }
     ///         }
@@ -324,7 +323,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// impl Strategy<u32> for MyStrategy {
     ///     fn control(&self, node: Node<u32>) -> MinusOneResult<ControlFlow> {
-    ///         Ok(Branch(Predictable))
+    ///         Ok(ControlFlow::Continue(Predictable))
     ///     }
     /// }
     ///
@@ -338,21 +337,16 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
     ///
-    /// node.apply_with_strategy(&mut MyRule::default(), &MyStrategy::default(), Predictable).unwrap();
+    /// node.apply_with_strategy(&mut MyRule::default(), &MyStrategy::default(), ControlFlow::Continue(Predictable)).unwrap();
     ///
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
-    pub fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: BranchFlow) -> MinusOneResult<()> {
+    pub fn apply_with_strategy_2(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
         let mut computed_flow = flow;
-        match strategy.control(self.view())? {
-            // Execution flow detected
-            ControlFlow::Branch(new_flow) => {
-                // We are computing the new statue of the execution flow
-                // If it's predictable or not
-                computed_flow = computed_flow | new_flow;
-            },
-            ControlFlow::Break => return Ok(()),
-            ControlFlow::Continue => ()
+        computed_flow = computed_flow | strategy.control(self.view())?;
+
+        if computed_flow == ControlFlow::Break {
+            return Ok(());
         }
 
         rule.enter(self, computed_flow)?;
@@ -365,8 +359,54 @@ impl<'a, T> NodeMut<'a, T> {
         }
 
         self.inner = current_node;
-
         rule.leave(self, computed_flow)?;
+        Ok(())
+    }
+
+    pub fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
+        let mut control_flow = ControlFlow::Continue(Predictable);
+        let mut stack:Vec<(TreeNode, usize, ControlFlow)> = vec![];
+
+        for node in traverse(self.inner.walk(), Order::Pre) {
+            self.inner = node;
+            // compute strategy
+
+            stack.push((node, node.child_count(), control_flow));
+
+            control_flow = control_flow | strategy.control(self.view())?;
+
+            if control_flow != ControlFlow::Break {
+                rule.enter(self, control_flow)?;
+            }
+
+            // clean stack
+            loop {
+                let head = stack.last();
+                if head.is_none() {
+                    break;
+                }
+
+                let head_element = head.unwrap();
+
+                if head_element.1 != 0 {
+                    break;
+                }
+
+
+                self.inner = head_element.0;
+
+                if control_flow != ControlFlow::Break {
+                    rule.leave(self, control_flow)?;
+                }
+
+                control_flow = head_element.2;
+                stack.pop();
+
+                if let Some(l) = stack.last_mut() {
+                    l.1 = l.1 - 1;
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -579,10 +619,22 @@ impl ops::BitOr<BranchFlow> for BranchFlow {
 }
 
 /// Strategy control flow
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ControlFlow {
-    Branch(BranchFlow), // We are visiting a branch
-    Break,              // We don't want to continue the visit of the tree
-    Continue            // We want to continue the visit
+    Break,                  // We don't want to continue the visit of the tree
+    Continue(BranchFlow)    // We want to continue the visit
+}
+
+impl ops::BitOr<ControlFlow> for ControlFlow {
+    type Output = ControlFlow;
+
+    fn bitor(self, rhs: ControlFlow) -> Self::Output {
+        match (self, rhs) {
+            (ControlFlow::Break, _) => ControlFlow::Break,
+            (_, ControlFlow::Break) => ControlFlow::Break,
+            (ControlFlow::Continue(left), ControlFlow::Continue(right)) => ControlFlow::Continue(left | right),
+        }
+    }
 }
 
 /// A strategy will decide how to visit a tree
@@ -614,7 +666,7 @@ impl<'a, S> Tree<'a, S> where S : Storage + Default {
 
     pub fn apply_mut_with_strategy<'b>(&'b mut self, rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized), strategy: impl Strategy<S::Component>) -> MinusOneResult<()>{
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
-        node.apply_with_strategy(rule, &strategy, BranchFlow::Predictable)
+        node.apply_with_strategy(rule, &strategy, ControlFlow::Continue(BranchFlow::Predictable))
     }
 
     pub fn apply<'b>(&'b self, rule: &mut (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
