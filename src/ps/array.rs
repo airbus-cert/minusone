@@ -218,7 +218,7 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
                         }
                     }
                 }
-                node.set(Array(result));
+                node.reduce(Array(result));
             }
         }
         Ok(())

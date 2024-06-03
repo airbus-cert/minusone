@@ -137,7 +137,7 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
                          if let Some(argument_expression_list) = arguments_list.named_child("argument_expression_list") {
                             if let (Some(arg_1), Some(arg_2)) = (argument_expression_list.child(0), argument_expression_list.child(2)) {
                                 if let (Some(Raw(Str(from))), Some(Raw(to))) = (arg_1.data(), arg_2.data()) {
-                                    node.set(Raw(Str(src.replace(from, &to.to_string()))));
+                                    node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
                                 }
                             }
                          }
@@ -169,7 +169,7 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
                     | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) =>  {
                         // -replace operator need two params
                         if let (Some(Str(old)), Some(Str(new))) = (params.get(0), params.get(1)) {
-                            node.set(Raw(Str(src.replace(old, new))));
+                            node.reduce(Raw(Str(src.replace(old, new))));
                         }
                     }
                     _ => ()
@@ -229,10 +229,10 @@ impl<'a> RuleMut<'a> for FormatString {
                         for (index, new) in format_args.iter().enumerate() {
                             result = result.replace(format!("{{{}}}", index).as_str(), new.to_string().as_str());
                         }
-                        node.set(Raw(Str(result)));
+                        node.reduce(Raw(Str(result)));
                     },
                     (Some(Raw(Str(format_str))), Some(Raw(format_arg))) => {
-                        node.set(Raw(Str(format_str.replace("{0}", format_arg.to_string().as_str()))));
+                        node.reduce(Raw(Str(format_str.replace("{0}", format_arg.to_string().as_str()))));
                     },
                     _ => ()
                 }
@@ -261,7 +261,7 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
                          if let Some(argument_expression_list) = arguments_list.named_child("argument_expression_list") {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(separator))) = arg_1.data() {
-                                    node.set(Array(src
+                                    node.reduce(Array(src
                                         .split(separator)
                                         .collect::<Vec<&str>>()
                                         .iter()
