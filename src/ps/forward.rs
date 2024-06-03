@@ -59,7 +59,7 @@ impl<'a> RuleMut<'a> for Forward {
             "while_condition" | "member_name" => {
                 if view.child_count() == 1 {
                     if let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
-                        node.set(child_data.clone());
+                        node.reduce(child_data.clone());
                     }
                 }
             }
@@ -68,19 +68,19 @@ impl<'a> RuleMut<'a> for Forward {
                     // A sub expression must have only one statement to be reduced
                     if expression.child_count() == 1 {
                         if let Some(expression_data) = expression.child(0).ok_or(Error::invalid_child())?.data() {
-                            node.set(expression_data.clone())
+                            node.reduce(expression_data.clone())
                         }
                     }
                 }
                 else {
                     // an empty subexpression is considering as null output
-                    node.set(Null)
+                    node.reduce(Null)
                 }
             },
             "parenthesized_expression" => {
                 if let Some(expression) = view.child(1) {
                     if let Some(expression_data) = expression.data() {
-                        node.set(expression_data.clone())
+                        node.reduce(expression_data.clone())
                     }
                 }
             },
@@ -89,7 +89,7 @@ impl<'a> RuleMut<'a> for Forward {
             "pipeline" => {
                 if let Some(expression) = view.child(view.child_count() - 1) {
                     if let Some(expression_data) = expression.data() {
-                        node.set(expression_data.clone())
+                        node.reduce(expression_data.clone())
                     }
                 }
             },
@@ -97,7 +97,7 @@ impl<'a> RuleMut<'a> for Forward {
                 if let Some(sub_command) = view.child(0) {
                     if sub_command.kind() == "foreach_command" {
                         if let Some(expression_data) = sub_command.data() {
-                            node.set(expression_data.clone())
+                            node.reduce(expression_data.clone())
                         }
                     }
                 }
@@ -105,7 +105,7 @@ impl<'a> RuleMut<'a> for Forward {
             "type_literal" => {
                 if let Some(expression) = view.child(1) {
                     if let Some(expression_data) = expression.data() {
-                        node.set(expression_data.clone())
+                        node.reduce(expression_data.clone())
                     }
                 }
             },

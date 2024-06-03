@@ -28,6 +28,8 @@ pub trait Storage {
 
     /// End an update round
     fn end(&mut self) -> bool;
+
+    fn remove(&mut self, node: TreeNode);
 }
 
 /// A possible implementation of storage that
@@ -136,6 +138,10 @@ impl<T> Storage for HashMapStorage<T> {
     fn end(&mut self) -> bool {
         self.is_updated
     }
+
+    fn remove(&mut self, node: TreeNode) {
+        self.map.remove(&node.id());
+    }
 }
 
 /// An interface to manage mutablility of one Node
@@ -224,6 +230,40 @@ impl<'a, T> NodeMut<'a, T> {
         self.storage.set(self.inner, data)
     }
 
+    /// Reduce data node
+    /// It will delete associated data to all children
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let source = "4+5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
+    ///
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+    ///
+    /// node.reduce(42);
+    ///
+    /// assert_eq!(node.view().data(), Some(&42));
+    /// ```
+    pub fn reduce(&mut self, data: T) {
+        self.storage.set(self.inner, data);
+        for i in 0..self.inner.child_count() {
+            self.storage.remove(self.inner.child(i).unwrap());
+        }
+    }
+
     /// Apply a rule to each node by sequentially visit the tree
     ///
     /// # Example
@@ -279,7 +319,89 @@ impl<'a, T> NodeMut<'a, T> {
         Ok(())
     }
 
-    /// Apply a rule to each node by sequentially visit the tree
+    /// Former algorithm use recursive
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// extern crate minusone;
+    ///
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::language as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
+    /// use minusone::rule::RuleMut;
+    /// use minusone::error::MinusOneResult;
+    /// use minusone::tree::BranchFlow::Predictable;
+    ///
+    ///
+    /// #[derive(Default)]
+    /// pub struct MyRule;
+    /// // This rule will only try to parse the text of each token to recognize a u32
+    /// impl<'a> RuleMut<'a> for MyRule {
+    ///     type Language = u32;
+    ///
+    ///     fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
+    ///         Ok(())
+    ///     }
+    ///
+    ///     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
+    ///         let view = node.view();
+    ///         if let Ok(number) = view.text().unwrap().parse::<u32>() {
+    ///             if flow == ControlFlow::Continue(BranchFlow::Predictable) {
+    ///                 node.set(number);
+    ///             }
+    ///         }
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// #[derive(Default)]
+    /// pub struct MyStrategy;
+    ///
+    /// impl Strategy<u32> for MyStrategy {
+    ///     fn control(&self, node: Node<u32>) -> MinusOneResult<ControlFlow> {
+    ///         Ok(ControlFlow::Continue(Predictable))
+    ///     }
+    /// }
+    ///
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(powershell_language()).unwrap();
+    ///
+    /// let source = "5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// let mut node = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+    ///
+    /// node.apply_with_strategy_recurcive(&mut MyRule::default(), &MyStrategy::default(), ControlFlow::Continue(Predictable)).unwrap();
+    ///
+    /// assert_eq!(node.view().data(), Some(&5));
+    /// ```
+    pub fn apply_with_strategy_recurcive(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
+        let mut computed_flow = flow;
+        computed_flow = computed_flow | strategy.control(self.view())?;
+
+        if computed_flow == ControlFlow::Break {
+            return Ok(());
+        }
+
+        rule.enter(self, computed_flow)?;
+
+        let mut cursor = self.inner.walk();
+        let current_node = self.inner;
+        for child in self.inner.children(&mut cursor) {
+            self.inner = child;
+            self.apply_with_strategy(rule, strategy, computed_flow)?;
+        }
+
+        self.inner = current_node;
+        rule.leave(self, computed_flow)?;
+        Ok(())
+    }
+
+        /// Apply a rule to each node by sequentially visit the tree
     /// But some part of the tree could not be visited depending
     /// of the strategy
     ///
@@ -341,30 +463,10 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
-    pub fn apply_with_strategy_2(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
-        let mut computed_flow = flow;
-        computed_flow = computed_flow | strategy.control(self.view())?;
-
-        if computed_flow == ControlFlow::Break {
-            return Ok(());
-        }
-
-        rule.enter(self, computed_flow)?;
-
-        let mut cursor = self.inner.walk();
-        let current_node = self.inner;
-        for child in self.inner.children(&mut cursor) {
-            self.inner = child;
-            self.apply_with_strategy(rule, strategy, computed_flow)?;
-        }
-
-        self.inner = current_node;
-        rule.leave(self, computed_flow)?;
-        Ok(())
-    }
-
     pub fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
-        let mut control_flow = ControlFlow::Continue(Predictable);
+        let mut control_flow = flow;
+
+        // Stack use to call 'leave' method when all children are handled
         let mut stack:Vec<(TreeNode, usize, ControlFlow)> = vec![];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
@@ -402,6 +504,7 @@ impl<'a, T> NodeMut<'a, T> {
                 control_flow = head_element.2;
                 stack.pop();
 
+                // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
                     l.1 = l.1 - 1;
                 }

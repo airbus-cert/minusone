@@ -60,7 +60,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
                     (Some(Array(left_value)), Some(Raw(right_value))) => {
                         let mut new_range = left_value.clone();
                         new_range.push(right_value.clone());
-                        node.set(Array(new_range))
+                        node.reduce(Array(new_range))
                     }
                     _ => ()
                 }
@@ -280,7 +280,7 @@ impl<'a> RuleMut<'a> for AddArray {
                     (Some(Array(array)), "+", Some(Raw(v))) => {
                         let mut new_array = array.clone();
                         new_array.push(v.clone());
-                        node.set(Array(new_array));
+                        node.reduce(Array(new_array));
                     },
                     _ => {}
                 }

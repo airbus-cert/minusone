@@ -109,7 +109,7 @@ impl<'a> RuleMut<'a> for ConcatString {
             if let (Some(left_op), Some(operator), Some(right_op)) = (view.child(0), view.child(1), view.child(2)) {
                 match (left_op.data(), operator.text()?, right_op.data()) {
                      (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) =>
-                         node.set(Raw(Str(String::from(string_left) + string_right))),
+                         node.reduce(Raw(Str(String::from(string_left) + string_right))),
                     _ => {}
                 }
             }
