@@ -5,7 +5,6 @@ use std::str::Utf8Error;
 use error::{MinusOneResult};
 use std::ops;
 use tree_sitter_traversal::{traverse, Order};
-use tree::BranchFlow::Predictable;
 
 /// Node components are stored following
 /// a storage pattern
@@ -29,6 +28,7 @@ pub trait Storage {
     /// End an update round
     fn end(&mut self) -> bool;
 
+    /// Remove data from starage
     fn remove(&mut self, node: TreeNode);
 }
 
