@@ -89,7 +89,7 @@ impl<'a> RuleMut<'a> for Forward {
             "pipeline" => {
                 if let Some(expression) = view.child(view.child_count() - 1) {
                     if let Some(expression_data) = expression.data() {
-                        node.reduce(expression_data.clone())
+                        node.set(expression_data.clone())
                     }
                 }
             },
