@@ -60,6 +60,7 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
 
     let mut psconfig = HighlightConfiguration::new(
         ps_language,
+        "powershell",
         tree_sitter_powershell::HIGHLIGHTS_QUERY,
         "",
         ""
