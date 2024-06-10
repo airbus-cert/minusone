@@ -120,7 +120,7 @@ pub type RuleSet = (
 
 pub fn build_powershell_tree<T>(source: &str) -> MinusOneResult<Tree<HashMapStorage<T>>> {
     let mut parser = tree_sitter::Parser::new();
-    parser.set_language(powershell_language()).unwrap();
+    parser.set_language(&powershell_language()).unwrap();
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase

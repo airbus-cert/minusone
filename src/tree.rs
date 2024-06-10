@@ -67,7 +67,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
@@ -94,7 +94,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
@@ -122,7 +122,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
@@ -183,7 +183,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let source = "4+5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -213,7 +213,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let source = "4+5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -244,7 +244,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let source = "4+5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -299,7 +299,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// }
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let source = "5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -367,7 +367,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let source = "5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -451,7 +451,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language()).unwrap();
     ///
     /// let source = "5";
     /// let ts_tree = parser.parse(source, None).unwrap();
