@@ -312,9 +312,43 @@ impl<'a, T> NodeMut<'a, T> {
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
     pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
-        for node in traverse(self.inner.walk(), Order::Post) {
-            self.inner = node ;
-            rule.leave(self, ControlFlow::Continue(BranchFlow::Unpredictable))?;
+        // Stack use to call 'leave' method when all children are handled
+        let mut stack:Vec<(TreeNode, usize)> = vec![];
+
+        for node in traverse(self.inner.walk(), Order::Pre) {
+            self.inner = node;
+            // compute strategy
+
+            stack.push((node, node.child_count()));
+
+            rule.enter(self, ControlFlow::Continue(BranchFlow::Unpredictable))?;
+
+            // clean stack
+            loop {
+                let head = stack.last();
+                if head.is_none() {
+                    break;
+                }
+
+                let head_element = head.unwrap();
+
+                // Do i have handle all children
+                // if not continue to work on children
+                if head_element.1 != 0 {
+                    break;
+                }
+
+                self.inner = head_element.0;
+
+                rule.leave(self, ControlFlow::Continue(BranchFlow::Unpredictable))?;
+
+                stack.pop();
+
+                // decrement number of children handled
+                if let Some(l) = stack.last_mut() {
+                    l.1 = l.1 - 1;
+                }
+            }
         }
         Ok(())
     }
@@ -465,7 +499,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     pub fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
         let mut control_flow = flow;
-
         // Stack use to call 'leave' method when all children are handled
         let mut stack:Vec<(TreeNode, usize, ControlFlow)> = vec![];
 
@@ -490,10 +523,11 @@ impl<'a, T> NodeMut<'a, T> {
 
                 let head_element = head.unwrap();
 
+                // Do i have handle all children
+                // if not continue to work on children
                 if head_element.1 != 0 {
                     break;
                 }
-
 
                 self.inner = head_element.0;
 
@@ -648,12 +682,44 @@ impl<'a, T> Node<'a, T> {
     }
 
     fn apply(&self, rule: &mut impl Rule<'a, Language=T>) -> MinusOneResult<()> {
-        rule.enter(self)?;
-        for child in self.iter() {
-            child.apply(rule)?;
-        }
-        rule.leave(self)?;
+        let mut is_visiting = true;
+        // Stack use to call 'leave' method when all children are handled
+        let mut stack:Vec<(TreeNode, usize, bool)> = vec![];
 
+        for node in traverse(self.node.walk(), Order::Pre) {
+            stack.push((node, node.child_count(), is_visiting));
+            if is_visiting {
+                is_visiting = is_visiting && rule.enter(&Node::new(node, self.source, self.storage))?;
+            }
+
+            // clean stack
+            loop {
+                let head = stack.last();
+                if head.is_none() {
+                    break;
+                }
+
+                let head_element = head.unwrap();
+
+                // Do i have handle all children
+                // if not continue to work on children
+                if head_element.1 != 0 {
+                    break;
+                }
+
+                if is_visiting {
+                    rule.leave(&Node::new(head_element.0, self.source, self.storage))?;
+                }
+
+                is_visiting = head_element.2;
+                stack.pop();
+
+                // decrement number of children handled
+                if let Some(l) = stack.last_mut() {
+                    l.1 = l.1 - 1;
+                }
+            }
+        }
         Ok(())
     }
 

@@ -10,6 +10,7 @@ const APPLICATION_NAME: &str = "minusone-cli";
 
 
 fn main() {
+
     let matches = App::new(APPLICATION_NAME)
         .version("0.1.0")
         .author("Airbus CERT <cert@airbus.com>")
