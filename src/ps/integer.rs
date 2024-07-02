@@ -24,7 +24,7 @@ use ps::Powershell::Raw;
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "4 + 5");
 /// ```
@@ -87,7 +87,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "7");
 /// ```
@@ -144,7 +144,7 @@ impl<'a> RuleMut<'a> for AddInt {
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "1");
 /// ```

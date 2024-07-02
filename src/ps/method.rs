@@ -30,7 +30,7 @@ use base64::{engine::general_purpose, Engine as _};
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "3");
 /// ```
@@ -92,7 +92,7 @@ impl<'a> RuleMut<'a> for Length {
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"foo\"");
 /// ```
@@ -186,7 +186,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"foo\"");
 /// ```

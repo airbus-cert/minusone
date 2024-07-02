@@ -37,7 +37,7 @@ use tree::{ControlFlow, NodeMut};
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"invoke-expression\"");
 /// ```
@@ -105,7 +105,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
@@ -205,7 +205,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```

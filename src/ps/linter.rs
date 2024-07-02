@@ -38,7 +38,8 @@ pub struct Linter {
     tab_char: String,
     new_line_chr: String,
     comment: bool,
-    is_param_block: bool
+    is_param_block: bool,
+    is_first_statement: Vec<bool>
 }
 
 impl<'a> Rule<'a> for Linter {
@@ -73,6 +74,7 @@ impl<'a> Rule<'a> for Linter {
                     self.output += &self.current_tab().clone();
                 }
             },
+            "statement_list" => self.is_first_statement.push(false),
             _ => ()
         }
 
@@ -80,13 +82,18 @@ impl<'a> Rule<'a> for Linter {
         if let Some(parent) = node.parent() {
             match parent.kind() {
                 "statement_list" => {
-                    // check inline statement by checking parent
-                    if is_inline(&parent) {
-                        self.output += " ";
+                    if *self.is_first_statement.last().unwrap_or(&true) {
+                        // check inline statement by checking parent
+                        if is_inline(&parent) {
+                            self.output += " ";
+                        }
+                        else {
+                            self.output += &self.new_line_chr;
+                            self.output += &self.current_tab().clone();
+                        }
                     }
                     else {
-                        self.output += &self.new_line_chr;
-                        self.output += &self.current_tab().clone();
+                        *self.is_first_statement.last_mut().unwrap() = true;
                     }
                 },
                 "command_elements" => self.output += " ",
@@ -197,6 +204,11 @@ impl<'a> Rule<'a> for Linter {
 
         match node.kind() {
             "param_block" => self.is_param_block = false,
+            "statement_list" => {
+                if !self.is_first_statement.is_empty(){
+                    self.is_first_statement.pop();
+                }
+            },
             _ => ()
         }
 
@@ -265,7 +277,8 @@ impl Linter {
             tab_char: " ".to_string(),
             new_line_chr: "\n".to_string(),
             comment: false,
-            is_param_block: false
+            is_param_block: false,
+            is_first_statement: vec![]
         }
     }
 
@@ -274,12 +287,14 @@ impl Linter {
         self.tab.push(current);
     }
 
-    pub fn current_tab(&self) -> &String {
-        self.tab.last().unwrap()
+    pub fn current_tab(&self) -> String {
+        self.tab.last().map_or("".to_string(), |x| x.clone())
     }
 
     pub fn untab(&mut self) {
-        self.tab.pop().unwrap();
+        if !self.tab.is_empty() {
+            self.tab.pop().unwrap();
+        }
     }
 
     pub fn set_tab(mut self, tab_chr: &str) -> Self{

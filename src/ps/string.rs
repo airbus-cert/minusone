@@ -89,7 +89,7 @@ impl<'a> RuleMut<'a> for ParseString {
 /// tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"foobar\"");
 /// ```
@@ -205,7 +205,7 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"hello world\"");
 /// ```

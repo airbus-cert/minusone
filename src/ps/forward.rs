@@ -30,7 +30,7 @@ pub struct Forward;
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "42");
 /// ```

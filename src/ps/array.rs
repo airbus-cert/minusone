@@ -35,7 +35,7 @@ use ps::Value::Num;
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
@@ -99,7 +99,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
@@ -182,7 +182,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
@@ -258,7 +258,7 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"fox\"");
 /// ```

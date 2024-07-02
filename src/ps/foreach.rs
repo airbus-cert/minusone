@@ -58,7 +58,7 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
@@ -132,7 +132,7 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 /// ).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"zazbzc\"");
 /// ```

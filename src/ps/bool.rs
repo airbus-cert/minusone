@@ -28,7 +28,7 @@ use ps::Powershell::Raw;
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "$true");
 /// ```
@@ -78,7 +78,7 @@ impl<'a> RuleMut<'a> for ParseBool {
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "$false");
 /// ```
@@ -134,7 +134,7 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "$true");
 /// ```

@@ -32,7 +32,7 @@ use ps::Value::{Str, Num, Bool};
 /// tree.apply_mut_with_strategy(&mut (ParseInt::default(), Forward::default(), Var::default()), PowershellStrategy::default()).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\
 /// $foo = 4
@@ -287,7 +287,7 @@ impl<'a> RuleMut<'a> for Var {
 /// tree.apply_mut_with_strategy(&mut (ParseInt::default(), Forward::default(), Var::default()), PowershellStrategy::default()).unwrap();
 ///
 /// let mut ps_litter_view = Linter::new();
-/// ps_litter_view.print(&tree.root().unwrap()).unwrap();
+/// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\
 /// $foo = 4
