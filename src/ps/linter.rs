@@ -28,7 +28,6 @@ fn remove_useless_token(src: &str) -> String {
     result
 }
 
-
 fn is_inline<T>(node: &Node<T>) -> bool {
     !node.get_parent_of_types(vec!["pipeline"]).is_none()
 }
@@ -38,7 +37,8 @@ pub struct Linter {
     tab: Vec<String>,
     tab_char: String,
     new_line_chr: String,
-    comment: bool
+    comment: bool,
+    is_param_block: bool
 }
 
 impl<'a> Rule<'a> for Linter {
@@ -54,15 +54,25 @@ impl<'a> Rule<'a> for Linter {
                 }
             },
             // ignore this node
-            "command_argument_sep" => return Ok(false),
-            "empty_statement" => return Ok(false),
+            "command_argument_sep" | "empty_statement" => return Ok(false),
+            // ignore comment only if it was requested
             "comment" => return Ok(self.comment),
             "command_invokation_operator" => {
                 // normalize operator
                 self.output += "& ";
                 return Ok(false);
             },
-            "while_statement" | "if_statement" => self.output += &self.new_line_chr,
+            // add a new line space before special statement
+            "while_statement" | "if_statement" | "function_statement" => self.output += &self.new_line_chr,
+            "param_block" => {
+                self.is_param_block = true
+            },
+            "attribute" | "variable" => {
+                if self.is_param_block {
+                    self.output += &self.new_line_chr;
+                    self.output += &self.current_tab().clone();
+                }
+            },
             _ => ()
         }
 
@@ -80,14 +90,23 @@ impl<'a> Rule<'a> for Linter {
                     }
                 },
                 "command_elements" => self.output += " ",
+                "param_block" => {
+                    if node.text()? == "(" {
+                        self.tab();
+                    }
+                    else if node.text()? == ")" {
+                        self.untab();
+                        self.output += &self.new_line_chr;
+                        self.output += &self.current_tab().clone();
+                    }
+                }
                 _ => ()
             }
         }
 
-
         // Special token
         if node.child_count() == 0 {
-            match node.text()? {
+            match node.text()?.to_lowercase().as_str() {
                 "{" => self.output += " ",
                 "=" | "!=" | "+=" | "*=" | "/=" | "%=" | "+" | "-" | "*" | "|" |
                 ">" | ">>" | "2>" | "2>>" | "3>" | "3>>" | "4>" | "4>>" |
@@ -111,10 +130,12 @@ impl<'a> Rule<'a> for Linter {
                 "-notcontains" | "-notin" | "-notlike" |
                 "-notmatch" | "-replace" | "-shl" |
                 "-shr" | "-split" | "in" | "-f" |
-                "param" | "-regex" | "-wildcard" |
+                "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
                 "-file" => self.output += " ",
-                "catch" | "finally" | "else" | "elseif" => {
+                "catch" | "finally" | "else" | "elseif" |
+                //  begin process end are not statements
+                "begin" | "process" | "end" | "param" => {
                     if is_inline(node) {
                         self.output += " ";
                     }
@@ -174,6 +195,11 @@ impl<'a> Rule<'a> for Linter {
     /// During the down to top travel we will manage the tab decrement
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
 
+        match node.kind() {
+            "param_block" => self.is_param_block = false,
+            _ => ()
+        }
+
         // leaf node => just print the token
         if node.child_count() == 0 {
             self.output += &remove_useless_token(&node.text()?.to_lowercase());
@@ -184,17 +210,17 @@ impl<'a> Rule<'a> for Linter {
             match parent.kind() {
                 "statement_list" => {
                     // check inline statement by checking parent
-                    if is_inline(node) {
-                        self.output += " ;";
+                    if is_inline(&parent) {
+                        self.output += ";";
                     }
-                }
+                },
                 _ => ()
             }
         }
 
         // post process token
         if node.child_count() == 0 {
-            match node.text()? {
+            match node.text()?.to_lowercase().as_str() {
                 "=" | "!=" | "+=" | "*=" | "/=" | "%=" | "+" | "-" | "*" | "|" |
                 ">" | ">>" | "2>" | "2>>" | "3>" | "3>>" | "4>" | "4>>" |
                 "5>" | "5>>" | "6>" | "6>>" | "*>" | "*>>" | "<" |
@@ -219,19 +245,12 @@ impl<'a> Rule<'a> for Linter {
                 "-shr" | "-split" | "in" | "-f" |
                 "param" | "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
-                "-file" |
+                "-file" |  "," |
                 "function" | "if" | "while" | "else" |
-                "begin" | "process" | "end" | "dynamicparam" |
                 "elseif" | "switch" | "foreach" | "for" | "do" |
                 "filter" | "workflow" | "try" => self.output += " ",
                 _ => ()
             }
-        }
-
-        // depending on what am i
-        match node.kind() {
-            "while_statement" | "if_statement" => self.output += &self.new_line_chr,
-            _ => ()
         }
 
         Ok(())
@@ -245,7 +264,8 @@ impl Linter {
             tab: vec!["".to_string()],
             tab_char: " ".to_string(),
             new_line_chr: "\n".to_string(),
-            comment: false
+            comment: false,
+            is_param_block: false
         }
     }
 
