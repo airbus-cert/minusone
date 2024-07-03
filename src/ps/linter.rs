@@ -94,13 +94,13 @@ impl<'a> Rule<'a> for Linter {
                 "statement_block" => {
                     // tab for new block
                     if node.kind() == "statement_list" {
-                        if !is_inline(node) && *self.statement_block_tab.last().unwrap() {
+                        if !is_inline(node) && *self.statement_block_tab.last().unwrap_or(&true) {
                             self.tab();
                         }
                     }
                     // ignore these tokens if we are in case of code elysium
                     else if node.kind() == "{" || node.kind() == "}" {
-                        if !*self.statement_block_tab.last().unwrap() {
+                        if !*self.statement_block_tab.last().unwrap_or(&true) {
                             return Ok(false);
                         }
                     }
@@ -129,7 +129,9 @@ impl<'a> Rule<'a> for Linter {
                                         return Ok(false);
                                     }
                                     else {
-                                        *self.statement_block_tab.last_mut().unwrap() = false;
+                                        if let Some(last) = self.statement_block_tab.last_mut() {
+                                            *last = false;
+                                        }
                                     }
                                 },
                                 // else clause will be handle by next match
@@ -153,7 +155,9 @@ impl<'a> Rule<'a> for Linter {
                                             return Ok(false);
                                         }
                                         else {
-                                            *self.statement_block_tab.last_mut().unwrap() = false;
+                                            if let Some(last) = self.statement_block_tab.last_mut() {
+                                                *last = false;
+                                            }
                                         }
                                     },
                                     _ => return Ok(false)
@@ -258,7 +262,7 @@ impl<'a> Rule<'a> for Linter {
                 },
                 "statement_block" => {
                     // new statement in a block
-                    if node.kind() == "statement_list" && *self.statement_block_tab.last().unwrap() {
+                    if node.kind() == "statement_list" && *self.statement_block_tab.last().unwrap_or(&true) {
                         if !is_inline(node) {
                             self.untab();
                         }
@@ -301,7 +305,7 @@ impl<'a> Rule<'a> for Linter {
                 "-shr" | "-split" | "in" | "-f" |
                 "param" | "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
-                "-file" | "," | ")" |
+                "-file" | "," | "%" |
                 "function" | "if" | "while" |
                 "elseif" | "switch" | "foreach" | "for" | "do" |
                 "filter" | "workflow" | "try" | "else" => self.write(" "),
@@ -338,7 +342,7 @@ impl Linter {
 
     pub fn untab(&mut self) {
         if !self.tab.is_empty() {
-            self.tab.pop().unwrap();
+            self.tab.pop();
         }
     }
 
