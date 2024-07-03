@@ -1,0 +1,54 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the main branch
+  push:
+    branches: "*"
+    tags : "v*.*"
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: [ "Linux", "self-hosted" ]
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+          
+      # Install Nightly Rust toolchain
+      - uses: CERT/setup-rust@ee9ecd55933a4ecc86043ab63feb8e0602ae319e
+        with:
+          channel: 'nightly'
+          
+      # Install Maturin
+      - name: Install maturin
+        run: pip install maturin
+
+      # Build backage
+      - name: Build backage
+        working-directory: ./pyminusone
+        run: maturin build
+
+      - name: Push python package to s3
+        uses: CERT/s3-sync-action@7ed8b112447abb09f1da74f3466e4194fc7a6311
+        env:
+          AWS_S3_BUCKET: "airbus-cert-pypi"
+          AWS_REGION: "eu-west-1"
+          AWS_ACCESS_KEY_ID: ${{ secrets.PYPI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PYPI_AWS_SECRET_ACCESS_KEY }}
+          SOURCE_DIR: "pyminusone/target/wheels/"
+          DEST_DIR: "pyminusone"
