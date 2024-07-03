@@ -9,7 +9,7 @@ fn escape_string(src: &str) -> String {
     let mut result = String::new();
     let mut previous = None;
     for c in src.chars() {
-        if c == '"' && previous != Some('`'){
+        if c == '"' && previous != Some('`') {
             result.push('`');
         }
         result.push(c);
@@ -39,42 +39,44 @@ pub struct Linter {
     new_line_chr: String,
     comment: bool,
     is_param_block: bool,
-    is_first_statement: Vec<bool>
+    statement_block_tab: Vec<bool>,
+    is_multiline: bool
 }
 
 impl<'a> Rule<'a> for Linter {
     type Language = Powershell;
 
-    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool>{
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
 
         // depending on what am i
         match node.kind() {
-            "statement_block" | "script_block" => {
+            "script_block" => {
                 if !is_inline(node) {
                     self.tab();
                 }
-            },
+            }
             // ignore this node
             "command_argument_sep" | "empty_statement" => return Ok(false),
             // ignore comment only if it was requested
             "comment" => return Ok(self.comment),
             "command_invokation_operator" => {
                 // normalize operator
-                self.output += "& ";
+                self.write("& ");
                 return Ok(false);
-            },
+            }
             // add a new line space before special statement
-            "while_statement" | "if_statement" | "function_statement" => self.output += &self.new_line_chr,
+            "while_statement" | "if_statement" | "function_statement" => {
+                self.enter();
+            },
             "param_block" => {
                 self.is_param_block = true
-            },
+            }
             "attribute" | "variable" => {
                 if self.is_param_block {
-                    self.output += &self.new_line_chr;
-                    self.output += &self.current_tab().clone();
+                    self.enter();
                 }
             },
-            "statement_list" => self.is_first_statement.push(false),
+            "statement_block" => self.statement_block_tab.push(true),
             _ => ()
         }
 
@@ -82,31 +84,84 @@ impl<'a> Rule<'a> for Linter {
         if let Some(parent) = node.parent() {
             match parent.kind() {
                 "statement_list" => {
-                    if *self.is_first_statement.last().unwrap_or(&true) {
-                        // check inline statement by checking parent
-                        if is_inline(&parent) {
-                            self.output += " ";
-                        }
-                        else {
-                            self.output += &self.new_line_chr;
-                            self.output += &self.current_tab().clone();
-                        }
-                    }
-                    else {
-                        *self.is_first_statement.last_mut().unwrap() = true;
+                    // check inline statement by checking parent
+                    if is_inline(&parent) {
+                        self.write(" ");
+                    } else {
+                        self.enter();
                     }
                 },
-                "command_elements" => self.output += " ",
+                "statement_block" => {
+                    // tab for new block
+                    if node.kind() == "statement_list" {
+                        if !is_inline(node) && *self.statement_block_tab.last().unwrap() {
+                            self.tab();
+                        }
+                    }
+                    // ignore these tokens if we are in case of code elysium
+                    else if node.kind() == "{" || node.kind() == "}" {
+                        if !*self.statement_block_tab.last().unwrap() {
+                            return Ok(false);
+                        }
+                    }
+                },
+                "command_elements" => self.write(" "),
                 "param_block" => {
                     if node.text()? == "(" {
                         self.tab();
-                    }
-                    else if node.text()? == ")" {
+                    } else if node.text()? == ")" {
                         self.untab();
-                        self.output += &self.new_line_chr;
-                        self.output += &self.current_tab().clone();
+                        self.enter();
                     }
                 }
+                "if_statement" => {
+                    // handling if clause
+                    if let Some(condition) = parent.named_child("condition") {
+                        // dead code elysium
+                        // this branch is the only one
+
+                        if let Some(&Raw(Bool(bool_condition))) = condition.data() {
+                            match node.kind() {
+                                // this is the IF clause
+                                "statement_block" => {
+                                    if !bool_condition {
+                                        self.statement_block_tab.pop();
+                                        return Ok(false);
+                                    }
+                                    else {
+                                        *self.statement_block_tab.last_mut().unwrap() = false;
+                                    }
+                                },
+                                // else clause will be handle by next match
+                                "else_clause" => (),
+                                // every other token will not be printed
+                                _ => return Ok(false)
+                            }
+                        }
+                    }
+                },
+                "else_clause" => {
+                    if let Some(if_statement) = parent.parent() {
+                        if let Some(condition) = if_statement.named_child("condition") {
+                            // dead code elysium
+                            // this branch is the only one
+                            if let Some(&Raw(Bool(bool_condition))) = condition.data() {
+                                match node.kind() {
+                                    "statement_block" => {
+                                        if bool_condition {
+                                            self.statement_block_tab.pop();
+                                            return Ok(false);
+                                        }
+                                        else {
+                                            *self.statement_block_tab.last_mut().unwrap() = false;
+                                        }
+                                    },
+                                    _ => return Ok(false)
+                                }
+                            }
+                        }
+                    }
+                },
                 _ => ()
             }
         }
@@ -114,7 +169,6 @@ impl<'a> Rule<'a> for Linter {
         // Special token
         if node.child_count() == 0 {
             match node.text()?.to_lowercase().as_str() {
-                "{" => self.output += " ",
                 "=" | "!=" | "+=" | "*=" | "/=" | "%=" | "+" | "-" | "*" | "|" |
                 ">" | ">>" | "2>" | "2>>" | "3>" | "3>>" | "4>" | "4>>" |
                 "5>" | "5>>" | "6>" | "6>>" | "*>" | "*>>" | "<" |
@@ -139,26 +193,14 @@ impl<'a> Rule<'a> for Linter {
                 "-shr" | "-split" | "in" | "-f" |
                 "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
-                "-file" => self.output += " ",
+                "-file" => self.write(" "),
                 "catch" | "finally" | "else" | "elseif" |
                 //  begin process end are not statements
-                "begin" | "process" | "end" | "param" => {
+                "begin" | "process" | "end" | "param" | "}" => {
                     if is_inline(node) {
-                        self.output += " ";
-                    }
-                    else {
-                        self.output += &self.new_line_chr;
-                        self.output += &self.current_tab().clone();
-                    }
-                }
-                "}" => {
-                    if is_inline(node) {
-                        self.output += " ";
-                    }
-                    else {
-                        self.output += &self.new_line_chr;
-                        self.untab();
-                        self.output += &self.current_tab().clone();
+                        self.write(" ");
+                    } else {
+                        self.enter();
                     }
                 },
                 _ => ()
@@ -169,52 +211,40 @@ impl<'a> Rule<'a> for Linter {
         if let Some(inferred_type) = node.data() {
             match inferred_type {
                 Raw(Str(str)) => {
-                    self.output += "\"";
+                    self.write("\"");
                     // normalisation of command
                     if node.kind() == "command_name_expr" {
-                        self.output += &escape_string(&str.to_lowercase());
+                        self.write(&escape_string(&str.to_lowercase()));
+                    } else {
+                        self.write(&escape_string(str));
                     }
-                    else {
-                        self.output += &escape_string(str);
-                    }
-                    self.output += "\"";
+                    self.write("\"");
                     return Ok(false);
                 }
                 Raw(Num(number)) => {
-                    self.output.push_str(number.to_string().as_str());
+                    self.write(number.to_string().as_str());
                     return Ok(false);
-                },
+                }
                 Raw(Bool(true)) => {
-                    self.output.push_str("$true".to_string().as_str());
-                    return Ok(false)
-                },
+                    self.write("$true".to_string().as_str());
+                    return Ok(false);
+                }
                 Raw(Bool(false)) => {
-                    self.output.push_str("$false".to_string().as_str());
-                    return Ok(false)
-                },
+                    self.write("$false".to_string().as_str());
+                    return Ok(false);
+                }
                 _ => ()
             }
         }
-
         Ok(true)
     }
 
-    /// During the down to top travel we will manage the tab decrement
+    /// the down to top
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-
-        match node.kind() {
-            "param_block" => self.is_param_block = false,
-            "statement_list" => {
-                if !self.is_first_statement.is_empty(){
-                    self.is_first_statement.pop();
-                }
-            },
-            _ => ()
-        }
 
         // leaf node => just print the token
         if node.child_count() == 0 {
-            self.output += &remove_useless_token(&node.text()?.to_lowercase());
+            self.write(&remove_useless_token(&node.text()?.to_lowercase()));
         }
 
         // depending on what my parent are
@@ -223,11 +253,25 @@ impl<'a> Rule<'a> for Linter {
                 "statement_list" => {
                     // check inline statement by checking parent
                     if is_inline(&parent) {
-                        self.output += ";";
+                        self.write(";");
+                    }
+                },
+                "statement_block" => {
+                    // new statement in a block
+                    if node.kind() == "statement_list" && *self.statement_block_tab.last().unwrap() {
+                        if !is_inline(node) {
+                            self.untab();
+                        }
                     }
                 },
                 _ => ()
             }
+        }
+
+        match node.kind() {
+            "param_block" => self.is_param_block = false,
+            "statement_block" => {self.statement_block_tab.pop();},
+            _ => ()
         }
 
         // post process token
@@ -257,10 +301,10 @@ impl<'a> Rule<'a> for Linter {
                 "-shr" | "-split" | "in" | "-f" |
                 "param" | "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
-                "-file" |  "," |
-                "function" | "if" | "while" | "else" |
+                "-file" | "," | ")" |
+                "function" | "if" | "while" |
                 "elseif" | "switch" | "foreach" | "for" | "do" |
-                "filter" | "workflow" | "try" => self.output += " ",
+                "filter" | "workflow" | "try" | "else" => self.write(" "),
                 _ => ()
             }
         }
@@ -278,7 +322,8 @@ impl Linter {
             new_line_chr: "\n".to_string(),
             comment: false,
             is_param_block: false,
-            is_first_statement: vec![]
+            statement_block_tab: vec![],
+            is_multiline: true
         }
     }
 
@@ -297,12 +342,25 @@ impl Linter {
         }
     }
 
-    pub fn set_tab(mut self, tab_chr: &str) -> Self{
+    pub fn enter(&mut self) {
+        if !self.is_multiline {
+            self.output += &self.new_line_chr;
+            self.output += &self.current_tab().clone();
+            self.is_multiline = true;
+        }
+    }
+
+    pub fn write(&mut self, new: &str) {
+        self.is_multiline = false;
+        self.output += new;
+    }
+
+    pub fn set_tab(mut self, tab_chr: &str) -> Self {
         self.tab_char = tab_chr.to_string();
         self
     }
 
-    pub fn set_comment(mut self, comment: bool) -> Self{
+    pub fn set_comment(mut self, comment: bool) -> Self {
         self.comment = comment;
         self
     }
