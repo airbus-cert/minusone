@@ -32,7 +32,7 @@ impl<T> DebugView<T> {
 /// use minusone::ps::{build_powershell_tree, Powershell};
 /// use minusone::debug::DebugView;
 ///
-/// let mut tree = build_powershell_tree::<Powershell>("4").unwrap();
+/// let mut tree = build_powershell_tree("4").unwrap();
 /// let mut debub_view = DebugView::new();
 /// tree.apply(&mut debub_view).unwrap(); // it will print you the tree over the console
 ///
