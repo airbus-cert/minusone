@@ -4,7 +4,7 @@ extern crate minusone;
 
 use std::fs;
 use clap::{Arg, App};
-use minusone::engine::{DeobfuscateEngine, DetectionEngine};
+use minusone::engine::{DeobfuscateEngine};
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -22,34 +22,30 @@ fn main() {
         .arg(Arg::with_name("debug")
                  .long("debug")
                  .help("Print the tree-sitter tree with inferred value on each node"))
-        .arg(Arg::with_name("detect")
-                 .long("detect")
-                 .help("Detection mode of obfuscated pattern"))
+        .arg(Arg::with_name("time")
+            .long("time")
+            .help("Time computation"))
         .get_matches();
 
+    use std::time::Instant;
+    let now = Instant::now();
 
     let source = fs::read_to_string(matches.value_of("path").expect("Path arguments is mandatory")).unwrap();
 
-    if matches.is_present("detect") {
-        let mut engine = DetectionEngine::from_powershell(&source).unwrap();
-        let detected_nodes = engine.detect().unwrap();
+    // Always remove extra rule (comments) to get an accurate version of the deobfuscated scripts
+    let remove_comment = DeobfuscateEngine::remove_extra(&source).unwrap();
+    let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).unwrap();
+    engine.deobfuscate().unwrap();
 
-        if matches.is_present("debug") {
-            engine.debug();
-        }
-        else {
-            println!("{}", serde_json::to_string(&detected_nodes).unwrap());
-        }
+    if matches.is_present("debug") {
+        engine.debug();
     }
     else {
-        let mut engine = DeobfuscateEngine::from_powershell(&source).unwrap();
-        engine.deobfuscate().unwrap();
+        println!("{}", engine.lint().unwrap());
+    }
 
-        if matches.is_present("debug") {
-            engine.debug();
-        }
-        else {
-            println!("{}", engine.lint().unwrap());
-        }
+    if matches.is_present("time") {
+        let elapsed = now.elapsed();
+        println!("\n\nElapsed: {:.2?}", elapsed);
     }
 }

@@ -51,20 +51,17 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "array_literal_expression" {
-            if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
-                match (left_node.data(), right_node.data()) {
-                    // Case when we are not beginning to built the range
-                    (Some(Raw(left_value)), Some(Raw(right_value))) => node.set(Array(vec![left_value.clone(), right_value.clone()])),
-                    // update an existing array
-                    (Some(Array(left_value)), Some(Raw(right_value))) => {
-                        let mut new_range = left_value.clone();
-                        new_range.push(right_value.clone());
-                        node.reduce(Array(new_range))
-                    }
-                    _ => ()
+        if view.kind() == "array_literal_expression" && view.child_count() > 1 {
+            let mut range = vec![];
+            for child in view.iter() {
+                if let Some(Raw(value)) = child.data() {
+                    range.push(value.clone());
+                }
+                else if child.kind() != "," {
+                    return Ok(())
                 }
             }
+            node.set(Array(range));
         }
         Ok(())
     }

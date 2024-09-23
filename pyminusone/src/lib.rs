@@ -21,7 +21,8 @@ impl From<PyMinusOneError> for PyErr {
 
 #[pyfunction]
 fn deobfuscate_powershell(src: String) -> PyResult<String> {
-    let mut engine = DeobfuscateEngine::from_powershell(&src).map_err(PyMinusOneError)?;
+    let remove_comment = DeobfuscateEngine::remove_extra(&src).map_err(PyMinusOneError)?;
+    let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
     engine.deobfuscate().map_err(PyMinusOneError)?;
     Ok(engine.lint().map_err(PyMinusOneError)?)
 }
@@ -52,7 +53,9 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
         "assignvalue"
     ];
 
-    let mut engine = DeobfuscateEngine::from_powershell(&src).map_err(PyMinusOneError)?;
+    let remove_comment = DeobfuscateEngine::remove_extra(&src).map_err(PyMinusOneError)?;
+
+    let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
     engine.deobfuscate().map_err(PyMinusOneError)?;
 
     let ps_language = tree_sitter_powershell::language();

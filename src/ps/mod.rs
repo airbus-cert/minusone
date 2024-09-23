@@ -13,6 +13,7 @@ use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
 use tree_sitter_powershell::language as powershell_language;
+use ps::linter::{RemoveComment};
 use ps::method::{DecodeBase64, FromUTF, Length};
 
 pub mod access;
@@ -30,7 +31,6 @@ pub mod strategy;
 pub mod string;
 pub mod typing;
 pub mod var;
-pub mod r#static;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
 pub enum Value {
@@ -118,15 +118,33 @@ pub type RuleSet = (
     AccessArray,        // Handle static array element access
 );
 
-pub fn build_powershell_tree<T>(source: &str) -> MinusOneResult<Tree<HashMapStorage<T>>> {
+pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&powershell_language()).unwrap();
+
+    // Powershell is case insensitive
+    // And the grammar is specified in lowercase
+    let tree_sitter_remove_extra = parser.parse(source.to_lowercase().as_str(), None).unwrap();
+    let root = Tree::<HashMapStorage<Powershell>>::new(
+        source.as_bytes(),
+        tree_sitter_remove_extra,
+    );
+
+    let mut source_without_extra = RemoveComment::new();
+    root.apply(&mut source_without_extra)?;
+    Ok(source_without_extra.output)
+}
+
+pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&powershell_language()).unwrap();
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase
     let tree_sitter = parser.parse(source.to_lowercase().as_str(), None).unwrap();
-    Ok(Tree::<HashMapStorage<T>>::new(
+    Ok(Tree::<HashMapStorage<Powershell>>::new(
         source.as_bytes(),
         tree_sitter,
     ))
+
 }

@@ -1,6 +1,6 @@
 use ps::Powershell;
 use tree::Node;
-use error::{MinusOneResult, Error};
+use error::{MinusOneResult};
 use ps::Powershell::Raw;
 use ps::Value::{Str, Num, Bool};
 use rule::Rule;
@@ -197,6 +197,7 @@ impl<'a> Rule<'a> for Linter {
                 "-shr" | "-split" | "in" | "-f" |
                 "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
+                "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" |
                 "-file" => self.write(" "),
                 "catch" | "finally" | "else" | "elseif" |
                 //  begin process end are not statements
@@ -308,7 +309,8 @@ impl<'a> Rule<'a> for Linter {
                 "-file" | "," | "%" |
                 "function" | "if" | "while" |
                 "elseif" | "switch" | "foreach" | "for" | "do" |
-                "filter" | "workflow" | "try" | "else" => self.write(" "),
+                "filter" | "workflow" | "try" | "else" |
+                "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" => self.write(" "),
                 _ => ()
             }
         }
@@ -367,5 +369,51 @@ impl Linter {
     pub fn set_comment(mut self, comment: bool) -> Self {
         self.comment = comment;
         self
+    }
+}
+
+pub struct RemoveComment {
+    source: String,
+    pub output: String,
+    last_index: usize
+}
+
+impl RemoveComment {
+    pub fn new() -> Self {
+        Self {
+            source: String::new(),
+            output: String::new(),
+            last_index: 0
+        }
+    }
+}
+
+impl<'a> Rule<'a> for RemoveComment {
+    type Language = Powershell;
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+
+        // depending on what am i
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+            }
+            "comment" => {
+                self.output += &self.source[self.last_index..node.start_abs()];
+                self.last_index = node.end_abs();
+            }
+            _ => ()
+        }
+        Ok(true)
+    }
+
+    /// the down to top
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        match node.kind() {
+            "program" => self.output += &self.source[self.last_index..],
+            _ => ()
+        }
+
+        Ok(())
     }
 }

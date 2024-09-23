@@ -576,26 +576,7 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
-        let mut current = 0;
-        for i in 0..self.node.child_count() {
-            let child = self.node.child(i);
-            if child == None {
-                break
-            }
-
-            // ignore extra node when requesting child at particular index
-            if child.unwrap().is_extra() {
-                continue;
-            }
-
-            if current == index {
-                return Some(Node::new(child.unwrap(), self.source, self.storage));
-            }
-
-            current += 1;
-        }
-
-        None
+        Some(Node::new(self.node.child(index)?, self.source, self.storage))
     }
 
     pub fn named_child(&self, index: &str) -> Option<Node<'a, T>> {
@@ -645,12 +626,7 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn child_count(&self) -> usize {
-        // we have to count only usable node
-        let mut result = 0;
-        for _ in self.iter() {
-            result += 1;
-        }
-        result
+        self.node.child_count()
     }
 
     pub fn data(&self) -> Option<&T>{
