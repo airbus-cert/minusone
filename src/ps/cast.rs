@@ -133,12 +133,36 @@ impl<'a> RuleMut<'a> for Cast {
                         (Some(Type(t)), Some(Powershell::Null)) => if t == "bool" {
                             node.set(Raw(Bool(false)));
                         },
-                        (Some(Type(t)), Some(Powershell::Array(_))) | (Some(Type(t)), Some(Powershell::HashMap)) => if t == "bool" {
+                        (Some(Type(t)), Some(Powershell::HashMap)) => if t == "bool" {
                             node.set(Raw(Bool(true)));
                         },
                         (Some(Type(t)), None) => if t == "bool" {
                             node.set(Raw(Bool(true)));
                         },
+                        (Some(Type(t)), Some(Array(array_value))) if t == "char[]" => {
+                            let mut result = Vec::new();
+                            let transformed_value: Vec<Option<char>> = array_value.iter().map(|v| {
+                                match v {
+                                    Num(n) => char::from_u32(*n as u32),
+                                    Str(c) if c.len() == 1 => c.chars().next(),
+                                    _ => None
+                                }
+                            }).collect();
+
+                            for v in transformed_value {
+                                if let Some(c) = v {
+                                    result.push(Str(String::from(c)));
+                                }
+                                else {
+                                    return Ok(());
+                                }
+                            }
+
+                            node.set(Array(result));
+                        },
+                        (Some(Type(t)), Some(Array(_array_value))) if t == "bool" => {
+                            node.set(Raw(Bool(true)));
+                        }
                         _ => ()
                     }
                 } else {}
