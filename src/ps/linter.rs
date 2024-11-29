@@ -91,6 +91,13 @@ impl<'a> Rule<'a> for Linter {
                         self.enter();
                     }
                 },
+                "function_statement" => {
+                    match node.kind() {
+                        "}" => self.untab(),
+                        "{" => self.write(" "),
+                        _ => ()
+                    }
+                },
                 "statement_block" => {
                     // tab for new block
                     if node.kind() == "statement_list" {
@@ -113,7 +120,8 @@ impl<'a> Rule<'a> for Linter {
                         self.untab();
                         self.enter();
                     }
-                }
+                },
+
                 "if_statement" => {
                     // handling if clause
                     if let Some(condition) = parent.named_child("condition") {
@@ -198,6 +206,7 @@ impl<'a> Rule<'a> for Linter {
                 "-regex" | "-wildcard" |
                 "-exact" | "-caseinsensitive" | "-parallel" |
                 "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" |
+                "until" |
                 "-file" => self.write(" "),
                 "catch" | "finally" | "else" | "elseif" |
                 //  begin process end are not statements
@@ -310,7 +319,8 @@ impl<'a> Rule<'a> for Linter {
                 "function" | "if" | "while" |
                 "elseif" | "switch" | "foreach" | "for" | "do" |
                 "filter" | "workflow" | "try" | "else" |
-                "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" => self.write(" "),
+                "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" |
+                "until" | "return" => self.write(" "),
                 _ => ()
             }
         }
