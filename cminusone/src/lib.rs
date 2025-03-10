@@ -1,7 +1,7 @@
 use minusone::engine::DeobfuscateEngine;
 
-#[cxx::bridge]
-mod ffi {
+#[cxx::bridge(namespace = "cminusone")]
+mod bridge {
     extern "Rust" {
         fn deobfuscate_powershell(src: String) -> String;
     }
