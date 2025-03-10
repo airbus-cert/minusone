@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::ops;
 use std::str::Utf8Error;
 use tree_sitter::{Node as TreeNode, Tree as TreeSitter};
-use tree_sitter_traversal::{traverse, Order};
+use tree_sitter_traversal2::{traverse, Order};
 
 /// Node components are stored following
 /// a storage pattern

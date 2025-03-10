@@ -6,7 +6,7 @@ extern crate num;
 extern crate serde;
 extern crate tree_sitter;
 extern crate tree_sitter_powershell;
-extern crate tree_sitter_traversal;
+extern crate tree_sitter_traversal2;
 
 #[macro_use]
 pub mod ps;
