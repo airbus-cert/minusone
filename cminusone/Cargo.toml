@@ -9,5 +9,6 @@ name = "cminusone"
 crate-type = ["cdylib"]
 
 [dependencies]
-cxx = "1.0"
 minusone = { path = ".." }
+cxx = "1.0"
+widestring = "1.1.0"
