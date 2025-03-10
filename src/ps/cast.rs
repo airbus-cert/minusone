@@ -1,9 +1,9 @@
-use rule::RuleMut;
+use error::MinusOneResult;
 use ps::Powershell;
-use tree::{NodeMut, ControlFlow};
-use error::{MinusOneResult};
-use ps::Value::{Num, Str, Bool};
-use ps::Powershell::{Raw, PSItem, Type, Array};
+use ps::Powershell::{Array, PSItem, Raw, Type};
+use ps::Value::{Bool, Num, Str};
+use rule::RuleMut;
+use tree::{ControlFlow, NodeMut};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -44,11 +44,19 @@ pub struct Cast;
 impl<'a> RuleMut<'a> for Cast {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
             "cast_expression" => {
@@ -165,8 +173,9 @@ impl<'a> RuleMut<'a> for Cast {
                         }
                         _ => ()
                     }
-                } else {}
-            },
+                } else {
+                }
+            }
 
             // Forward inferred type in case of cast expression
             "expression_with_unary_operator" => {
@@ -178,7 +187,7 @@ impl<'a> RuleMut<'a> for Cast {
                     }
                 }
             }
-            _ => ()
+            _ => (),
         }
         Ok(())
     }
@@ -190,18 +199,26 @@ pub struct CastNull;
 impl<'a> RuleMut<'a> for CastNull {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
                 match (operator.text()?.to_lowercase().as_str(), expression.data()) {
                     ("+", Some(Powershell::Null)) => node.set(Raw(Num(0))),
                     ("-", Some(Powershell::Null)) => node.set(Raw(Num(0))),
-                    _ => ()
+                    _ => (),
                 }
             }
         }
@@ -211,16 +228,16 @@ impl<'a> RuleMut<'a> for CastNull {
 
 #[cfg(test)]
 mod test {
-    use ps::build_powershell_tree;
-    use ps::integer::{ParseInt, AddInt};
-    use ps::forward::Forward;
-    use ps::cast::Cast;
-    use ps::Value::{Str, Num};
-    use ps::Powershell::{Raw, Array};
-    use ps::string::{ConcatString, ParseString};
-    use ps::foreach::{ForEach, PSItemInferrator};
     use ps::array::ParseArrayLiteral;
+    use ps::build_powershell_tree;
+    use ps::cast::Cast;
+    use ps::foreach::{ForEach, PSItemInferrator};
+    use ps::forward::Forward;
+    use ps::integer::{AddInt, ParseInt};
+    use ps::string::{ConcatString, ParseString};
     use ps::typing::ParseType;
+    use ps::Powershell::{Array, Raw};
+    use ps::Value::{Num, Str};
 
     #[test]
     fn test_cast_int_to_char() {
@@ -229,13 +246,21 @@ mod test {
             ParseInt::default(),
             Forward::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Raw(Str("a".to_string()))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("a".to_string()))
         );
     }
 
@@ -246,13 +271,21 @@ mod test {
             ParseString::default(),
             Forward::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Raw(Num(61))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Num(61))
         );
     }
 
@@ -264,31 +297,48 @@ mod test {
             AddInt::default(),
             Forward::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Raw(Str("d".to_string()))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("d".to_string()))
         );
     }
 
     #[test]
     fn test_cast_int_concat_char() {
-        let mut tree = build_powershell_tree("[char]0x74 + [char]0x6f + [char]0x74 + [char]0x6f").unwrap();
+        let mut tree =
+            build_powershell_tree("[char]0x74 + [char]0x6f + [char]0x74 + [char]0x6f").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             ConcatString::default(),
             Forward::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Raw(Str("toto".to_string()))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("toto".to_string()))
         );
     }
 
@@ -302,13 +352,21 @@ mod test {
             ForEach::default(),
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![
                 Str("t".to_string()),
                 Str("o".to_string()),
                 Str("t".to_string()),

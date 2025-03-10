@@ -5,7 +5,7 @@ pub enum MinusOneErrorKind {
     Parsing,
     InvalidChildIndex,
     InvalidParent,
-    Unknown
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -13,7 +13,7 @@ pub struct MinusOneError {
     /// Kind of error
     kind: MinusOneErrorKind,
     /// Associated message of the context
-    pub message: String
+    pub message: String,
 }
 
 impl MinusOneError {
@@ -25,10 +25,10 @@ impl MinusOneError {
     /// use minusone::error::{MinusOneError, MinusOneErrorKind};
     /// let error = MinusOneError::new(MinusOneErrorKind::Unknown, "Unknown");
     /// ```
-    pub fn new (kind: MinusOneErrorKind, message: &str) -> Self {
+    pub fn new(kind: MinusOneErrorKind, message: &str) -> Self {
         MinusOneError {
             kind,
-            message: String::from(message)
+            message: String::from(message),
         }
     }
 
@@ -51,7 +51,7 @@ impl MinusOneError {
 pub enum Error {
     /// MinusOne error
     MinusOneError(MinusOneError),
-    Utf8Error(Utf8Error)
+    Utf8Error(Utf8Error),
 }
 
 impl Error {
@@ -60,11 +60,17 @@ impl Error {
     }
 
     pub fn invalid_child() -> Self {
-        Error::MinusOneError(MinusOneError::new(MinusOneErrorKind::InvalidChildIndex, "A child was expected at this index"))
+        Error::MinusOneError(MinusOneError::new(
+            MinusOneErrorKind::InvalidChildIndex,
+            "A child was expected at this index",
+        ))
     }
 
     pub fn invalid_parent() -> Self {
-        Error::MinusOneError(MinusOneError::new(MinusOneErrorKind::InvalidParent, "A parent node is expected"))
+        Error::MinusOneError(MinusOneError::new(
+            MinusOneErrorKind::InvalidParent,
+            "A parent node is expected",
+        ))
     }
 }
 

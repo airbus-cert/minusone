@@ -1,9 +1,9 @@
+use error::MinusOneResult;
 use ps::Powershell;
-use tree::Node;
-use error::{MinusOneResult};
 use ps::Powershell::Raw;
-use ps::Value::{Str, Num, Bool};
+use ps::Value::{Bool, Num, Str};
 use rule::Rule;
+use tree::Node;
 
 fn escape_string(src: &str) -> String {
     let mut result = String::new();
@@ -40,14 +40,13 @@ pub struct Linter {
     comment: bool,
     is_param_block: bool,
     statement_block_tab: Vec<bool>,
-    is_multiline: bool
+    is_multiline: bool,
 }
 
 impl<'a> Rule<'a> for Linter {
     type Language = Powershell;
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-
         // depending on what am i
         match node.kind() {
             "script_block" => {
@@ -67,17 +66,15 @@ impl<'a> Rule<'a> for Linter {
             // add a new line space before special statement
             "while_statement" | "if_statement" | "function_statement" => {
                 self.enter();
-            },
-            "param_block" => {
-                self.is_param_block = true
             }
+            "param_block" => self.is_param_block = true,
             "attribute" | "variable" => {
                 if self.is_param_block {
                     self.enter();
                 }
-            },
+            }
             "statement_block" => self.statement_block_tab.push(true),
-            _ => ()
+            _ => (),
         }
 
         // depending on what my parent are
@@ -90,13 +87,11 @@ impl<'a> Rule<'a> for Linter {
                     } else {
                         self.enter();
                     }
-                },
-                "function_statement" => {
-                    match node.kind() {
-                        "}" => self.untab(),
-                        "{" => self.write(" "),
-                        _ => ()
-                    }
+                }
+                "function_statement" => match node.kind() {
+                    "}" => self.untab(),
+                    "{" => self.write(" "),
+                    _ => (),
                 },
                 "statement_block" => {
                     // tab for new block
@@ -111,7 +106,7 @@ impl<'a> Rule<'a> for Linter {
                             return Ok(false);
                         }
                     }
-                },
+                }
                 "command_elements" => self.write(" "),
                 "param_block" => {
                     if node.text()? == "(" {
@@ -120,7 +115,7 @@ impl<'a> Rule<'a> for Linter {
                         self.untab();
                         self.enter();
                     }
-                },
+                }
 
                 "if_statement" => {
                     // handling if clause
@@ -135,21 +130,20 @@ impl<'a> Rule<'a> for Linter {
                                     if !bool_condition {
                                         self.statement_block_tab.pop();
                                         return Ok(false);
-                                    }
-                                    else {
+                                    } else {
                                         if let Some(last) = self.statement_block_tab.last_mut() {
                                             *last = false;
                                         }
                                     }
-                                },
+                                }
                                 // else clause will be handle by next match
                                 "else_clause" => (),
                                 // every other token will not be printed
-                                _ => return Ok(false)
+                                _ => return Ok(false),
                             }
                         }
                     }
-                },
+                }
                 "else_clause" => {
                     if let Some(if_statement) = parent.parent() {
                         if let Some(condition) = if_statement.named_child("condition") {
@@ -161,20 +155,20 @@ impl<'a> Rule<'a> for Linter {
                                         if bool_condition {
                                             self.statement_block_tab.pop();
                                             return Ok(false);
-                                        }
-                                        else {
-                                            if let Some(last) = self.statement_block_tab.last_mut() {
+                                        } else {
+                                            if let Some(last) = self.statement_block_tab.last_mut()
+                                            {
                                                 *last = false;
                                             }
                                         }
-                                    },
-                                    _ => return Ok(false)
+                                    }
+                                    _ => return Ok(false),
                                 }
                             }
                         }
                     }
-                },
-                _ => ()
+                }
+                _ => (),
             }
         }
 
@@ -247,7 +241,7 @@ impl<'a> Rule<'a> for Linter {
                     self.write("$false".to_string().as_str());
                     return Ok(false);
                 }
-                _ => ()
+                _ => (),
             }
         }
         Ok(true)
@@ -255,7 +249,6 @@ impl<'a> Rule<'a> for Linter {
 
     /// the down to top
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-
         // leaf node => just print the token
         if node.child_count() == 0 {
             self.write(&remove_useless_token(&node.text()?.to_lowercase()));
@@ -269,59 +262,49 @@ impl<'a> Rule<'a> for Linter {
                     if is_inline(&parent) {
                         self.write(";");
                     }
-                },
+                }
                 "statement_block" => {
                     // new statement in a block
-                    if node.kind() == "statement_list" && *self.statement_block_tab.last().unwrap_or(&true) {
+                    if node.kind() == "statement_list"
+                        && *self.statement_block_tab.last().unwrap_or(&true)
+                    {
                         if !is_inline(node) {
                             self.untab();
                         }
                     }
-                },
-                _ => ()
+                }
+                _ => (),
             }
         }
 
         match node.kind() {
             "param_block" => self.is_param_block = false,
-            "statement_block" => {self.statement_block_tab.pop();},
-            _ => ()
+            "statement_block" => {
+                self.statement_block_tab.pop();
+            }
+            _ => (),
         }
 
         // post process token
         if node.child_count() == 0 {
             match node.text()?.to_lowercase().as_str() {
-                "=" | "!=" | "+=" | "*=" | "/=" | "%=" | "+" | "-" | "*" | "|" |
-                ">" | ">>" | "2>" | "2>>" | "3>" | "3>>" | "4>" | "4>>" |
-                "5>" | "5>>" | "6>" | "6>>" | "*>" | "*>>" | "<" |
-                "*>&1" | "2>&1" | "3>&1" | "4>&1" | "5>&1" | "6>&1" |
-                "*>&2" | "1>&2" | "3>&2" | "4>&2" | "5>&2" | "6>&2" |
-                "-as" | "-ccontains" | "-ceq" |
-                "-cge" | "-cgt" | "-cle" |
-                "-clike" | "-clt" | "-cmatch" |
-                "-cne" | "-cnotcontains" | "-cnotlike" |
-                "-cnotmatch" | "-contains" | "-creplace" |
-                "-csplit" | "-eq" | "-ge" |
-                "-gt" | "-icontains" | "-ieq" |
-                "-ige" | "-igt" | "-ile" |
-                "-ilike" | "-ilt" | "-imatch" |
-                "-in" | "-ine" | "-inotcontains" |
-                "-inotlike" | "-inotmatch" | "-ireplace" |
-                "-is" | "-isnot" | "-isplit" |
-                "-join" | "-le" | "-like" |
-                "-lt" | "-match" | "-ne" |
-                "-notcontains" | "-notin" | "-notlike" |
-                "-notmatch" | "-replace" | "-shl" |
-                "-shr" | "-split" | "in" | "-f" |
-                "param" | "-regex" | "-wildcard" |
-                "-exact" | "-caseinsensitive" | "-parallel" |
-                "-file" | "," | "%" |
-                "function" | "if" | "while" |
-                "elseif" | "switch" | "foreach" | "for" | "do" |
-                "filter" | "workflow" | "try" | "else" |
-                "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" |
-                "until" | "return" => self.write(" "),
-                _ => ()
+                "=" | "!=" | "+=" | "*=" | "/=" | "%=" | "+" | "-" | "*" | "|" | ">" | ">>"
+                | "2>" | "2>>" | "3>" | "3>>" | "4>" | "4>>" | "5>" | "5>>" | "6>" | "6>>"
+                | "*>" | "*>>" | "<" | "*>&1" | "2>&1" | "3>&1" | "4>&1" | "5>&1" | "6>&1"
+                | "*>&2" | "1>&2" | "3>&2" | "4>&2" | "5>&2" | "6>&2" | "-as" | "-ccontains"
+                | "-ceq" | "-cge" | "-cgt" | "-cle" | "-clike" | "-clt" | "-cmatch" | "-cne"
+                | "-cnotcontains" | "-cnotlike" | "-cnotmatch" | "-contains" | "-creplace"
+                | "-csplit" | "-eq" | "-ge" | "-gt" | "-icontains" | "-ieq" | "-ige" | "-igt"
+                | "-ile" | "-ilike" | "-ilt" | "-imatch" | "-in" | "-ine" | "-inotcontains"
+                | "-inotlike" | "-inotmatch" | "-ireplace" | "-is" | "-isnot" | "-isplit"
+                | "-join" | "-le" | "-like" | "-lt" | "-match" | "-ne" | "-notcontains"
+                | "-notin" | "-notlike" | "-notmatch" | "-replace" | "-shl" | "-shr" | "-split"
+                | "in" | "-f" | "param" | "-regex" | "-wildcard" | "-exact"
+                | "-caseinsensitive" | "-parallel" | "-file" | "," | "%" | "function" | "if"
+                | "while" | "elseif" | "switch" | "foreach" | "for" | "do" | "filter"
+                | "workflow" | "try" | "else" | "-and" | "-or" | "-xor" | "-band" | "-bor"
+                | "-bxor" | "until" | "return" => self.write(" "),
+                _ => (),
             }
         }
 
@@ -339,7 +322,7 @@ impl Linter {
             comment: false,
             is_param_block: false,
             statement_block_tab: vec![],
-            is_multiline: true
+            is_multiline: true,
         }
     }
 
@@ -385,7 +368,7 @@ impl Linter {
 pub struct RemoveComment {
     source: String,
     pub output: String,
-    last_index: usize
+    last_index: usize,
 }
 
 impl RemoveComment {
@@ -393,7 +376,7 @@ impl RemoveComment {
         Self {
             source: String::new(),
             output: String::new(),
-            last_index: 0
+            last_index: 0,
         }
     }
 }
@@ -402,7 +385,6 @@ impl<'a> Rule<'a> for RemoveComment {
     type Language = Powershell;
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-
         // depending on what am i
         match node.kind() {
             "program" => {
@@ -412,7 +394,7 @@ impl<'a> Rule<'a> for RemoveComment {
                 self.output += &self.source[self.last_index..node.start_abs()];
                 self.last_index = node.end_abs();
             }
-            _ => ()
+            _ => (),
         }
         Ok(true)
     }
@@ -421,7 +403,7 @@ impl<'a> Rule<'a> for RemoveComment {
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         match node.kind() {
             "program" => self.output += &self.source[self.last_index..],
-            _ => ()
+            _ => (),
         }
 
         Ok(())

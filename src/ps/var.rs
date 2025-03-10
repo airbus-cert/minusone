@@ -1,11 +1,10 @@
-use scope::ScopeManager;
+use error::{Error, MinusOneResult};
 use ps::Powershell;
-use rule::{RuleMut};
-use tree::{NodeMut, Node, ControlFlow, BranchFlow};
-use error::{MinusOneResult, Error};
-use ps::Powershell::{Raw, Null, Type, Array};
-use ps::Value::{Str, Num, Bool};
-
+use ps::Powershell::{Array, Null, Raw, Type};
+use ps::Value::{Bool, Num, Str};
+use rule::RuleMut;
+use scope::ScopeManager;
+use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 
 /// Var is a variable manager that will try to track
 /// static var assignement and propagte it in the code
@@ -40,28 +39,30 @@ use ps::Value::{Str, Num, Bool};
 /// ");
 /// ```
 pub struct Var {
-    scope_manager : ScopeManager<Powershell>
+    scope_manager: ScopeManager<Powershell>,
 }
 
 impl Var {
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             if child.kind() == "variable" {
-                if child.get_parent_of_types(vec![
-                    "left_assignment_expression",
-                    "pre_increment_expression",
-                    "pre_decrement_expression",
-                    "post_increment_expression",
-                    "post_decrement_expression"
-                ]).is_some() {
-                    self.scope_manager.current().forget(child.text()?.to_lowercase().as_str());
+                if child
+                    .get_parent_of_types(vec![
+                        "left_assignment_expression",
+                        "pre_increment_expression",
+                        "pre_decrement_expression",
+                        "post_increment_expression",
+                        "post_decrement_expression",
+                    ])
+                    .is_some()
+                {
+                    self.scope_manager
+                        .current()
+                        .forget(child.text()?.to_lowercase().as_str());
                 }
-            }
-
-            else {
+            } else {
                 self.forget_assigned_var(&child)?;
             }
-
         }
 
         Ok(())
@@ -71,7 +72,7 @@ impl Var {
 impl Default for Var {
     fn default() -> Self {
         Var {
-            scope_manager: ScopeManager::new()
+            scope_manager: ScopeManager::new(),
         }
     }
 }
@@ -84,9 +85,8 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
                     return Some(child);
                 }
             }
-        }
-        else if let Some(new_node) = find_variable_node(&child){
-            return Some(new_node)
+        } else if let Some(new_node) = find_variable_node(&child) {
+            return Some(new_node);
         }
     }
     None
@@ -95,7 +95,11 @@ fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
-    fn enter(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
             "program" => self.scope_manager.reset(),
@@ -106,20 +110,20 @@ impl<'a> RuleMut<'a> for Var {
                         self.scope_manager.leave();
                     }
                 }
-            },
+            }
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
             "statement_block" => {
                 if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
                     self.forget_assigned_var(&view)?;
                 }
-            },
+            }
 
             "while_statement" => {
                 // before evaluate while condition
                 // we need to forget all var that will be assigned in corresponding statement block
                 self.forget_assigned_var(&view)?;
-            },
+            }
 
             // in the enter function because pre increment before assigned
             "pre_increment_expression" | "pre_decrement_expression" => {
@@ -128,22 +132,24 @@ impl<'a> RuleMut<'a> for Var {
                     if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(&var_name) {
                         if view.kind() == "pre_increment_expression" {
                             *v += 1;
-                        }
-                        else {
+                        } else {
                             *v -= 1;
                         }
-                    }
-                    else {
+                    } else {
                         self.scope_manager.current().forget(&var_name)
                     }
                 }
-            },
-            _ => ()
+            }
+            _ => (),
         }
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
             "assignment_expression" => {
@@ -156,16 +162,14 @@ impl<'a> RuleMut<'a> for Var {
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
                             if let Some(data) = right.data() {
                                 self.scope_manager.current().assign(&var_name, data.clone());
-                            }
-                            else {
+                            } else {
                                 self.scope_manager.current().forget(&var_name)
                             }
                         }
                     }
                 }
-            },
+            }
             "variable" => {
-
                 let var_name = view.text()?.to_lowercase();
                 // forget variable with [ref] operator
                 if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"]) {
@@ -179,16 +183,18 @@ impl<'a> RuleMut<'a> for Var {
                 // check if we are not on the left part of an assignment expression
                 // already handle by the previous case
                 // We also exclude member_access for now
-                if view.get_parent_of_types(vec!["left_assignment_expression"]).is_none() {
+                if view
+                    .get_parent_of_types(vec!["left_assignment_expression"])
+                    .is_none()
+                {
                     // Try to assign variable member
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
                         node.set(data.clone());
-                    }
-                    else {
+                    } else {
                         self.scope_manager.current().in_use(&var_name);
                     }
                 }
-            },
+            }
             // pre_increment_expression is safe to forward due to the enter function handler
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(expression) = view.child(1) {
@@ -196,7 +202,7 @@ impl<'a> RuleMut<'a> for Var {
                         node.set(expression_data.clone())
                     }
                 }
-            },
+            }
             // in the enter function because pre increment before assigned
             "post_increment_expression" | "post_decrement_expression" => {
                 if let Some(variable) = view.child(0) {
@@ -211,31 +217,37 @@ impl<'a> RuleMut<'a> for Var {
                         // ... assign it
                         if kind == "post_increment_expression" {
                             *v += 1;
-                        }
-                        else {
+                        } else {
                             *v -= 1;
                         }
-                    }
-                    else {
+                    } else {
                         self.scope_manager.current().forget(&var_name)
                     }
                 }
-            },
+            }
             // Some function change the value of variables
             // [array]::reverse is handled
             "invokation_expression" => {
                 if let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
                     (view.child(0), view.child(1), view.child(2), view.child(3))
                 {
-                    match (type_lit.data(), op.text()?, member_name.text()?.to_lowercase().as_str()) {
-                        (Some(Type(typename)), "::", m) if (typename == "array" && m.to_lowercase() == "reverse") =>
+                    match (
+                        type_lit.data(),
+                        op.text()?,
+                        member_name.text()?.to_lowercase().as_str(),
+                    ) {
+                        (Some(Type(typename)), "::", m)
+                            if (typename == "array" && m.to_lowercase() == "reverse") =>
                         {
                             // get the argument list if present
-                            if let Some(argument_expression_list) = args_list.named_child("argument_expression_list")
+                            if let Some(argument_expression_list) =
+                                args_list.named_child("argument_expression_list")
                             {
                                 if let Some(arg_1) = argument_expression_list.child(0) {
                                     let var_name = arg_1.text()?.to_lowercase();
-                                    if let Some(Array(data)) = self.scope_manager.current().get_var_mut(&var_name) {
+                                    if let Some(Array(data)) =
+                                        self.scope_manager.current().get_var_mut(&var_name)
+                                    {
                                         data.reverse();
                                     }
                                 }
@@ -243,11 +255,14 @@ impl<'a> RuleMut<'a> for Var {
                         }
                         _ => {
                             // Any array passed as param is forgotten
-                            if let Some(argument_expression_list) = args_list.named_child("argument_expression_list")
+                            if let Some(argument_expression_list) =
+                                args_list.named_child("argument_expression_list")
                             {
                                 for arg in argument_expression_list.iter() {
                                     let var_name = arg.text()?.to_lowercase();
-                                    if let Some(Array(_)) = self.scope_manager.current().get_var(&var_name) {
+                                    if let Some(Array(_)) =
+                                        self.scope_manager.current().get_var(&var_name)
+                                    {
                                         self.scope_manager.current().forget(&var_name);
                                     }
                                 }
@@ -256,12 +271,11 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             }
-            _ => ()
+            _ => (),
         }
         Ok(())
     }
 }
-
 
 /// Static Var rule is used to replace
 /// Variable by its static and predictable value
@@ -300,30 +314,30 @@ pub struct StaticVar;
 impl<'a> RuleMut<'a> for StaticVar {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "variable" {
             match view.text()?.to_lowercase().as_str() {
-                "$shellid" => {
-                    node.set(Raw(Str(String::from("Microsoft.Powershell"))))
-                },
-                "$?" => {
-                    node.set(Raw(Bool(true)))
-                },
-                "$null" => {
-                    node.set(Null)
-                },
-                "$pshome" => {
-                    node.set(Raw(Str(String::from("C:\\Windows\\System32\\WindowsPowerShell\\v1.0"))))
-                },
-                "$verbosepreference" => {
-                    node.set(Raw(Str(String::from("SilentlyContinue"))))
-                },
-                _ => ()
+                "$shellid" => node.set(Raw(Str(String::from("Microsoft.Powershell")))),
+                "$?" => node.set(Raw(Bool(true))),
+                "$null" => node.set(Null),
+                "$pshome" => node.set(Raw(Str(String::from(
+                    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
+                )))),
+                "$verbosepreference" => node.set(Raw(Str(String::from("SilentlyContinue")))),
+                _ => (),
             }
         }
         Ok(())
@@ -333,18 +347,21 @@ impl<'a> RuleMut<'a> for StaticVar {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::build_powershell_tree;
-    use ps::integer::ParseInt;
-    use ps::forward::Forward;
-    use ps::strategy::PowershellStrategy;
     use ps::bool::ParseBool;
-
+    use ps::build_powershell_tree;
+    use ps::forward::Forward;
+    use ps::integer::ParseInt;
+    use ps::strategy::PowershellStrategy;
 
     #[test]
     fn test_static_replacement() {
         let mut tree = build_powershell_tree("$foo = 4\nWrite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (ParseInt::default(), Forward::default(), Var::default()), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 4
@@ -356,13 +373,23 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_param_sep)
         //      (variable inferred_type: Some(Number(4)))))))))
-        assert_eq!(*tree.root().unwrap()// program
-            .child(0).unwrap() // statement_list
-            .child(1).unwrap() // pipeline
-            .child(0).unwrap() //command
-            .child(1).unwrap() // command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(4))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap() // program
+                .child(0)
+                .unwrap() // statement_list
+                .child(1)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(4))
         );
     }
 
@@ -370,11 +397,11 @@ mod test {
     fn test_unfollow_var_use_unknow_var() {
         let mut tree = build_powershell_tree("$foo = $toto\nWrite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 4
@@ -385,13 +412,21 @@ mod test {
         //     (command_name inferred_type: None)
         //     (command_elements inferred_type: None)
         //      (variable inferred_type: Some(Number(4)))))))))
-        assert_eq!(tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(1).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(0).unwrap()// variable
-            .data(), None
+        assert_eq!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(1)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(0)
+                .unwrap() // variable
+                .data(),
+            None
         );
     }
 
@@ -399,28 +434,40 @@ mod test {
     fn test_static_var_shell_id() {
         let mut tree = build_powershell_tree("$shellid").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            StaticVar::default()
-        ),PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                StaticVar::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()// program
-            .child(0).unwrap() // statement_list
-            .child(0).unwrap() // pipeline
-            .data().expect("Expecting inferred type"), Raw(Str("Microsoft.Powershell".to_string()))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap() // program
+                .child(0)
+                .unwrap() // statement_list
+                .child(0)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Str("Microsoft.Powershell".to_string()))
         );
     }
 
     #[test]
     fn test_unfollow_var_use_in_if_statement() {
-        let mut tree = build_powershell_tree("$foo = 0\nif(unknown) { $foo = 5 }\n White-Debug $foo").unwrap();
+        let mut tree =
+            build_powershell_tree("$foo = 0\nif(unknown) { $foo = 5 }\n White-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug $foo
@@ -432,26 +479,39 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: None)))))))
-        assert_eq!(tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data(), None
+        assert_eq!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data(),
+            None
         );
     }
 
     #[test]
     fn test_infer_var_use_in_if_statement_predictable() {
-        let mut tree = build_powershell_tree("$foo = 0\nif($true) { $foo = 5 }\nWhite-Debug $foo").unwrap();
+        let mut tree =
+            build_powershell_tree("$foo = 0\nif($true) { $foo = 5 }\nWhite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -463,26 +523,41 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(5))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(5))
         );
     }
 
     #[test]
     fn test_infer_var_use_in_if_statement_predictable_false() {
-        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }\nWhite-Debug $foo").unwrap();
+        let mut tree =
+            build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }\nWhite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -494,26 +569,43 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(0))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(0))
         );
     }
 
     #[test]
     fn test_infer_var_use_in_if_else_statement_predictable() {
-        let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }else { $foo = 8 }\nWhite-Debug $foo").unwrap();
+        let mut tree = build_powershell_tree(
+            "$foo = 0\nif($false) { $foo = 5 }else { $foo = 8 }\nWhite-Debug $foo",
+        )
+        .unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -525,13 +617,23 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(8))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(8))
         );
     }
 
@@ -539,12 +641,16 @@ mod test {
     fn test_infer_var_use_in_if_elseif_else_statement_predictable() {
         let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }elseif($true) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -556,13 +662,23 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(6))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(6))
         );
     }
 
@@ -570,12 +686,16 @@ mod test {
     fn test_infer_var_use_in_if_elseif_else_statement_unpredictable() {
         let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }elseif(unknown) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -587,13 +707,21 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data(), None
+        assert_eq!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data(),
+            None
         );
     }
 
@@ -601,12 +729,16 @@ mod test {
     fn test_infer_var_use_in_if_elseif_else_statement_predictable_in_else() {
         let mut tree = build_powershell_tree("$foo = 0\nif($false) { $foo = 5 }elseif($false) { $foo = 6 } else {$foo = 7}\nWhite-Debug $foo").unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -618,27 +750,43 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(7))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(7))
         );
     }
 
     #[test]
     fn test_infer_var_use_in_while_statement_use_in_statement() {
         // var is used in the loop statement -> not inferred in the condition and forget
-        let mut tree = build_powershell_tree("$a = 1\nwhile($a -gt 0) { $a = $a + 1 }\nWhite-Debug $a").unwrap();
+        let mut tree =
+            build_powershell_tree("$a = 1\nwhile($a -gt 0) { $a = $a + 1 }\nWhite-Debug $a")
+                .unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -650,27 +798,41 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data(), None
+        assert_eq!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data(),
+            None
         );
     }
 
     #[test]
     fn test_infer_var_use_in_while_statement_not_use_in_statement() {
         // var is used in the loop statement -> not inferred in the condition and forget
-        let mut tree = build_powershell_tree("$a = 1\nwhile($a -gt 0) { $b = $a + 1 }\nWhite-Debug $a").unwrap();
+        let mut tree =
+            build_powershell_tree("$a = 1\nwhile($a -gt 0) { $b = $a + 1 }\nWhite-Debug $a")
+                .unwrap();
 
-        tree.apply_mut_with_strategy(&mut (
-            ParseInt::default(),
-            Forward::default(),
-            Var::default(),
-            ParseBool::default()
-        ), PowershellStrategy::default()).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5
@@ -682,13 +844,23 @@ mod test {
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
         //      (variable inferred_type: Some(Num(5)))))))
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()// statement_list
-            .child(2).unwrap()// pipeline
-            .child(0).unwrap()//command
-            .child(1).unwrap()// command_elements
-            .child(1).unwrap()// variable
-            .data().expect("Expecting inferred type"), Raw(Num(1))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .child(0)
+                .unwrap() //command
+                .child(1)
+                .unwrap() // command_elements
+                .child(1)
+                .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
         );
     }
 }

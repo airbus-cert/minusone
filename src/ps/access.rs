@@ -1,9 +1,9 @@
-use rule::RuleMut;
-use ps::{Powershell, Value};
-use tree::{NodeMut, ControlFlow};
 use error::MinusOneResult;
-use ps::Powershell::{Raw, Array};
+use ps::Powershell::{Array, Raw};
 use ps::Value::Str;
+use ps::{Powershell, Value};
+use rule::RuleMut;
+use tree::{ControlFlow, NodeMut};
 
 /// This function get char at index position
 /// even if the index is negative
@@ -29,7 +29,6 @@ fn get_array_at_index(s: &Vec<Value>, index: i64) -> Option<&Value> {
 
     s.get(uz_index)
 }
-
 
 /// Extract element as array using [] operator
 ///
@@ -74,13 +73,21 @@ pub struct AccessString;
 impl<'a> RuleMut<'a> for AccessString {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "element_access"  {
+        if view.kind() == "element_access" {
             if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
                 match (element.data(), expression.data()) {
                     // We will handle the case of indexing string by an array
@@ -89,17 +96,21 @@ impl<'a> RuleMut<'a> for AccessString {
                         let mut result = vec![];
                         for index_value in index {
                             if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                                if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
+                                if let Some(string_result) =
+                                    get_at_index(string_element, parsed_index_value)
+                                {
                                     result.push(Str(string_result));
                                 }
                             }
                         }
                         node.set(Array(result));
-                    },
+                    }
                     // "foo"[0]
                     (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
                         if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                            if let Some(string_result) = get_at_index(string_element, parsed_index_value) {
+                            if let Some(string_result) =
+                                get_at_index(string_element, parsed_index_value)
+                            {
                                 node.set(Raw(Str(string_result)));
                             }
                         }
@@ -118,30 +129,42 @@ pub struct AccessArray;
 impl<'a> RuleMut<'a> for AccessArray {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "element_access"  {
+        if view.kind() == "element_access" {
             if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
                 match (element.data(), expression.data()) {
                     (Some(Array(array_element)), Some(Array(index))) => {
                         let mut result = vec![];
                         for index_value in index {
                             if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                                if let Some(value) = get_array_at_index(array_element, parsed_index_value) {
+                                if let Some(value) =
+                                    get_array_at_index(array_element, parsed_index_value)
+                                {
                                     result.push(value.clone());
                                 }
                             }
                         }
                         node.set(Array(result));
-                    },
+                    }
                     // "foo"[0]
                     (Some(Array(array_element)), Some(Raw(index_value))) => {
                         if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                            if let Some(value) = get_array_at_index(array_element, parsed_index_value) {
+                            if let Some(value) =
+                                get_array_at_index(array_element, parsed_index_value)
+                            {
                                 node.set(Raw(value.clone()));
                             }
                         }
@@ -157,11 +180,11 @@ impl<'a> RuleMut<'a> for AccessArray {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ps::array::ParseArrayLiteral;
     use ps::build_powershell_tree;
+    use ps::forward::Forward;
     use ps::integer::ParseInt;
     use ps::string::ParseString;
-    use ps::forward::Forward;
-    use ps::array::ParseArrayLiteral;
 
     #[test]
     fn test_access_string_element_from_int() {
@@ -171,13 +194,21 @@ mod test {
             Forward::default(),
             ParseString::default(),
             AccessString::default(),
-            ParseArrayLiteral::default()
-        )).unwrap();
+            ParseArrayLiteral::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("a".to_string()), Str("b".to_string())])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Str("a".to_string()), Str("b".to_string())])
         );
     }
 
@@ -189,13 +220,21 @@ mod test {
             Forward::default(),
             ParseString::default(),
             AccessString::default(),
-            ParseArrayLiteral::default()
-        )).unwrap();
+            ParseArrayLiteral::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("b".to_string()), Str("c".to_string())])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Str("b".to_string()), Str("c".to_string())])
         );
     }
 
@@ -206,13 +245,21 @@ mod test {
             ParseInt::default(),
             Forward::default(),
             ParseString::default(),
-            AccessString::default()
-        )).unwrap();
+            AccessString::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Raw(Str("b".to_string()))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("b".to_string()))
         );
     }
 
@@ -223,13 +270,21 @@ mod test {
             ParseInt::default(),
             Forward::default(),
             ParseString::default(),
-            AccessString::default()
-        )).unwrap();
+            AccessString::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Raw(Str("a".to_string()))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("a".to_string()))
         );
     }
 
@@ -241,13 +296,21 @@ mod test {
             Forward::default(),
             ParseString::default(),
             AccessString::default(),
-            ParseArrayLiteral::default()
-        )).unwrap();
+            ParseArrayLiteral::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("b".to_string()), Str("c".to_string())])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Str("b".to_string()), Str("c".to_string())])
         );
     }
 }

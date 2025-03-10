@@ -3,27 +3,27 @@ use std::collections::HashMap;
 #[derive(Clone)]
 pub struct Variable<T: Clone> {
     inferred_type: Option<T>,
-    used: bool
+    used: bool,
 }
 
 impl<T: Clone> Variable<T> {
     pub fn new(inferred_type: Option<T>) -> Self {
         Variable {
             inferred_type,
-            used: false
+            used: false,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct Scope<T: Clone> {
-    vars: HashMap<String, Variable<T>>
+    vars: HashMap<String, Variable<T>>,
 }
 
 impl<T: Clone> Scope<T> {
     pub fn new() -> Self {
         Scope {
-            vars: HashMap::new()
+            vars: HashMap::new(),
         }
     }
 
@@ -31,7 +31,8 @@ impl<T: Clone> Scope<T> {
         if let Some(var_value) = self.vars.get_mut(var_name) {
             var_value.inferred_type = Some(value);
         } else {
-            self.vars.insert(var_name.to_string(), Variable::new(Some(value)));
+            self.vars
+                .insert(var_name.to_string(), Variable::new(Some(value)));
         }
     }
 
@@ -63,13 +64,13 @@ impl<T: Clone> Scope<T> {
 }
 
 pub struct ScopeManager<T: Clone> {
-    scopes: Vec<Scope<T>>
+    scopes: Vec<Scope<T>>,
 }
 
 impl<T: Clone> ScopeManager<T> {
     pub fn new() -> Self {
         ScopeManager {
-            scopes: vec![Scope::new()] // default scope
+            scopes: vec![Scope::new()], // default scope
         }
     }
 
@@ -82,7 +83,9 @@ impl<T: Clone> ScopeManager<T> {
     }
 
     pub fn current(&mut self) -> &mut Scope<T> {
-        self.scopes.last_mut().expect("It must at least exist a last scope")
+        self.scopes
+            .last_mut()
+            .expect("It must at least exist a last scope")
     }
 
     pub fn reset(&mut self) {

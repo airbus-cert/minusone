@@ -1,10 +1,12 @@
-use rule::RuleMut;
+use error::{Error, MinusOneResult};
 use ps::Powershell;
-use tree::{NodeMut, Node, ControlFlow};
-use error::{MinusOneResult, Error};
 use ps::Powershell::{Array, PSItem, Raw};
+use rule::RuleMut;
+use tree::{ControlFlow, Node, NodeMut};
 
-fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Option<Node<'a, Powershell>>> {
+fn find_previous_expr<'a>(
+    command: &Node<'a, Powershell>,
+) -> MinusOneResult<Option<Node<'a, Powershell>>> {
     let pipeline = command.parent().ok_or(Error::invalid_child())?;
     // find in the pipeline at which index i am
     let mut index = 0;
@@ -17,8 +19,7 @@ fn find_previous_expr<'a>(command: &Node<'a, Powershell>) -> MinusOneResult<Opti
 
     if index < 2 {
         Ok(None)
-    }
-    else {
+    } else {
         Ok(pipeline.child(index - 2))
     }
 }
@@ -68,26 +69,39 @@ pub struct PSItemInferrator;
 impl<'a> RuleMut<'a> for PSItemInferrator {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "variable" && view.text()? == "$_"{
-            if let Some(script_block_expression) = view.get_parent_of_types(vec!["script_block_expression"]) {
-                if let Some(foreach_command) = script_block_expression.get_parent_of_types(vec!["foreach_command"]) {
-                    if let Some(previous) = find_previous_expr(&foreach_command.parent().unwrap())? {
+        if view.kind() == "variable" && view.text()? == "$_" {
+            if let Some(script_block_expression) =
+                view.get_parent_of_types(vec!["script_block_expression"])
+            {
+                if let Some(foreach_command) =
+                    script_block_expression.get_parent_of_types(vec!["foreach_command"])
+                {
+                    if let Some(previous) = find_previous_expr(&foreach_command.parent().unwrap())?
+                    {
                         // the previous in the pipeline
                         match previous.data() {
                             Some(Array(values)) => {
                                 node.set(PSItem(values.clone()));
-                            },
+                            }
                             Some(Raw(value)) => {
                                 node.set(PSItem(vec![value.clone()]));
-                            },
-                            _ => ()
+                            }
+                            _ => (),
                         }
                     }
                 }
@@ -142,15 +156,24 @@ pub struct ForEach;
 impl<'a> RuleMut<'a> for ForEach {
     type Language = Powershell;
 
-    fn enter(&mut self, _node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         Ok(())
     }
 
-    fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
         if view.kind() == "foreach_command" {
-            if view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression" {
+            if view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression"
+            {
                 let script_block_expression = view.child(1).unwrap();
                 if let Some(previous_command) = find_previous_expr(&view.parent().unwrap())? {
                     // if the previous pipeline was inferred as an array
@@ -159,14 +182,17 @@ impl<'a> RuleMut<'a> for ForEach {
                         Some(Array(values)) => previous_values.extend(values.clone()),
                         // array of size 1
                         Some(Raw(value)) => previous_values.push(value.clone()),
-                        _ => ()
+                        _ => (),
                     }
                     let script_block_body = script_block_expression
-                        .child(1).ok_or(Error::invalid_child())? // script_block node
+                        .child(1)
+                        .ok_or(Error::invalid_child())? // script_block node
                         .named_child("script_block_body");
 
                     if let Some(script_block_body_node) = script_block_body {
-                        if let Some(statement_list) = script_block_body_node.named_child("statement_list") {
+                        if let Some(statement_list) =
+                            script_block_body_node.named_child("statement_list")
+                        {
                             // determine the number of loop
                             // by looping over the size of the array
 
@@ -174,16 +200,16 @@ impl<'a> RuleMut<'a> for ForEach {
                             for i in 0..previous_values.len() {
                                 for child_statement in statement_list.iter() {
                                     if child_statement.kind() == "empty_statement" {
-                                        continue
+                                        continue;
                                     }
 
                                     match child_statement.data() {
                                         Some(PSItem(values)) => {
                                             result.push(values[i].clone());
-                                        },
+                                        }
                                         Some(Raw(r)) => {
                                             result.push(r.clone());
-                                        },
+                                        }
                                         Some(Array(array_value)) => {
                                             for v in array_value {
                                                 result.push(v.clone());
@@ -191,7 +217,7 @@ impl<'a> RuleMut<'a> for ForEach {
                                         }
                                         _ => {
                                             // stop inferring we have not enough infos
-                                            return Ok(())
+                                            return Ok(());
                                         }
                                     }
                                 }
@@ -212,15 +238,15 @@ impl<'a> RuleMut<'a> for ForEach {
 #[cfg(test)]
 mod test {
     use ps::array::ParseArrayLiteral;
+    use ps::build_powershell_tree;
+    use ps::cast::Cast;
+    use ps::foreach::{ForEach, PSItemInferrator};
     use ps::forward::Forward;
     use ps::integer::ParseInt;
-    use ps::foreach::{PSItemInferrator, ForEach};
-    use ps::Powershell::Array;
-    use ps::build_powershell_tree;
-    use ps::Value::{Num, Str};
     use ps::string::ParseString;
-    use ps::cast::Cast;
     use ps::typing::ParseType;
+    use ps::Powershell::Array;
+    use ps::Value::{Num, Str};
 
     #[test]
     fn test_foreach_transparent() {
@@ -231,12 +257,20 @@ mod test {
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
             ForEach::default(),
-        )).unwrap();
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Num(1), Num(2), Num(3)])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Num(1), Num(2), Num(3)])
         );
     }
 
@@ -250,12 +284,20 @@ mod test {
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
             ForEach::default(),
-        )).unwrap();
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("a".to_string()), Num(2), Num(3)])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Str("a".to_string()), Num(2), Num(3)])
         );
     }
 
@@ -269,12 +311,20 @@ mod test {
             ParseArrayLiteral::default(),
             PSItemInferrator::default(),
             ForEach::default(),
-        )).unwrap();
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Num(1)])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Num(1)])
         );
     }
 
@@ -289,13 +339,21 @@ mod test {
             PSItemInferrator::default(),
             ForEach::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("a".to_string())])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Str("a".to_string())])
         );
     }
 
@@ -310,13 +368,21 @@ mod test {
             PSItemInferrator::default(),
             ForEach::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("a".to_string()), Str("b".to_string())])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Str("a".to_string()), Str("b".to_string())])
         );
     }
 
@@ -331,13 +397,26 @@ mod test {
             PSItemInferrator::default(),
             ForEach::default(),
             Cast::default(),
-            ParseType::default()
-        )).unwrap();
+            ParseType::default(),
+        ))
+        .unwrap();
 
-        assert_eq!(*tree.root().unwrap()
-            .child(0).unwrap()
-            .child(0).unwrap()
-            .data().expect("Inferred type"), Array(vec![Str("z".to_string()), Str("a".to_string()), Str("z".to_string()), Str("b".to_string())])
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![
+                Str("z".to_string()),
+                Str("a".to_string()),
+                Str("z".to_string()),
+                Str("b".to_string())
+            ])
         );
     }
 }

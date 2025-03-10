@@ -1,20 +1,20 @@
-use rule::Rule;
-use tree::{Node};
 use error::MinusOneResult;
+use rule::Rule;
 use std::fmt::Debug;
+use tree::Node;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type
 pub struct DebugView<T> {
     tab_space: u32,
-    _use: Option<T>
+    _use: Option<T>,
 }
 
 impl<T> DebugView<T> {
     pub fn new() -> Self {
         DebugView {
             tab_space: 0,
-            _use: None
+            _use: None,
         }
     }
 }
@@ -37,12 +37,15 @@ impl<T> DebugView<T> {
 /// tree.apply(&mut debub_view).unwrap(); // it will print you the tree over the console
 ///
 /// ```
-impl<'a, T> Rule<'a> for DebugView<T> where T : Debug {
+impl<'a, T> Rule<'a> for DebugView<T>
+where
+    T: Debug,
+{
     type Language = T;
 
     /// During the top down travel we will manage tab
     /// increment and general print
-    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool>{
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         println!();
 
         for _ in 0..self.tab_space {
@@ -56,7 +59,7 @@ impl<'a, T> Rule<'a> for DebugView<T> where T : Debug {
     }
 
     /// During the down to top travel we will manage the tab decrement
-    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()>{
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         print!(")");
         self.tab_space -= 1;
         Ok(())

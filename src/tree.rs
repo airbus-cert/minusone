@@ -1,9 +1,9 @@
-use tree_sitter::{Node as TreeNode, Tree as TreeSitter};
+use error::MinusOneResult;
+use rule::{Rule, RuleMut};
 use std::collections::HashMap;
-use rule::{RuleMut, Rule};
-use std::str::Utf8Error;
-use error::{MinusOneResult};
 use std::ops;
+use std::str::Utf8Error;
+use tree_sitter::{Node as TreeNode, Tree as TreeSitter};
 use tree_sitter_traversal::{traverse, Order};
 
 /// Node components are stored following
@@ -35,20 +35,19 @@ pub trait Storage {
 /// A possible implementation of storage that
 /// use Hash map as link between node id and data
 pub struct HashMapStorage<T> {
-    map : HashMap<usize, T>,
-    is_updated : bool
+    map: HashMap<usize, T>,
+    is_updated: bool,
 }
 
 /// Default trait is used for the tree implementation
 impl<T> Default for HashMapStorage<T> {
     fn default() -> Self {
         Self {
-            map : HashMap::new(),
-            is_updated: false
+            map: HashMap::new(),
+            is_updated: false,
         }
     }
 }
-
 
 /// Storage implementation for the HashMap storage
 impl<T> Storage for HashMapStorage<T> {
@@ -75,7 +74,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(ts_tree.root_node()), None)
     /// ```
     fn get(&self, node: TreeNode) -> Option<&Self::Component> {
-        if ! self.map.contains_key(&node.id()) {
+        if !self.map.contains_key(&node.id()) {
             return None;
         }
         Some(self.map.get(&node.id()).unwrap())
@@ -156,16 +155,20 @@ pub struct NodeMut<'a, T> {
     source: &'a [u8],
 
     /// Reference to the storage
-    storage: &'a mut dyn Storage<Component=T>
+    storage: &'a mut dyn Storage<Component = T>,
 }
 
 /// NodeMut methods
 impl<'a, T> NodeMut<'a, T> {
-    pub fn new(root: TreeNode<'a>, source: &'a [u8], storage: &'a mut dyn Storage<Component=T>) -> Self {
+    pub fn new(
+        root: TreeNode<'a>,
+        source: &'a [u8],
+        storage: &'a mut dyn Storage<Component = T>,
+    ) -> Self {
         Self {
             inner: root,
             source,
-            storage
+            storage,
         }
     }
 
@@ -311,9 +314,9 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
-    pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
+    pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language = T>) -> MinusOneResult<()> {
         // Stack use to call 'leave' method when all children are handled
-        let mut stack:Vec<(TreeNode, usize)> = vec![];
+        let mut stack: Vec<(TreeNode, usize)> = vec![];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
             self.inner = node;
@@ -413,7 +416,12 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
-    pub fn apply_with_strategy_recurcive(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
+    pub fn apply_with_strategy_recurcive(
+        &mut self,
+        rule: &mut impl RuleMut<'a, Language = T>,
+        strategy: &impl Strategy<T>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let mut computed_flow = flow;
         computed_flow = computed_flow | strategy.control(self.view())?;
 
@@ -435,7 +443,7 @@ impl<'a, T> NodeMut<'a, T> {
         Ok(())
     }
 
-        /// Apply a rule to each node by sequentially visit the tree
+    /// Apply a rule to each node by sequentially visit the tree
     /// But some part of the tree could not be visited depending
     /// of the strategy
     ///
@@ -497,10 +505,15 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
-    pub fn apply_with_strategy(&mut self, rule: &mut impl RuleMut<'a, Language=T>, strategy: &impl Strategy<T>, flow: ControlFlow) -> MinusOneResult<()> {
+    pub fn apply_with_strategy(
+        &mut self,
+        rule: &mut impl RuleMut<'a, Language = T>,
+        strategy: &impl Strategy<T>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
         let mut control_flow = flow;
         // Stack use to call 'leave' method when all children are handled
-        let mut stack:Vec<(TreeNode, usize, ControlFlow)> = vec![];
+        let mut stack: Vec<(TreeNode, usize, ControlFlow)> = vec![];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
             self.inner = node;
@@ -556,7 +569,7 @@ pub struct Node<'a, T> {
     /// Source reference
     source: &'a [u8],
     /// The associate component storage
-    storage: &'a dyn Storage<Component=T>
+    storage: &'a dyn Storage<Component = T>,
 }
 
 /// Two nodes are equals if they have the same node id
@@ -567,37 +580,47 @@ impl<'a, T> PartialEq for Node<'a, T> {
 }
 
 impl<'a, T> Node<'a, T> {
-    pub fn new(node: TreeNode<'a>, source: &'a [u8], storage: &'a dyn Storage<Component=T>) -> Self {
+    pub fn new(
+        node: TreeNode<'a>,
+        source: &'a [u8],
+        storage: &'a dyn Storage<Component = T>,
+    ) -> Self {
         Self {
             node,
             source,
-            storage
+            storage,
         }
     }
 
     pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
-        Some(Node::new(self.node.child(index)?, self.source, self.storage))
+        Some(Node::new(
+            self.node.child(index)?,
+            self.source,
+            self.storage,
+        ))
     }
 
     pub fn named_child(&self, index: &str) -> Option<Node<'a, T>> {
-        self.node.child_by_field_name(index).map(|node| Node::new(node, self.source, self.storage))
+        self.node
+            .child_by_field_name(index)
+            .map(|node| Node::new(node, self.source, self.storage))
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
-        NodeIterator::new(
-            Self::new(self.node, self.source, self.storage),
-            0,
-            None,
-            1
-        )
+        NodeIterator::new(Self::new(self.node, self.source, self.storage), 0, None, 1)
     }
 
-    pub fn range(&self, start: Option<usize>, end: Option<usize>, gap: Option<usize>) -> NodeIterator<'a, T> {
+    pub fn range(
+        &self,
+        start: Option<usize>,
+        end: Option<usize>,
+        gap: Option<usize>,
+    ) -> NodeIterator<'a, T> {
         NodeIterator::new(
             Self::new(self.node, self.source, self.storage),
             start.unwrap_or(0),
             end,
-            gap.unwrap_or(1)
+            gap.unwrap_or(1),
         )
     }
 
@@ -629,18 +652,19 @@ impl<'a, T> Node<'a, T> {
         self.node.child_count()
     }
 
-    pub fn data(&self) -> Option<&T>{
+    pub fn data(&self) -> Option<&T> {
         self.storage.get(self.node)
     }
 
-    pub fn text(&self) -> Result<&str, Utf8Error>{
+    pub fn text(&self) -> Result<&str, Utf8Error> {
         self.node.utf8_text(self.source)
     }
 
     pub fn parent(&self) -> Option<Node<'a, T>> {
-        self.node.parent().map(|node| Self::new(node, self.source, self.storage))
+        self.node
+            .parent()
+            .map(|node| Self::new(node, self.source, self.storage))
     }
-
 
     pub fn get_parent_of_types(&self, kinds: Vec<&str>) -> Option<Node<'a, T>> {
         let mut current = self.parent();
@@ -650,22 +674,22 @@ impl<'a, T> Node<'a, T> {
                     return Some(current_node);
                 }
                 current = current_node.parent();
-            }
-            else {
+            } else {
                 return None;
             }
         }
     }
 
-    fn apply(&self, rule: &mut impl Rule<'a, Language=T>) -> MinusOneResult<()> {
+    fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
         let mut is_visiting = true;
         // Stack use to call 'leave' method when all children are handled
-        let mut stack:Vec<(TreeNode, usize, bool)> = vec![];
+        let mut stack: Vec<(TreeNode, usize, bool)> = vec![];
 
         for node in traverse(self.node.walk(), Order::Pre) {
             stack.push((node, node.child_count(), is_visiting));
             if is_visiting {
-                is_visiting = is_visiting && rule.enter(&Node::new(node, self.source, self.storage))?;
+                is_visiting =
+                    is_visiting && rule.enter(&Node::new(node, self.source, self.storage))?;
             }
 
             // clean stack
@@ -698,23 +722,22 @@ impl<'a, T> Node<'a, T> {
         }
         Ok(())
     }
-
 }
 
 pub struct NodeIterator<'a, T> {
     inner: Node<'a, T>,
     index: usize,
     end: Option<usize>,
-    gap : usize
+    gap: usize,
 }
 
 impl<'a, T> NodeIterator<'a, T> {
-    fn new(node: Node<'a, T>, start: usize, end: Option<usize>, gap: usize) -> Self{
+    fn new(node: Node<'a, T>, start: usize, end: Option<usize>, gap: usize) -> Self {
         Self {
             inner: node,
-            index : start,
+            index: start,
             end,
-            gap
+            gap,
         }
     }
 }
@@ -733,8 +756,8 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
             Some(node) => {
                 self.index += self.gap;
                 Some(node)
-            },
-            None => None
+            }
+            None => None,
         }
     }
 }
@@ -746,8 +769,8 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
 /// to unpredictable (maybe depend of the execution)
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BranchFlow {
-    Predictable,    // This branch is sure to be executed at runtime
-    Unpredictable   // This branch could be executed depending of runtime context
+    Predictable,   // This branch is sure to be executed at runtime
+    Unpredictable, // This branch could be executed depending of runtime context
 }
 
 impl ops::BitOr<BranchFlow> for BranchFlow {
@@ -766,8 +789,8 @@ impl ops::BitOr<BranchFlow> for BranchFlow {
 /// Strategy control flow
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ControlFlow {
-    Break,                  // We don't want to continue the visit of the tree
-    Continue(BranchFlow)    // We want to continue the visit
+    Break,                // We don't want to continue the visit of the tree
+    Continue(BranchFlow), // We want to continue the visit
 }
 
 impl ops::BitOr<ControlFlow> for ControlFlow {
@@ -777,7 +800,9 @@ impl ops::BitOr<ControlFlow> for ControlFlow {
         match (self, rhs) {
             (ControlFlow::Break, _) => ControlFlow::Break,
             (_, ControlFlow::Break) => ControlFlow::Break,
-            (ControlFlow::Continue(left), ControlFlow::Continue(right)) => ControlFlow::Continue(left | right),
+            (ControlFlow::Continue(left), ControlFlow::Continue(right)) => {
+                ControlFlow::Continue(left | right)
+            }
         }
     }
 }
@@ -789,37 +814,58 @@ pub trait Strategy<T> {
     fn control(&self, node: Node<T>) -> MinusOneResult<ControlFlow>;
 }
 
-pub struct Tree<'a, S : Storage> {
+pub struct Tree<'a, S: Storage> {
     storage: S,
     tree_sitter: TreeSitter,
-    source: &'a[u8]
+    source: &'a [u8],
 }
 
-impl<'a, S> Tree<'a, S> where S : Storage + Default {
-    pub fn new(source: &'a[u8], tree_sitter: TreeSitter) -> Self {
+impl<'a, S> Tree<'a, S>
+where
+    S: Storage + Default,
+{
+    pub fn new(source: &'a [u8], tree_sitter: TreeSitter) -> Self {
         Self {
             storage: S::default(),
             tree_sitter,
-            source
+            source,
         }
     }
 
-    pub fn apply_mut<'b>(&'b mut self, rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized)) -> MinusOneResult<()>{
+    pub fn apply_mut<'b>(
+        &'b mut self,
+        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized),
+    ) -> MinusOneResult<()> {
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
         node.apply(rule)
     }
 
-    pub fn apply_mut_with_strategy<'b>(&'b mut self, rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized), strategy: impl Strategy<S::Component>) -> MinusOneResult<()>{
+    pub fn apply_mut_with_strategy<'b>(
+        &'b mut self,
+        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized),
+        strategy: impl Strategy<S::Component>,
+    ) -> MinusOneResult<()> {
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
-        node.apply_with_strategy(rule, &strategy, ControlFlow::Continue(BranchFlow::Predictable))
+        node.apply_with_strategy(
+            rule,
+            &strategy,
+            ControlFlow::Continue(BranchFlow::Predictable),
+        )
     }
 
-    pub fn apply<'b>(&'b self, rule: &mut (impl Rule<'b, Language=S::Component> + Sized)) -> MinusOneResult<()> {
+    pub fn apply<'b>(
+        &'b self,
+        rule: &mut (impl Rule<'b, Language = S::Component> + Sized),
+    ) -> MinusOneResult<()> {
         let node = Node::new(self.tree_sitter.root_node(), self.source, &self.storage);
         node.apply(rule)
     }
 
     pub fn root(&self) -> MinusOneResult<Node<S::Component>> {
-        Ok(Node::new(self.tree_sitter.root_node(), self.source, &self.storage))
+        Ok(Node::new(
+            self.tree_sitter.root_node(),
+            self.source,
+            &self.storage,
+        ))
     }
 }

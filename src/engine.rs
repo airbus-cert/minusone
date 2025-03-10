@@ -1,10 +1,9 @@
-use tree::{Tree, HashMapStorage, Storage};
-use ps;
+use debug::DebugView;
 use error::MinusOneResult;
 use init::Init;
-use debug::DebugView;
+use ps;
 use ps::{build_powershell_tree, remove_powershell_extra};
-
+use tree::{HashMapStorage, Storage, Tree};
 
 pub struct Engine<'a, S: Storage> {
     root: Tree<'a, S>,
@@ -12,7 +11,7 @@ pub struct Engine<'a, S: Storage> {
 
 pub type DeobfuscateEngine<'a> = Engine<'a, HashMapStorage<ps::Powershell>>;
 
-impl<'a> DeobfuscateEngine<'a>  {
+impl<'a> DeobfuscateEngine<'a> {
     pub fn remove_extra(src: &'a str) -> MinusOneResult<String> {
         remove_powershell_extra(src)
     }
@@ -28,7 +27,10 @@ impl<'a> DeobfuscateEngine<'a>  {
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
-        self.root.apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy::default())?;
+        self.root.apply_mut_with_strategy(
+            &mut ps::RuleSet::init(),
+            ps::strategy::PowershellStrategy::default(),
+        )?;
         Ok(())
     }
 
@@ -44,5 +46,3 @@ impl<'a> DeobfuscateEngine<'a>  {
         Ok(ps_litter_view.output)
     }
 }
-
-
