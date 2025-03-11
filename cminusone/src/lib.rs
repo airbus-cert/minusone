@@ -1,4 +1,4 @@
-use std::{ffi::c_int, mem, ptr};
+use std::{ffi::c_int, mem};
 
 use minusone::engine::DeobfuscateEngine;
 use widestring::U16String;
@@ -19,12 +19,7 @@ fn deobfuscate_powershell(src: String) -> String {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rust_function(
-    buffer: *const u16,
-    strlen: c_int,
-    ptr_out: *mut *const u16,
-    outlen: *mut c_int,
-) {
+pub unsafe extern "C" fn rust_function(buffer: *const u16, strlen: c_int) -> *const u16 {
     let src = U16String::from_ptr(buffer, strlen as usize)
         .to_string()
         .unwrap();
@@ -40,9 +35,8 @@ pub unsafe extern "C" fn rust_function(
 
     let mut out = U16String::from(out).into_vec();
     out.shrink_to_fit();
-    let len = out.len();
-
-    *outlen = len as c_int;
-    *ptr_out = out.as_ptr();
+    let ptr = out.as_ptr();
     mem::forget(out);
+
+    ptr
 }
