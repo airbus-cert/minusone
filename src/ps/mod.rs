@@ -19,6 +19,9 @@ use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
 use tree_sitter_powershell::language as powershell_language;
 
+use std::fs::File;
+use std::io::prelude::*;
+
 pub mod access;
 pub mod array;
 pub mod bool;
@@ -124,6 +127,9 @@ pub type RuleSet = (
 pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&powershell_language()).unwrap();
+
+    // Trim to assert program is at the beginning
+    let source = source.trim();
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase

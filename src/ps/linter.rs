@@ -388,6 +388,10 @@ impl<'a> Rule<'a> for RemoveComment {
         // depending on what am i
         match node.kind() {
             "program" => {
+                if node.start_abs() != 0 {
+                    panic!("Program does not start at index 0 after trimming the source.");
+                }
+
                 self.source = node.text()?.to_string();
             }
             "comment" => {
@@ -402,7 +406,16 @@ impl<'a> Rule<'a> for RemoveComment {
     /// the down to top
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         match node.kind() {
-            "program" => self.output += &self.source[self.last_index..],
+            "program" => {
+                // println!(
+                //     "DEBUGING:\noutput:\n{}\n\nsource:\n{}\n\nlastindex:\n{}\n\nnode:\n{}\n",
+                //     self.output,
+                //     self.source,
+                //     self.last_index,
+                //     node.text().unwrap()
+                // );
+                self.output += &self.source[self.last_index..]
+            }
             _ => (),
         }
 
