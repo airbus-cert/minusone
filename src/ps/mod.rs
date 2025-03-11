@@ -125,6 +125,9 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&powershell_language()).unwrap();
 
+    // Trim to assert program is at the beginning
+    let source = source.trim();
+
     // Powershell is case insensitive
     // And the grammar is specified in lowercase
     let tree_sitter_remove_extra = parser.parse(source.to_lowercase().as_str(), None).unwrap();

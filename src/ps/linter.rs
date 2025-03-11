@@ -1,4 +1,4 @@
-use error::MinusOneResult;
+use error::{Error, MinusOneResult};
 use ps::Powershell;
 use ps::Powershell::Raw;
 use ps::Value::{Bool, Num, Str};
@@ -388,6 +388,10 @@ impl<'a> Rule<'a> for RemoveComment {
         // depending on what am i
         match node.kind() {
             "program" => {
+                if node.start_abs() != 0 {
+                    return Err(Error::invalid_program_index(node.start_abs()));
+                }
+
                 self.source = node.text()?.to_string();
             }
             "comment" => {
