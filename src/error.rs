@@ -5,6 +5,7 @@ pub enum MinusOneErrorKind {
     Parsing,
     InvalidChildIndex,
     InvalidParent,
+    InvalidProgramIndex,
     Unknown,
 }
 
@@ -63,6 +64,17 @@ impl Error {
         Error::MinusOneError(MinusOneError::new(
             MinusOneErrorKind::InvalidChildIndex,
             "A child was expected at this index",
+        ))
+    }
+
+    pub fn invalid_program_index(index: usize) -> Self {
+        Error::MinusOneError(MinusOneError::new(
+            MinusOneErrorKind::InvalidProgramIndex,
+            format!(
+                "The program is excepted to start at index 0. Found index {}",
+                index
+            )
+            .as_str(),
         ))
     }
 
