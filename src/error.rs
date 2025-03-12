@@ -5,6 +5,7 @@ pub enum MinusOneErrorKind {
     Parsing,
     InvalidChildIndex,
     InvalidParent,
+    InvalidProgram,
     InvalidProgramIndex,
     Unknown,
 }
@@ -64,6 +65,13 @@ impl Error {
         Error::MinusOneError(MinusOneError::new(
             MinusOneErrorKind::InvalidChildIndex,
             "A child was expected at this index",
+        ))
+    }
+
+    pub fn invalid_program() -> Self {
+        Error::MinusOneError(MinusOneError::new(
+            MinusOneErrorKind::InvalidProgram,
+            "A valid program root node is excepted.",
         ))
     }
 
