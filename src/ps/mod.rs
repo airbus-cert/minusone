@@ -19,9 +19,6 @@ use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
 use tree_sitter_powershell::language as powershell_language;
 
-use std::fs::File;
-use std::io::prelude::*;
-
 pub mod access;
 pub mod array;
 pub mod bool;
