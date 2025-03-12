@@ -1,4 +1,4 @@
-use error::MinusOneResult;
+use error::{Error, MinusOneResult};
 use ps::access::{AccessArray, AccessString};
 use ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
 use ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
@@ -132,6 +132,14 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
     // And the grammar is specified in lowercase
     let tree_sitter_remove_extra = parser.parse(source.to_lowercase().as_str(), None).unwrap();
     let root = Tree::<HashMapStorage<Powershell>>::new(source.as_bytes(), tree_sitter_remove_extra);
+
+    let root_node = root.root().or(Err(Error::invalid_program()))?;
+    if root_node.kind() != "program" {
+        return Err(Error::invalid_program());
+    }
+    if root_node.start_abs() != 0 {
+        return Err(Error::invalid_program_index(root_node.start_abs()));
+    }
 
     let mut source_without_extra = RemoveComment::new();
     root.apply(&mut source_without_extra)?;
