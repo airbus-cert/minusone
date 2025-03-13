@@ -24,10 +24,10 @@ minusone-cli = ["clap"]
 
 [dependencies]
 tree-sitter = "0.25"
-tree-sitter-powershell = { git = "https://github.com/airbus-cert/tree-sitter-powershell", rev = "e904962e25858b7e8e19c653e737ad3b7d1c55bd" }
+tree-sitter-powershell = "0.25.2"
 clap = { version = "^2.33", optional = true }
 base64 = "0.21.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 num = "0.4.3"
-tree-sitter-traversal2 = { path = "../tree-sitter-traversal" }
+tree-sitter-traversal2 = "0.2.1"
