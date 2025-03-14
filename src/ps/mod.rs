@@ -17,7 +17,7 @@ use ps::string::{
 use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
 use tree::{HashMapStorage, Tree};
-use tree_sitter_powershell::language as powershell_language;
+use tree_sitter_powershell::LANGUAGE as powershell_language;
 
 pub mod access;
 pub mod array;
@@ -123,7 +123,9 @@ pub type RuleSet = (
 
 pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
     let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&powershell_language()).unwrap();
+    parser
+        .set_language(&powershell_language.into())
+        .expect("Error loading powershell grammar");
 
     // Trim to assert program is at the beginning
     let source = source.trim();
@@ -148,7 +150,9 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
     let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&powershell_language()).unwrap();
+    parser
+        .set_language(&powershell_language.into())
+        .expect("Error loading powershell grammar");
 
     // Powershell is case insensitive
     // And the grammar is specified in lowercase
