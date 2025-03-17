@@ -62,11 +62,11 @@ impl<T> Storage for HashMapStorage<T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
@@ -89,11 +89,11 @@ impl<T> Storage for HashMapStorage<T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
@@ -117,11 +117,11 @@ impl<T> Storage for HashMapStorage<T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
@@ -182,11 +182,11 @@ impl<'a, T> NodeMut<'a, T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let source = "4+5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -212,11 +212,11 @@ impl<'a, T> NodeMut<'a, T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let source = "4+5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -243,11 +243,11 @@ impl<'a, T> NodeMut<'a, T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let source = "4+5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -276,7 +276,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, ControlFlow};
     /// use minusone::rule::RuleMut;
     /// use minusone::error::MinusOneResult;
@@ -302,7 +302,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// }
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let source = "5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -365,7 +365,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
     /// use minusone::rule::RuleMut;
     /// use minusone::error::MinusOneResult;
@@ -404,7 +404,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let source = "5";
     /// let ts_tree = parser.parse(source, None).unwrap();
@@ -454,7 +454,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
-    /// use tree_sitter_powershell::language as powershell_language;
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
     /// use minusone::rule::RuleMut;
     /// use minusone::error::MinusOneResult;
@@ -493,7 +493,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     ///
     /// let mut parser = Parser::new();
-    /// parser.set_language(&powershell_language()).unwrap();
+    /// parser.set_language(&powershell_language.into()).unwrap();
     ///
     /// let source = "5";
     /// let ts_tree = parser.parse(source, None).unwrap();
