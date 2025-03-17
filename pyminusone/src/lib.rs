@@ -1,8 +1,8 @@
-use pyo3::prelude::*;
-use pyo3::exceptions::PyRuntimeError;
-use tree_sitter_highlight::{Highlighter, HighlightConfiguration, HtmlRenderer};
-use tree_sitter_powershell;
 use minusone::engine::DeobfuscateEngine;
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
+use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HtmlRenderer};
+use tree_sitter_powershell;
 
 struct PyMinusOneError(minusone::error::Error);
 
@@ -11,7 +11,7 @@ impl From<PyMinusOneError> for PyErr {
         match err.0 {
             minusone::error::Error::Utf8Error(_) => {
                 PyErr::new::<PyRuntimeError, _>(format!("Invalid UTF8 token"))
-            },
+            }
             minusone::error::Error::MinusOneError(minusone_error) => {
                 PyErr::new::<PyRuntimeError, _>(format!("{}", minusone_error.message))
             }
@@ -22,7 +22,8 @@ impl From<PyMinusOneError> for PyErr {
 #[pyfunction]
 fn deobfuscate_powershell(src: String) -> PyResult<String> {
     let remove_comment = DeobfuscateEngine::remove_extra(&src).map_err(PyMinusOneError)?;
-    let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
+    let mut engine =
+        DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
     engine.deobfuscate().map_err(PyMinusOneError)?;
     Ok(engine.lint().map_err(PyMinusOneError)?)
 }
@@ -50,12 +51,13 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
         "variable.parameter",
         "number",
         "array",
-        "assignvalue"
+        "assignvalue",
     ];
 
     let remove_comment = DeobfuscateEngine::remove_extra(&src).map_err(PyMinusOneError)?;
 
-    let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
+    let mut engine =
+        DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
     engine.deobfuscate().map_err(PyMinusOneError)?;
 
     let mut highlighter = Highlighter::new();
@@ -65,27 +67,31 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
         "powershell",
         tree_sitter_powershell::HIGHLIGHTS_QUERY,
         "",
-        ""
-    ).unwrap();
+        "",
+    )
+    .unwrap();
 
     psconfig.configure(&highlight_names);
 
     let deobfuscate_ps = engine.lint_format("\t").map_err(PyMinusOneError)?;
 
-    let highlights = highlighter.highlight(
-        &psconfig,
-        deobfuscate_ps.as_bytes(),
-        None,
-        |_| None
-    ).unwrap();
+    let highlights = highlighter
+        .highlight(&psconfig, deobfuscate_ps.as_bytes(), None, |_| None)
+        .unwrap();
 
     let html_attrs: Vec<String> = highlight_names
-    .iter()
-    .map(|s| format!("class=\"{}\"", s.replace('.', " ")))
-    .collect();
+        .iter()
+        .map(|s| format!("class=\"{}\"", s.replace('.', " ")))
+        .collect();
 
     let mut renderer = HtmlRenderer::new();
-    renderer.render(highlights, deobfuscate_ps.as_bytes(), &|highlight, output| output.extend(html_attrs[highlight.0].as_bytes())).unwrap();
+    renderer
+        .render(
+            highlights,
+            deobfuscate_ps.as_bytes(),
+            &|highlight, output| output.extend(html_attrs[highlight.0].as_bytes()),
+        )
+        .unwrap();
 
     Ok(unsafe { String::from_utf8_unchecked(renderer.html) })
 }
