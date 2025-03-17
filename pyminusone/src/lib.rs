@@ -58,11 +58,10 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
     let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
     engine.deobfuscate().map_err(PyMinusOneError)?;
 
-    let ps_language = tree_sitter_powershell::language();
     let mut highlighter = Highlighter::new();
 
     let mut psconfig = HighlightConfiguration::new(
-        ps_language,
+        tree_sitter_powershell::LANGUAGE.into(),
         "powershell",
         tree_sitter_powershell::HIGHLIGHTS_QUERY,
         "",
@@ -86,13 +85,13 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
     .collect();
 
     let mut renderer = HtmlRenderer::new();
-    renderer.render(highlights, deobfuscate_ps.as_bytes(), &|highlight| html_attrs[highlight.0].as_bytes()).unwrap();
+    renderer.render(highlights, deobfuscate_ps.as_bytes(), &|highlight, output| output.extend(html_attrs[highlight.0].as_bytes())).unwrap();
 
     Ok(unsafe { String::from_utf8_unchecked(renderer.html) })
 }
 
 #[pymodule]
-fn pyminusone(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn pyminusone(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deobfuscate_powershell, m)?)?;
     m.add_function(wrap_pyfunction!(deobfuscate_powershell_html, m)?)?;
     Ok(())
