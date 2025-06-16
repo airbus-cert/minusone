@@ -4,7 +4,8 @@ $$\textit{obfuscation}^{-1}$$
 
 Reverse operation of script obfuscation
 
-🌐 An online version is available : https://minusone.skyblue.team/ 🌐
+🌐 An online version is available: https://minusone.skyblue.team/ 🌐
+
 
 ## Description
 
