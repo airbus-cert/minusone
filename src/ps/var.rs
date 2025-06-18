@@ -1,10 +1,11 @@
 use error::{Error, MinusOneResult};
 use ps::Powershell;
 use ps::Powershell::{Array, Null, Raw, Type};
-use ps::Value::{Bool, Num, Str};
+use ps::Value::{self, Bool, Num, Str};
 use regex::Regex;
 use rule::RuleMut;
 use scope::ScopeManager;
+use std::collections::BTreeMap;
 use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 
 /// Var is a variable manager that will try to track
@@ -44,6 +45,64 @@ pub struct Var {
 }
 
 impl Var {
+    fn reset_scope_manager(&mut self) {
+        self.scope_manager.reset();
+        vec![
+            "args",
+            "ConfirmPreference",
+            "ConsoleFileName",
+            "DebugPreference",
+            "Error",
+            "ErrorActionPreference",
+            "ErrorView",
+            "ExecutionContext",
+            "false",
+            "FormatEnumerationLimit",
+            "HOME",
+            "Host",
+            "InformationPreference",
+            "input",
+            "MaximumAliasCount",
+            "MaximumDriveCount",
+            "MaximumErrorCount",
+            "MaximumFunctionCount",
+            "MaximumHistoryCount",
+            "MaximumVariableCount",
+            "MyInvocation",
+            "NestedPromptLevel",
+            "null",
+            "OutputEncoding",
+            "PID",
+            "PROFILE",
+            "ProgressPreference",
+            "PSBoundParameters",
+            "PSCommandPath",
+            "PSCulture",
+            "PSDefaultParameterValues",
+            "PSEdition",
+            "PSEmailServer",
+            "PSHOME",
+            "PSScriptRoot",
+            "PSSessionApplicationName",
+            "PSSessionConfigurationName",
+            "PSSessionOption",
+            "PSUICulture",
+            "PSVersionTable",
+            "PWD",
+            "ShellId",
+            "StackTrace",
+            "true",
+            "VerbosePreference",
+            "WarningPreference",
+            "WhatIfPreference",
+        ]
+        .iter()
+        .for_each(|s| {
+            self.scope_manager
+                .current_mut()
+                .assign(s, Powershell::Unknown)
+        });
+    }
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             if child.kind() == "variable" {
@@ -97,13 +156,46 @@ impl Var {
 
         return None;
     }
+
+    /// Resolve the name of a variable pattern given the current scope
+    ///
+    /// Use for patterns used by variable, get-variable, set-variable, get-childitem...
+    fn resolve_variable(&self, variable_name: String) -> Option<String> {
+        if variable_name.contains("*") {
+            let re = Regex::new(&*format!("^{}$", variable_name.replace("*", ".*"))).unwrap();
+            let current_scope = self.scope_manager.current();
+            let var_names = current_scope.get_var_names();
+            let matches: Vec<_> = var_names
+                .iter()
+                .filter(|&var_name| re.is_match(var_name))
+                .collect();
+
+            if matches.len() == 1 {
+                Some(matches[0].clone())
+            } else {
+                None
+            }
+        } else {
+            Some(variable_name)
+        }
+    }
+
+    fn hashmap(variable_name: String, data: &Value) -> Powershell {
+        Powershell::HashMap(BTreeMap::from([
+            (Str("name".to_string()), Str(variable_name)),
+            (Str("value".to_string()), data.clone()),
+        ]))
+    }
 }
 
 impl Default for Var {
     fn default() -> Self {
-        Var {
+        let mut new = Var {
             scope_manager: ScopeManager::new(),
-        }
+        };
+        new.reset_scope_manager();
+
+        new
     }
 }
 
@@ -132,7 +224,7 @@ impl<'a> RuleMut<'a> for Var {
     ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
-            "program" => self.scope_manager.reset(),
+            "program" => self.reset_scope_manager(),
             "function_statement" => self.scope_manager.enter(),
             "}" => {
                 if let Some(parent) = view.parent() {
@@ -311,6 +403,92 @@ impl<'a> RuleMut<'a> for Var {
                                 }
                             }
                         }
+                    }
+                }
+            }
+            "command" => {
+                if let Some(command_name) = view.child(0) {
+                    match command_name.text()?.to_lowercase().as_str() {
+                        "variable" => {
+                            if let Some(command_elements) = view.child(1) {
+                                if let Some(variable_name) = command_elements.child(1) {
+                                    if let Some(variable_name) =
+                                        self.resolve_variable(variable_name.text()?.to_lowercase())
+                                    {
+                                        if let Some(Raw(data)) =
+                                            self.scope_manager.current().get_var(&variable_name)
+                                        {
+                                            node.set(Var::hashmap(variable_name, data));
+                                        } else {
+                                            self.scope_manager.current_mut().in_use(&variable_name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "get-variable" | "gv" => {
+                            if let Some(command_elements) = view.child(1) {
+                                if let Some(variable) = command_elements.child(1) {
+                                    if let Some(variable_name) =
+                                        self.resolve_variable(variable.text()?.to_lowercase())
+                                    {
+                                        if let Some(Raw(data)) =
+                                            self.scope_manager.current().get_var(&variable_name)
+                                        {
+                                            let value_param = command_elements
+                                                .child(3)
+                                                .is_some_and(|command_parameter| {
+                                                    command_parameter.kind() == "command_parameter"
+                                                        && command_parameter.text().is_ok_and(
+                                                            |text| {
+                                                                "-valueonly".starts_with(
+                                                                    &text.to_lowercase(),
+                                                                )
+                                                            },
+                                                        )
+                                                });
+
+                                            if value_param {
+                                                node.set(Raw(data.clone()));
+                                            } else {
+                                                node.set(Var::hashmap(variable_name, data));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "set-variable" | "sv" => {
+                            if let Some(command_elements) = view.child(1) {
+                                if let (Some(variable_name_node), Some(variable_value_node)) =
+                                    (command_elements.child(1), command_elements.child(3))
+                                {
+                                    if let Some(Raw(variable_value)) = variable_value_node.data() {
+                                        if let Some(variable_name) =
+                                            if let Some(Raw(variable_name)) =
+                                                variable_name_node.data()
+                                            {
+                                                Some(variable_name.to_string())
+                                            } else if variable_name_node.kind() == "generic_token" {
+                                                Some(variable_name_node.text()?.to_lowercase())
+                                            } else {
+                                                None
+                                            }
+                                        {
+                                            if let Some(variable_name) =
+                                                self.resolve_variable(variable_name)
+                                            {
+                                                self.scope_manager.current_mut().assign(
+                                                    &variable_name,
+                                                    Powershell::Raw(variable_value.clone()),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => (),
                     }
                 }
             }

@@ -67,6 +67,10 @@ impl<T: Clone> Scope<T> {
         }
         None
     }
+
+    pub fn get_var_names(&self) -> Vec<String> {
+        self.vars.clone().keys().map(|k| k.clone()).collect()
+    }
 }
 
 pub struct ScopeManager<T: Clone> {

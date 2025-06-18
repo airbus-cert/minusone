@@ -90,6 +90,7 @@ pub enum Powershell {
     HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type
+    Unknown,
 }
 
 /// This is the rule set use to perform
