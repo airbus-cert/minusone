@@ -3,6 +3,7 @@ use ps::Powershell::{Array, Raw};
 use ps::Value::Str;
 use ps::{Powershell, Value};
 use rule::RuleMut;
+use serde_json::to_string;
 use tree::{ControlFlow, NodeMut};
 
 /// This function get char at index position
@@ -197,14 +198,23 @@ impl<'a> RuleMut<'a> for AccessHashMap {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "element_access" {
-            if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
-                if let (Some(Powershell::HashMap(map)), Some(Raw(value))) = (element.data(), expression.data()) {
-                    if map.contains_key(value) {
-                        node.set(Raw(map[value].clone()))
+        match view.kind() {
+            "element_access" => {
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+                    if let (Some(Powershell::HashMap(map)), Some(Raw(value))) =
+                        (element.data(), expression.data())
+                    {
+                        let value = match value {
+                            Str(x) => Str(x.to_lowercase()),
+                            x => x.clone(),
+                        };
+                        if map.contains_key(&value) {
+                            node.set(Raw(map[&value].clone()))
+                        }
                     }
                 }
             }
+            _ => (),
         }
         Ok(())
     }

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use error::MinusOneResult;
 use ps::Powershell;
 use ps::Powershell::{HashEntry, HashMap, Raw};
+use ps::Value::Str;
 use rule::RuleMut;
 use tree::{ControlFlow, NodeMut};
 
@@ -29,7 +30,7 @@ impl<'a> RuleMut<'a> for ParseHash {
         if view.kind() == "hash_entry" {
             if let (Some(key_expression), Some(pipeline)) = (view.child(0), view.child(2)) {
                 if let (Some(Raw(key)), Some(Raw(value))) = (key_expression.data(), pipeline.data()) {
-                    node.set(Powershell::HashEntry(key.clone(), value.clone()));
+                    node.set(Powershell::HashEntry(Str(key.to_string().to_lowercase()), value.clone()));
                 }
             }
         } else if view.kind() == "hash_literal_body" {
@@ -37,7 +38,7 @@ impl<'a> RuleMut<'a> for ParseHash {
             //manage the map itself
             for child in view.iter() {
                 if let Some(HashEntry(k, v)) = child.data() {
-                    result.insert(k.clone(), v.clone());
+                    result.insert(Str(k.to_string().to_lowercase()), v.clone());
                 }
             }
             node.set(HashMap(result))
