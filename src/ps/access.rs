@@ -214,6 +214,20 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                     }
                 }
             }
+            "member_access" => {
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+                    if let Some(Powershell::HashMap(map)) = element.data() {
+                        if let Some(child) = expression.child(0) {
+                            if child.kind() == "simple_name" {
+                                let value = Str(expression.text()?.to_lowercase());
+                                if map.contains_key(&value) {
+                                    node.set(Raw(map[&value].clone()))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => (),
         }
         Ok(())
