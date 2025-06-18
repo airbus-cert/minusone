@@ -141,7 +141,7 @@ impl<'a> RuleMut<'a> for Cast {
                         (Some(Type(t)), Some(Powershell::Null)) => if t == "bool" {
                             node.set(Raw(Bool(false)));
                         },
-                        (Some(Type(t)), Some(Powershell::HashMap)) => if t == "bool" {
+                        (Some(Type(t)), Some(Powershell::HashMap(_))) => if t == "bool" {
                             node.set(Raw(Bool(true)));
                         },
                         (Some(Type(t)), None) => if t == "bool" {

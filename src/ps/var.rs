@@ -57,7 +57,7 @@ impl Var {
                     .is_some()
                 {
                     self.scope_manager
-                        .current()
+                        .current_mut()
                         .forget(child.text()?.to_lowercase().as_str());
                 }
             } else {
@@ -129,14 +129,14 @@ impl<'a> RuleMut<'a> for Var {
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
                     let var_name = variable.text()?.to_lowercase();
-                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(&var_name) {
+                    if let Some(Raw(Num(v))) = self.scope_manager.current_mut().get_var_mut(&var_name) {
                         if view.kind() == "pre_increment_expression" {
                             *v += 1;
                         } else {
                             *v -= 1;
                         }
                     } else {
-                        self.scope_manager.current().forget(&var_name)
+                        self.scope_manager.current_mut().forget(&var_name)
                     }
                 }
             }
@@ -161,9 +161,9 @@ impl<'a> RuleMut<'a> for Var {
                         // only predictable assignment is handled
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
                             if let Some(data) = right.data() {
-                                self.scope_manager.current().assign(&var_name, data.clone());
+                                self.scope_manager.current_mut().assign(&var_name, data.clone());
                             } else {
-                                self.scope_manager.current().forget(&var_name)
+                                self.scope_manager.current_mut().forget(&var_name)
                             }
                         }
                     }
@@ -175,7 +175,7 @@ impl<'a> RuleMut<'a> for Var {
                 if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"]) {
                     if let Some(Type(typename)) = cast_expression.child(0).unwrap().data() {
                         if typename.to_lowercase() == "ref" {
-                            self.scope_manager.current().forget(&var_name)
+                            self.scope_manager.current_mut().forget(&var_name)
                         }
                     }
                 }
@@ -188,10 +188,10 @@ impl<'a> RuleMut<'a> for Var {
                     .is_none()
                 {
                     // Try to assign variable member
-                    if let Some(data) = self.scope_manager.current().get_var(&var_name) {
+                    if let Some(data) = self.scope_manager.current_mut().get_var(&var_name) {
                         node.set(data.clone());
                     } else {
-                        self.scope_manager.current().in_use(&var_name);
+                        self.scope_manager.current_mut().in_use(&var_name);
                     }
                 }
             }
@@ -209,7 +209,7 @@ impl<'a> RuleMut<'a> for Var {
                     let var_name = variable.text()?.to_lowercase();
                     let kind = view.kind();
 
-                    if let Some(Raw(Num(v))) = self.scope_manager.current().get_var_mut(&var_name) {
+                    if let Some(Raw(Num(v))) = self.scope_manager.current_mut().get_var_mut(&var_name) {
                         // we set the variable before ...
                         if let Some(variable_data) = variable.data() {
                             node.set(variable_data.clone())
@@ -221,7 +221,7 @@ impl<'a> RuleMut<'a> for Var {
                             *v -= 1;
                         }
                     } else {
-                        self.scope_manager.current().forget(&var_name)
+                        self.scope_manager.current_mut().forget(&var_name)
                     }
                 }
             }
@@ -246,7 +246,7 @@ impl<'a> RuleMut<'a> for Var {
                                 if let Some(arg_1) = argument_expression_list.child(0) {
                                     let var_name = arg_1.text()?.to_lowercase();
                                     if let Some(Array(data)) =
-                                        self.scope_manager.current().get_var_mut(&var_name)
+                                        self.scope_manager.current_mut().get_var_mut(&var_name)
                                     {
                                         data.reverse();
                                     }
@@ -261,9 +261,9 @@ impl<'a> RuleMut<'a> for Var {
                                 for arg in argument_expression_list.iter() {
                                     let var_name = arg.text()?.to_lowercase();
                                     if let Some(Array(_)) =
-                                        self.scope_manager.current().get_var(&var_name)
+                                        self.scope_manager.current_mut().get_var(&var_name)
                                     {
-                                        self.scope_manager.current().forget(&var_name);
+                                        self.scope_manager.current_mut().forget(&var_name);
                                     }
                                 }
                             }
@@ -858,6 +858,69 @@ mod test {
                 .unwrap() // command_elements
                 .child(1)
                 .unwrap() // variable
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
+        );
+    }
+
+    #[test]
+    fn test_infer_var_use_in_function_statement() {
+        // infer global var in function statement
+        let mut tree =
+            build_powershell_tree("$a = 1\nFunction invoke { $a }")
+                .unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseBool::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+            .unwrap();
+
+        // We are waiting for
+        // Write-Debug 5
+        // (program
+        //  (statement_list inferred_type: None)
+        //   (assignment_expression inferred_type: None) ...
+        //   (function_statement inferred_type: None
+        //    (function inferred_type: None)
+        //    (function_name inferred_type: None)
+        //    ({ inferred_type: None)
+        //    (script_block inferred_type: None
+        //     (script_block_body inferred_type: None
+        //      (statement_list inferred_type: None
+        //       (pipeline inferred_type: Some(Raw(Num(1)))
+        //        (logical_expression inferred_type: Some(Raw(Num(1)))
+        //         (bitwise_expression inferred_type: None
+        //          (comparison_expression inferred_type: None
+        //           (additive_expression inferred_type: None
+        //            (multiplicative_expression inferred_type: None
+        //             (format_expression inferred_type: None
+        //              (range_expression inferred_type: None
+        //               (array_literal_expression inferred_type: None
+        //                (unary_expression inferred_type: None
+        //                 (variable inferred_type: None))))))))))))))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(1)
+                .unwrap() // function_statement
+                .child(3)
+                .unwrap() //script_block
+                .child(0)
+                .unwrap() // script_block_body
+                .child(0)
+                .unwrap() // statement_list
+                .child(0)
+                .unwrap() // pipeline
                 .data()
                 .expect("Expecting inferred type"),
             Raw(Num(1))

@@ -7,6 +7,7 @@ extern crate serde;
 extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 extern crate tree_sitter_traversal2;
+extern crate serde_json;
 
 #[macro_use]
 pub mod ps;

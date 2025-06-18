@@ -177,6 +177,39 @@ impl<'a> RuleMut<'a> for AccessArray {
     }
 }
 
+#[derive(Default)]
+pub struct AccessHashMap;
+
+impl<'a> RuleMut<'a> for AccessHashMap {
+    type Language = Powershell;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() == "element_access" {
+            if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+                if let (Some(Powershell::HashMap(map)), Some(Raw(value))) = (element.data(), expression.data()) {
+                    if map.contains_key(value) {
+                        node.set(Raw(map[value].clone()))
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

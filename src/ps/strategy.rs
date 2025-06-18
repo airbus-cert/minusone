@@ -18,7 +18,7 @@ impl Strategy<Powershell> for PowershellStrategy {
                     "while_statement" => {
                         // Don't visit node inferred node with a branch set to false
                         if let Some(condition) = parent.named_child("condition") {
-                            if condition.data() == Some(&Raw(Bool(false))) {
+                            if let Some(Raw(Bool(false))) = condition.data() {
                                 return Ok(Break);
                             }
                         }

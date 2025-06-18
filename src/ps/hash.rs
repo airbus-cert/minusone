@@ -1,6 +1,7 @@
+use std::collections::BTreeMap;
 use error::MinusOneResult;
 use ps::Powershell;
-use ps::Powershell::HashMap;
+use ps::Powershell::{HashEntry, HashMap, Raw};
 use rule::RuleMut;
 use tree::{ControlFlow, NodeMut};
 
@@ -24,9 +25,24 @@ impl<'a> RuleMut<'a> for ParseHash {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "hash_literal_expression" {
-            node.set(HashMap)
+
+        if view.kind() == "hash_entry" {
+            if let (Some(key_expression), Some(pipeline)) = (view.child(0), view.child(2)) {
+                if let (Some(Raw(key)), Some(Raw(value))) = (key_expression.data(), pipeline.data()) {
+                    node.set(Powershell::HashEntry(key.clone(), value.clone()));
+                }
+            }
+        } else if view.kind() == "hash_literal_body" {
+            let mut result = BTreeMap::new();
+            //manage the map itself
+            for child in view.iter() {
+                if let Some(HashEntry(k, v)) = child.data() {
+                    result.insert(k.clone(), v.clone());
+                }
+            }
+            node.set(HashMap(result))
         }
+
         Ok(())
     }
 }
