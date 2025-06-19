@@ -36,13 +36,13 @@ impl<'a> DeobfuscateEngine<'a> {
 
     pub fn lint(&mut self) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new();
-        self.root.apply(&mut ps_litter_view).unwrap();
+        self.root.apply(&mut ps_litter_view)?;
         Ok(ps_litter_view.output)
     }
 
     pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new().set_tab(tab_chr);
-        self.root.apply(&mut ps_litter_view).unwrap();
+        self.root.apply(&mut ps_litter_view)?;
         Ok(ps_litter_view.output)
     }
 }

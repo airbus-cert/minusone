@@ -130,6 +130,20 @@ impl<'a> RuleMut<'a> for Forward {
                     }
                 }
             }
+            "key_expression" => {
+                if let Some(expression) = view.child(0) {
+                    if let Some(expression_data) = expression.data() {
+                        node.reduce(expression_data.clone())
+                    }
+                }
+            }
+            "hash_literal_expression" => {
+                if let Some(expression) = view.child(1) {
+                    if let Some(expression_data) = expression.data() {
+                        node.reduce(expression_data.clone())
+                    }
+                }
+            }
             _ => (),
         }
 

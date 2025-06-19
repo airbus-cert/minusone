@@ -60,7 +60,7 @@ impl<'a> RuleMut<'a> for ParseString {
                             Raw(Bool(false)) => {
                                 result = result.replace(child.text()?, "False");
                             }
-                            Powershell::HashMap => {
+                            Powershell::HashMap(_) => {
                                 result =
                                     result.replace(child.text()?, "System.Collections.Hashtable");
                             }

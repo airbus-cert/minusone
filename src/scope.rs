@@ -27,6 +27,12 @@ impl<T: Clone> Scope<T> {
         }
     }
 
+    pub fn from(scope: &Scope<T>) -> Self {
+        Scope {
+            vars : scope.vars.clone()
+        }
+    }
+
     pub fn assign(&mut self, var_name: &str, value: T) {
         if let Some(var_value) = self.vars.get_mut(var_name) {
             var_value.inferred_type = Some(value);
@@ -75,16 +81,22 @@ impl<T: Clone> ScopeManager<T> {
     }
 
     pub fn enter(&mut self) {
-        self.scopes.push(Scope::new())
+        self.scopes.push(Scope::from(self.current()))
     }
 
     pub fn leave(&mut self) {
         self.scopes.pop();
     }
 
-    pub fn current(&mut self) -> &mut Scope<T> {
+    pub fn current_mut(&mut self) -> &mut Scope<T> {
         self.scopes
             .last_mut()
+            .expect("It must at least exist a last scope")
+    }
+
+    pub fn current(&self) -> &Scope<T> {
+        self.scopes
+            .last()
             .expect("It must at least exist a last scope")
     }
 

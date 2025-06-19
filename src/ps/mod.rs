@@ -1,5 +1,5 @@
 use error::{Error, MinusOneResult};
-use ps::access::{AccessArray, AccessString};
+use ps::access::{AccessArray, AccessHashMap, AccessString};
 use ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
 use ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
 use ps::cast::{Cast, CastNull};
@@ -16,6 +16,7 @@ use ps::string::{
 };
 use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
+use std::collections::BTreeMap;
 use tree::{HashMapStorage, Tree};
 use tree_sitter_powershell::LANGUAGE as powershell_language;
 
@@ -35,11 +36,20 @@ pub mod string;
 pub mod typing;
 pub mod var;
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
     Num(i64),
     Str(String),
     Bool(bool),
+}
+
+impl Value {
+    fn normalize(&self) -> Value {
+        match self {
+            Value::Str(x) => Value::Str(x.to_lowercase()),
+            x => x.clone(),
+        }
+    }
 }
 
 impl ToString for Value {
@@ -71,13 +81,14 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Powershell {
     Raw(Value),
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
-    HashMap,      // We don't infer this time, but it's planed
+    HashMap(BTreeMap<Value, Value>),
+    HashEntry(Value, Value),
     Type(String), // Will infer type
 }
 
@@ -119,6 +130,7 @@ pub type RuleSet = (
     AddArray,     // Array concat using +, operator
     StringSplitMethod, // Handle split method
     AccessArray,  // Handle static array element access
+    AccessHashMap, // Handle hashmap access
 );
 
 pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
@@ -130,9 +142,8 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
     // Trim to assert program is at the beginning
     let source = source.trim();
 
-    // Powershell is case insensitive
     // And the grammar is specified in lowercase
-    let tree_sitter_remove_extra = parser.parse(source.to_lowercase().as_str(), None).unwrap();
+    let tree_sitter_remove_extra = parser.parse(source, None).unwrap();
     let root = Tree::<HashMapStorage<Powershell>>::new(source.as_bytes(), tree_sitter_remove_extra);
 
     let root_node = root.root().or(Err(Error::invalid_program()))?;
@@ -154,9 +165,8 @@ pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage
         .set_language(&powershell_language.into())
         .expect("Error loading powershell grammar");
 
-    // Powershell is case insensitive
     // And the grammar is specified in lowercase
-    let tree_sitter = parser.parse(source.to_lowercase().as_str(), None).unwrap();
+    let tree_sitter = parser.parse(source, None).unwrap();
     Ok(Tree::<HashMapStorage<Powershell>>::new(
         source.as_bytes(),
         tree_sitter,
