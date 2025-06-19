@@ -129,7 +129,9 @@ impl<'a> RuleMut<'a> for Var {
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
                     let var_name = variable.text()?.to_lowercase();
-                    if let Some(Raw(Num(v))) = self.scope_manager.current_mut().get_var_mut(&var_name) {
+                    if let Some(Raw(Num(v))) =
+                        self.scope_manager.current_mut().get_var_mut(&var_name)
+                    {
                         if view.kind() == "pre_increment_expression" {
                             *v += 1;
                         } else {
@@ -161,7 +163,9 @@ impl<'a> RuleMut<'a> for Var {
                         // only predictable assignment is handled
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
                             if let Some(data) = right.data() {
-                                self.scope_manager.current_mut().assign(&var_name, data.clone());
+                                self.scope_manager
+                                    .current_mut()
+                                    .assign(&var_name, data.clone());
                             } else {
                                 self.scope_manager.current_mut().forget(&var_name)
                             }
@@ -209,7 +213,9 @@ impl<'a> RuleMut<'a> for Var {
                     let var_name = variable.text()?.to_lowercase();
                     let kind = view.kind();
 
-                    if let Some(Raw(Num(v))) = self.scope_manager.current_mut().get_var_mut(&var_name) {
+                    if let Some(Raw(Num(v))) =
+                        self.scope_manager.current_mut().get_var_mut(&var_name)
+                    {
                         // we set the variable before ...
                         if let Some(variable_data) = variable.data() {
                             node.set(variable_data.clone())
@@ -867,9 +873,7 @@ mod test {
     #[test]
     fn test_infer_var_use_in_function_statement() {
         // infer global var in function statement
-        let mut tree =
-            build_powershell_tree("$a = 1\nFunction invoke { $a }")
-                .unwrap();
+        let mut tree = build_powershell_tree("$a = 1\nFunction invoke { $a }").unwrap();
 
         tree.apply_mut_with_strategy(
             &mut (
@@ -880,7 +884,7 @@ mod test {
             ),
             PowershellStrategy::default(),
         )
-            .unwrap();
+        .unwrap();
 
         // We are waiting for
         // Write-Debug 5

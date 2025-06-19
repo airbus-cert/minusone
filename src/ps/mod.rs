@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use error::{Error, MinusOneResult};
 use ps::access::{AccessArray, AccessHashMap, AccessString};
 use ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
@@ -17,6 +16,7 @@ use ps::string::{
 };
 use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
+use std::collections::BTreeMap;
 use tree::{HashMapStorage, Tree};
 use tree_sitter_powershell::LANGUAGE as powershell_language;
 
@@ -41,6 +41,15 @@ pub enum Value {
     Num(i64),
     Str(String),
     Bool(bool),
+}
+
+impl Value {
+    fn normalize(&self) -> Value {
+        match self {
+            Value::Str(x) => Value::Str(x.to_lowercase()),
+            x => x.clone(),
+        }
+    }
 }
 
 impl ToString for Value {

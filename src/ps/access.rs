@@ -180,11 +180,11 @@ impl<'a> RuleMut<'a> for AccessArray {
 /// Extract element of hashmap using [] or . operator
 /// Key values are case-insensitive
 ///
-/// $foo = @{"Key" = 1; "OtherKey" = 2};
-/// $foo["Key"] => 1
-/// $foo.OtherKey => 2
-/// $foo.kEy => 1
-/// $foo["OtHeRkEy] => 2
+/// $foo = @{"Key1" = 1; Key2 = 2;};
+/// $foo["Key1"] => 1
+/// $foo.Key2 => 2
+/// $foo."kEy1" => 1
+/// $foo["kEy2"] => 2q
 ///
 /// # Example
 /// ```
@@ -194,7 +194,7 @@ impl<'a> RuleMut<'a> for AccessArray {
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
-/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::integer::{ParseInt, AddInt};
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::access::{AccessHashMap, AccessString};
@@ -204,6 +204,7 @@ impl<'a> RuleMut<'a> for AccessArray {
 /// let mut tree = build_powershell_tree("@{'Key' = 1}.kEy + @{'Name' = 2}['name']").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
+///     AddInt::default(),
 ///     Forward::default(),
 ///     ParseString::default(),
 ///     ParseArrayLiteral::default(),
@@ -244,12 +245,9 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                     if let (Some(Powershell::HashMap(map)), Some(Raw(value))) =
                         (element.data(), expression.data())
                     {
-                        let value = match value {
-                            Str(x) => Str(x.to_lowercase()),
-                            x => x.clone(),
-                        };
-                        if map.contains_key(&value) {
-                            node.set(Raw(map[&value].clone()))
+                        let value_n = &value.normalize();
+                        if map.contains_key(value_n) {
+                            node.set(Raw(map[value_n].clone()))
                         }
                     }
                 }
@@ -257,7 +255,12 @@ impl<'a> RuleMut<'a> for AccessHashMap {
             "member_access" => {
                 if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
                     if let Some(Powershell::HashMap(map)) = element.data() {
-                        if let Some(child) = expression.child(0) {
+                        if let Some(Raw(value)) = expression.data() {
+                            let value_n = &value.normalize();
+                            if map.contains_key(value_n) {
+                                node.set(Raw(map[value_n].clone()))
+                            }
+                        } else if let Some(child) = expression.child(0) {
                             if child.kind() == "simple_name" {
                                 let value = Str(expression.text()?.to_lowercase());
                                 if map.contains_key(&value) {
