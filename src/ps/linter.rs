@@ -4,6 +4,7 @@ use ps::Powershell::Raw;
 use ps::Value::{Bool, Num, Str};
 use rule::Rule;
 use tree::Node;
+use regex::Regex;
 
 fn escape_string(src: &str) -> String {
     let mut result = String::new();
@@ -26,6 +27,16 @@ fn remove_useless_token(src: &str) -> String {
         }
     }
     result
+}
+
+fn uppercase_first(src: &str) -> String {
+    let mut v = src.to_lowercase();
+    let s = v.get_mut(0..1);
+    let s = s.map(|s| {
+        s.make_ascii_uppercase();
+        &*s
+    });
+    v
 }
 
 fn is_inline<T>(node: &Node<T>) -> bool {
@@ -74,6 +85,23 @@ impl<'a> Rule<'a> for Linter {
                 }
             }
             "statement_block" => self.statement_block_tab.push(true),
+            // Normalize command name
+            // If it's a Verb-Action name parse it and print it normalize
+            "command_name" => {
+                let re = Regex::new(r"([a-z]+)-([a-z]+)").unwrap();
+                if let Some(m) = re.captures(node.text()?.to_lowercase().as_str()) {
+                    if let (Some(verb), Some(action)) = (m.get(1), m.get(2)) {
+                        self.write(uppercase_first(verb.as_str()).as_str());
+                        self.write("-");
+                        self.write(uppercase_first(action.as_str()).as_str());
+                        return Ok(false);
+                    }
+                }
+                else {
+                    self.write(node.text()?.to_lowercase().as_str());
+                    return Ok(false);
+                }
+            }
             _ => (),
         }
 
@@ -251,7 +279,7 @@ impl<'a> Rule<'a> for Linter {
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         // leaf node => just print the token
         if node.child_count() == 0 {
-            self.write(&remove_useless_token(&node.text()?.to_lowercase()));
+            self.write(&remove_useless_token(&node.text()?));
         }
 
         // depending on what my parent are

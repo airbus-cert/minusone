@@ -133,9 +133,8 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
     // Trim to assert program is at the beginning
     let source = source.trim();
 
-    // Powershell is case insensitive
     // And the grammar is specified in lowercase
-    let tree_sitter_remove_extra = parser.parse(source.to_lowercase().as_str(), None).unwrap();
+    let tree_sitter_remove_extra = parser.parse(source, None).unwrap();
     let root = Tree::<HashMapStorage<Powershell>>::new(source.as_bytes(), tree_sitter_remove_extra);
 
     let root_node = root.root().or(Err(Error::invalid_program()))?;
@@ -157,9 +156,8 @@ pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage
         .set_language(&powershell_language.into())
         .expect("Error loading powershell grammar");
 
-    // Powershell is case insensitive
     // And the grammar is specified in lowercase
-    let tree_sitter = parser.parse(source.to_lowercase().as_str(), None).unwrap();
+    let tree_sitter = parser.parse(source, None).unwrap();
     Ok(Tree::<HashMapStorage<Powershell>>::new(
         source.as_bytes(),
         tree_sitter,

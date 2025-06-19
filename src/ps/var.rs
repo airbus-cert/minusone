@@ -35,7 +35,7 @@ use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 ///
 /// assert_eq!(ps_litter_view.output, "\
 /// $foo = 4
-/// write-debug 4\
+/// Write-Debug 4\
 /// ");
 /// ```
 pub struct Var {
@@ -305,7 +305,7 @@ impl<'a> RuleMut<'a> for Var {
 ///
 /// assert_eq!(ps_litter_view.output, "\
 /// $foo = 4
-/// write-debug 4\
+/// Write-Debug 4\
 /// ");
 /// ```
 #[derive(Default)]
