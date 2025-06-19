@@ -2,9 +2,9 @@ use error::MinusOneResult;
 use ps::Powershell;
 use ps::Powershell::Raw;
 use ps::Value::{Bool, Num, Str};
+use regex::Regex;
 use rule::Rule;
 use tree::Node;
-use regex::Regex;
 
 fn escape_string(src: &str) -> String {
     let mut result = String::new();
@@ -32,10 +32,7 @@ fn remove_useless_token(src: &str) -> String {
 fn uppercase_first(src: &str) -> String {
     let mut v = src.to_lowercase();
     let s = v.get_mut(0..1);
-    let s = s.map(|s| {
-        s.make_ascii_uppercase();
-        &*s
-    });
+    s.map(|s| s.make_ascii_uppercase());
     v
 }
 
@@ -96,8 +93,7 @@ impl<'a> Rule<'a> for Linter {
                         self.write(uppercase_first(action.as_str()).as_str());
                         return Ok(false);
                     }
-                }
-                else {
+                } else {
                     self.write(node.text()?.to_lowercase().as_str());
                     return Ok(false);
                 }

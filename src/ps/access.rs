@@ -200,16 +200,17 @@ impl<'a> RuleMut<'a> for AccessArray {
 /// use minusone::ps::access::{AccessHashMap, AccessString};
 /// use minusone::ps::join::JoinOperator;
 /// use minusone::ps::array::ParseArrayLiteral;
+/// use minusone::ps::hash::ParseHash;
 ///
-/// let mut tree = build_powershell_tree("@{'Key' = 1}.kEy + @{'Name' = 2}['name']").unwrap();
+/// let mut tree = build_powershell_tree("@{'Key' = 1}.kEy + @{'Name' = 2}['name'] + @{OK = 3}.'ok'").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
+///     ParseHash::default(),
 ///     AddInt::default(),
 ///     Forward::default(),
 ///     ParseString::default(),
 ///     ParseArrayLiteral::default(),
 ///     AccessString::default(),
-///     JoinOperator::default(),
 ///     AccessHashMap::default()
 ///     )
 /// ).unwrap();
@@ -217,7 +218,7 @@ impl<'a> RuleMut<'a> for AccessArray {
 /// let mut ps_litter_view = Linter::new();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
-/// assert_eq!(ps_litter_view.output, "3");
+/// assert_eq!(ps_litter_view.output, "6");
 /// ```
 #[derive(Default)]
 pub struct AccessHashMap;
