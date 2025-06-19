@@ -177,6 +177,47 @@ impl<'a> RuleMut<'a> for AccessArray {
     }
 }
 
+/// Extract element of hashmap using [] or . operator
+/// Key values are case-insensitive
+///
+/// $foo = @{"Key" = 1; "OtherKey" = 2};
+/// $foo["Key"] => 1
+/// $foo.OtherKey => 2
+/// $foo.kEy => 1
+/// $foo["OtHeRkEy] => 2
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+/// extern crate tree_sitter_powershell;
+/// extern crate minusone;
+///
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::string::ParseString;
+/// use minusone::ps::access::{AccessHashMap, AccessString};
+/// use minusone::ps::join::JoinOperator;
+/// use minusone::ps::array::ParseArrayLiteral;
+///
+/// let mut tree = build_powershell_tree("@{'Key' = 1}.kEy + @{'Name' = 2}['name']").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     ParseString::default(),
+///     ParseArrayLiteral::default(),
+///     AccessString::default(),
+///     JoinOperator::default(),
+///     AccessHashMap::default()
+///     )
+/// ).unwrap();
+///
+/// let mut ps_litter_view = Linter::new();
+/// tree.apply(&mut ps_litter_view).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "3");
+/// ```
 #[derive(Default)]
 pub struct AccessHashMap;
 
@@ -197,14 +238,37 @@ impl<'a> RuleMut<'a> for AccessHashMap {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "element_access" {
-            if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
-                if let (Some(Powershell::HashMap(map)), Some(Raw(value))) = (element.data(), expression.data()) {
-                    if map.contains_key(value) {
-                        node.set(Raw(map[value].clone()))
+        match view.kind() {
+            "element_access" => {
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+                    if let (Some(Powershell::HashMap(map)), Some(Raw(value))) =
+                        (element.data(), expression.data())
+                    {
+                        let value = match value {
+                            Str(x) => Str(x.to_lowercase()),
+                            x => x.clone(),
+                        };
+                        if map.contains_key(&value) {
+                            node.set(Raw(map[&value].clone()))
+                        }
                     }
                 }
             }
+            "member_access" => {
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+                    if let Some(Powershell::HashMap(map)) = element.data() {
+                        if let Some(child) = expression.child(0) {
+                            if child.kind() == "simple_name" {
+                                let value = Str(expression.text()?.to_lowercase());
+                                if map.contains_key(&value) {
+                                    node.set(Raw(map[&value].clone()))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => (),
         }
         Ok(())
     }

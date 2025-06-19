@@ -78,7 +78,7 @@ pub enum Powershell {
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
-    HashMap(BTreeMap<Value, Value>),      // We don't infer this time, but it's planed
+    HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type
 }
