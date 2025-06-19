@@ -613,9 +613,11 @@ impl<'a> RuleMut<'a> for StaticVar {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ps::access::AccessHashMap;
     use ps::bool::ParseBool;
     use ps::build_powershell_tree;
     use ps::forward::Forward;
+    use ps::hash::ParseHash;
     use ps::integer::ParseInt;
     use ps::strategy::PowershellStrategy;
 
@@ -1188,6 +1190,222 @@ mod test {
                 .data()
                 .expect("Expecting inferred type"),
             Raw(Num(1))
+        );
+    }
+
+    #[test]
+    fn test_wildcarded_variable() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("sV my-var 1\n(varIable M*ar).vaLue").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseHash::default(),
+                AccessHashMap::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        // (program inferred_type: None
+        //  (statement_list inferred_type: None
+        //   (pipeline inferred_type: None
+        //    (command inferred_type: None
+        //     (command_name inferred_type: None)
+        //     (command_elements inferred_type: None
+        //      (command_argument_sep inferred_type: None
+        //       (  inferred_type: None))
+        //      (generic_token inferred_type: None)
+        //      (command_argument_sep inferred_type: None
+        //       (  inferred_type: None))
+        //      (array_literal_expression inferred_type: Some(Raw(Num(1)))
+        //       (unary_expression inferred_type: None
+        //        (integer_literal inferred_type: None
+        //         (decimal_integer_literal inferred_type: None)))))))
+        //   (pipeline inferred_type: Some(Raw(Num(1)))
+        //    (logical_expression inferred_type: Some(Raw(Num(1)))
+        //     (bitwise_expression inferred_type: None
+        //      (comparison_expression inferred_type: None
+        //       (additive_expression inferred_type: None
+        //        (multiplicative_expression inferred_type: None
+        //         (format_expression inferred_type: None
+        //          (range_expression inferred_type: None
+        //           (array_literal_expression inferred_type: None
+        //            (unary_expression inferred_type: None
+        //             (member_access inferred_type: None
+        //              (parenthesized_expression inferred_type: Some(HashMap({Str("name"): Str("my-var"), Str("value"): Num(1)}))
+        //               (( inferred_type: None)
+        //               (pipeline inferred_type: None
+        //                (command inferred_type: Some(HashMap({Str("name"): Str("my-var"), Str("value"): Num(1)}))
+        //                 (command_name inferred_type: None)
+        //                 (command_elements inferred_type: None
+        //                  (command_argument_sep inferred_type: None
+        //                   (  inferred_type: None))
+        //                  (generic_token inferred_type: None))))
+        //               () inferred_type: None))
+        //              (. inferred_type: None)
+        //              (member_name inferred_type: None
+        //               (simple_name inferred_type: None)))))))))))))))
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(1)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
+        );
+    }
+
+    #[test]
+    fn test_wildcarded_getvariable() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("sV my-var 1\ngV M*ar -vaL").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseHash::default(),
+                AccessHashMap::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        // (program inferred_type: None
+        // (statement_list inferred_type: None
+        //  (pipeline inferred_type: None
+        //   (command inferred_type: None
+        //    (command_name inferred_type: None)
+        //    (command_elements inferred_type: None
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (generic_token inferred_type: None)
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (array_literal_expression inferred_type: Some(Raw(Num(1)))
+        //      (unary_expression inferred_type: None
+        //       (integer_literal inferred_type: None
+        //        (decimal_integer_literal inferred_type: None)))))))
+        //  (pipeline inferred_type: Some(Raw(Num(1)))
+        //   (command inferred_type: Some(Raw(Num(1)))
+        //    (command_name inferred_type: None)
+        //    (command_elements inferred_type: None
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (generic_token inferred_type: None)
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (command_parameter inferred_type: None))))))
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(1)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
+        );
+    }
+
+    #[test]
+    fn test_wildcarded_getsetitem() {
+        // infer global var in function statement
+        let mut tree =
+            build_powershell_tree("sv mYVAr 1\nsi variable:/M*ar 2\n(ls variable:*y*ar).value")
+                .unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+                ParseHash::default(),
+                AccessHashMap::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        // (program inferred_type: None
+        // (statement_list inferred_type: None
+        //  (pipeline inferred_type: None
+        //   (command inferred_type: None
+        //    (command_name inferred_type: None)
+        //    (command_elements inferred_type: None
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (generic_token inferred_type: None)
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (array_literal_expression inferred_type: Some(Raw(Num(1)))
+        //      (unary_expression inferred_type: None
+        //       (integer_literal inferred_type: None
+        //        (decimal_integer_literal inferred_type: None)))))))
+        //  (pipeline inferred_type: None
+        //   (command inferred_type: None
+        //    (command_name inferred_type: None)
+        //    (command_elements inferred_type: None
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (generic_token inferred_type: None)
+        //     (command_argument_sep inferred_type: None
+        //      (  inferred_type: None))
+        //     (array_literal_expression inferred_type: Some(Raw(Num(2)))
+        //      (unary_expression inferred_type: None
+        //       (integer_literal inferred_type: None
+        //        (decimal_integer_literal inferred_type: None)))))))
+        //  (pipeline inferred_type: Some(Raw(Num(2)))
+        //   (logical_expression inferred_type: Some(Raw(Num(2)))
+        //    (bitwise_expression inferred_type: None
+        //     (comparison_expression inferred_type: None
+        //      (additive_expression inferred_type: None
+        //       (multiplicative_expression inferred_type: None
+        //        (format_expression inferred_type: None
+        //         (range_expression inferred_type: None
+        //          (array_literal_expression inferred_type: None
+        //           (unary_expression inferred_type: None
+        //            (member_access inferred_type: None
+        //             (parenthesized_expression inferred_type: Some(HashMap({Str("name"): Str("myvar"), Str("value"): Num(2)}))
+        //              (( inferred_type: None)
+        //              (pipeline inferred_type: None
+        //               (command inferred_type: Some(HashMap({Str("name"): Str("myvar"), Str("value"): Num(2)}))
+        //                (command_name inferred_type: None)
+        //                (command_elements inferred_type: None
+        //                 (command_argument_sep inferred_type: None
+        //                  (  inferred_type: None))
+        //                 (generic_token inferred_type: None))))
+        //              () inferred_type: None))
+        //             (. inferred_type: None)
+        //             (member_name inferred_type: None
+        //              (simple_name inferred_type: None)))))))))))))))
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(2))
         );
     }
 }
