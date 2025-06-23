@@ -160,7 +160,7 @@ impl Var {
     /// Resolve the name of a variable pattern given the current scope
     ///
     /// Use for patterns used by variable, get-variable, set-variable, get-childitem...
-    fn resolve_variable(&self, variable_name: String) -> Option<String> {
+    fn resolve_wildcarded(&self, variable_name: String) -> Option<String> {
         if variable_name.contains("*") {
             let re = Regex::new(&*format!("^{}$", variable_name.replace("*", ".*"))).unwrap();
             let current_scope = self.scope_manager.current();
@@ -412,8 +412,8 @@ impl<'a> RuleMut<'a> for Var {
                         "variable" => {
                             if let Some(command_elements) = view.child(1) {
                                 if let Some(variable_name) = command_elements.child(1) {
-                                    if let Some(variable_name) =
-                                        self.resolve_variable(variable_name.text()?.to_lowercase())
+                                    if let Some(variable_name) = self
+                                        .resolve_wildcarded(variable_name.text()?.to_lowercase())
                                     {
                                         if let Some(Raw(data)) =
                                             self.scope_manager.current().get_var(&variable_name)
@@ -430,7 +430,7 @@ impl<'a> RuleMut<'a> for Var {
                             if let Some(command_elements) = view.child(1) {
                                 if let Some(variable) = command_elements.child(1) {
                                     if let Some(variable_name) =
-                                        self.resolve_variable(variable.text()?.to_lowercase())
+                                        self.resolve_wildcarded(variable.text()?.to_lowercase())
                                     {
                                         if let Some(Raw(data)) =
                                             self.scope_manager.current().get_var(&variable_name)
@@ -476,11 +476,56 @@ impl<'a> RuleMut<'a> for Var {
                                             }
                                         {
                                             if let Some(variable_name) =
-                                                self.resolve_variable(variable_name)
+                                                self.resolve_wildcarded(variable_name)
                                             {
                                                 self.scope_manager.current_mut().assign(
                                                     &variable_name,
                                                     Powershell::Raw(variable_value.clone()),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "get-childitem" | "gci" | "ls" => {
+                            if let Some(command_elements) = view.child(1) {
+                                if let Some(item_name_node) = command_elements.child(1) {
+                                    let item_name = item_name_node.text()?.to_lowercase();
+                                    let re = Regex::new(r"^variable:\/?(.*)$").unwrap();
+                                    if let Some(variable_name) =
+                                        re.captures(&item_name).and_then(|cap| cap.get(1))
+                                    {
+                                        if let Some(variable_name) = self
+                                            .resolve_wildcarded(variable_name.as_str().to_string())
+                                        {
+                                            if let Some(Raw(data)) =
+                                                self.scope_manager.current().get_var(&variable_name)
+                                            {
+                                                node.set(Var::hashmap(variable_name, data));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "set-item" | "si" => {
+                            if let Some(command_elements) = view.child(1) {
+                                if let (Some(item_name_node), Some(item_value_node)) =
+                                    (command_elements.child(1), command_elements.child(3))
+                                {
+                                    if let Some(Raw(item_value)) = item_value_node.data() {
+                                        let item_name = item_name_node.text()?.to_lowercase();
+                                        let re = Regex::new(r"^variable:\/?(.*)$").unwrap();
+                                        if let Some(variable_name) =
+                                            re.captures(&item_name).and_then(|cap| cap.get(1))
+                                        {
+                                            if let Some(variable_name) = self.resolve_wildcarded(
+                                                variable_name.as_str().to_string(),
+                                            ) {
+                                                self.scope_manager.current_mut().assign(
+                                                    &variable_name,
+                                                    Powershell::Raw(item_value.clone()),
                                                 );
                                             }
                                         }
