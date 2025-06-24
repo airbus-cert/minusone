@@ -2,6 +2,7 @@ use error::{Error, MinusOneResult};
 use ps::Powershell;
 use ps::Powershell::{Array, Null, Raw, Type};
 use ps::Value::{Bool, Num, Str};
+use regex::Regex;
 use rule::RuleMut;
 use scope::ScopeManager;
 use tree::{BranchFlow, ControlFlow, Node, NodeMut};
@@ -56,9 +57,9 @@ impl Var {
                     ])
                     .is_some()
                 {
-                    self.scope_manager
-                        .current_mut()
-                        .forget(child.text()?.to_lowercase().as_str());
+                    if let Some(var_name) = Var::extract(child.text()?) {
+                        self.scope_manager.current_mut().forget(&var_name);
+                    }
                 }
             } else {
                 self.forget_assigned_var(&child)?;
@@ -66,6 +67,35 @@ impl Var {
         }
 
         Ok(())
+    }
+
+    /// Extract variable name from a variable declaration \
+    /// If a provider is set, match only `variable`
+    ///
+    /// # Example
+    ///
+    /// $a => a \
+    /// ${var-1} => var-1
+    ///
+    fn extract(var: &str) -> Option<String> {
+        let var = var.to_lowercase();
+        let re_simple =
+            Regex::new(r"\$(?<provider>([a-zA-Z]+):)?(?<name>[a-zA-Z0-9_?:]+)").unwrap();
+        let re_braced =
+            Regex::new(r"\$\{(?<provider>([a-zA-Z]+):)?(?<name>([^`\}]|`.)+)\}").unwrap();
+
+        if let Some(cap) = re_simple.captures(&var).or(re_braced.captures(&var)) {
+            if let Some(name) = cap.name("name") {
+                if let Some(provider) = cap.name("provider") {
+                    if provider.as_str() != "variable" {
+                        return None;
+                    }
+                }
+                return Some(name.as_str().to_string());
+            }
+        }
+
+        return None;
     }
 }
 
@@ -128,17 +158,18 @@ impl<'a> RuleMut<'a> for Var {
             // in the enter function because pre increment before assigned
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0) {
-                    let var_name = variable.text()?.to_lowercase();
-                    if let Some(Raw(Num(v))) =
-                        self.scope_manager.current_mut().get_var_mut(&var_name)
-                    {
-                        if view.kind() == "pre_increment_expression" {
-                            *v += 1;
+                    if let Some(var_name) = Var::extract(variable.text()?) {
+                        if let Some(Raw(Num(v))) =
+                            self.scope_manager.current_mut().get_var_mut(&var_name)
+                        {
+                            if view.kind() == "pre_increment_expression" {
+                                *v += 1;
+                            } else {
+                                *v -= 1;
+                            }
                         } else {
-                            *v -= 1;
+                            self.scope_manager.current_mut().forget(&var_name)
                         }
-                    } else {
-                        self.scope_manager.current_mut().forget(&var_name)
                     }
                 }
             }
@@ -158,44 +189,47 @@ impl<'a> RuleMut<'a> for Var {
                 // Assign var value if it's possible
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
                     if let Some(var) = find_variable_node(&left) {
-                        // make assignment
-                        let var_name = var.text()?.to_lowercase();
                         // only predictable assignment is handled
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
-                            if let Some(data) = right.data() {
-                                self.scope_manager
-                                    .current_mut()
-                                    .assign(&var_name, data.clone());
-                            } else {
-                                self.scope_manager.current_mut().forget(&var_name)
+                            // make assignment
+                            if let Some(var_name) = Var::extract(var.text()?) {
+                                if let Some(data) = right.data() {
+                                    self.scope_manager
+                                        .current_mut()
+                                        .assign(&var_name, data.clone());
+                                } else {
+                                    self.scope_manager.current_mut().forget(&var_name)
+                                }
                             }
                         }
                     }
                 }
             }
             "variable" => {
-                let var_name = view.text()?.to_lowercase();
-                // forget variable with [ref] operator
-                if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"]) {
-                    if let Some(Type(typename)) = cast_expression.child(0).unwrap().data() {
-                        if typename.to_lowercase() == "ref" {
-                            self.scope_manager.current_mut().forget(&var_name)
+                if let Some(var_name) = Var::extract(view.text()?) {
+                    // forget variable with [ref] operator
+                    if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"])
+                    {
+                        if let Some(Type(typename)) = cast_expression.child(0).unwrap().data() {
+                            if typename.to_lowercase() == "ref" {
+                                self.scope_manager.current_mut().forget(&var_name)
+                            }
                         }
                     }
-                }
 
-                // check if we are not on the left part of an assignment expression
-                // already handle by the previous case
-                // We also exclude member_access for now
-                if view
-                    .get_parent_of_types(vec!["left_assignment_expression"])
-                    .is_none()
-                {
-                    // Try to assign variable member
-                    if let Some(data) = self.scope_manager.current_mut().get_var(&var_name) {
-                        node.set(data.clone());
-                    } else {
-                        self.scope_manager.current_mut().in_use(&var_name);
+                    // check if we are not on the left part of an assignment expression
+                    // already handle by the previous case
+                    // We also exclude member_access for now
+                    if view
+                        .get_parent_of_types(vec!["left_assignment_expression"])
+                        .is_none()
+                    {
+                        // Try to assign variable member
+                        if let Some(data) = self.scope_manager.current_mut().get_var(&var_name) {
+                            node.set(data.clone());
+                        } else {
+                            self.scope_manager.current_mut().in_use(&var_name);
+                        }
                     }
                 }
             }
@@ -210,24 +244,25 @@ impl<'a> RuleMut<'a> for Var {
             // in the enter function because pre increment before assigned
             "post_increment_expression" | "post_decrement_expression" => {
                 if let Some(variable) = view.child(0) {
-                    let var_name = variable.text()?.to_lowercase();
-                    let kind = view.kind();
+                    if let Some(var_name) = Var::extract(variable.text()?) {
+                        let kind = view.kind();
 
-                    if let Some(Raw(Num(v))) =
-                        self.scope_manager.current_mut().get_var_mut(&var_name)
-                    {
-                        // we set the variable before ...
-                        if let Some(variable_data) = variable.data() {
-                            node.set(variable_data.clone())
-                        }
-                        // ... assign it
-                        if kind == "post_increment_expression" {
-                            *v += 1;
+                        if let Some(Raw(Num(v))) =
+                            self.scope_manager.current_mut().get_var_mut(&var_name)
+                        {
+                            // we set the variable before ...
+                            if let Some(variable_data) = variable.data() {
+                                node.set(variable_data.clone())
+                            }
+                            // ... assign it
+                            if kind == "post_increment_expression" {
+                                *v += 1;
+                            } else {
+                                *v -= 1;
+                            }
                         } else {
-                            *v -= 1;
+                            self.scope_manager.current_mut().forget(&var_name)
                         }
-                    } else {
-                        self.scope_manager.current_mut().forget(&var_name)
                     }
                 }
             }
@@ -250,11 +285,12 @@ impl<'a> RuleMut<'a> for Var {
                                 args_list.named_child("argument_expression_list")
                             {
                                 if let Some(arg_1) = argument_expression_list.child(0) {
-                                    let var_name = arg_1.text()?.to_lowercase();
-                                    if let Some(Array(data)) =
-                                        self.scope_manager.current_mut().get_var_mut(&var_name)
-                                    {
-                                        data.reverse();
+                                    if let Some(var_name) = Var::extract(arg_1.text()?) {
+                                        if let Some(Array(data)) =
+                                            self.scope_manager.current_mut().get_var_mut(&var_name)
+                                        {
+                                            data.reverse();
+                                        }
                                     }
                                 }
                             }
@@ -265,11 +301,12 @@ impl<'a> RuleMut<'a> for Var {
                                 args_list.named_child("argument_expression_list")
                             {
                                 for arg in argument_expression_list.iter() {
-                                    let var_name = arg.text()?.to_lowercase();
-                                    if let Some(Array(_)) =
-                                        self.scope_manager.current_mut().get_var(&var_name)
-                                    {
-                                        self.scope_manager.current_mut().forget(&var_name);
+                                    if let Some(var_name) = Var::extract(arg.text()?) {
+                                        if let Some(Array(_)) =
+                                            self.scope_manager.current_mut().get_var(&var_name)
+                                        {
+                                            self.scope_manager.current_mut().forget(&var_name);
+                                        }
                                     }
                                 }
                             }
