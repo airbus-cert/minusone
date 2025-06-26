@@ -1,8 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
 use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, Raw, Type};
+use ps::Powershell::{self, Array, Raw, Type};
 use ps::Value::{Num, Str};
+use regex::Regex;
 use rule::RuleMut;
 use tree::{ControlFlow, NodeMut};
 
@@ -168,24 +168,89 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                     &member_name.text()?.to_lowercase(),
                     member_name.data(),
                 ) {
-                    (Some(Type(typename)), "::", m, _)
-                    | (Some(Type(typename)), ".", m, _)
-                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                    | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
-                        if ((typename == "system.convert" || typename == "convert")
-                            && m.to_lowercase() == "frombase64string")
-                            || (typename == "convert::frombase64string" && m == "invoke") =>
+                    (Some(Type(typename)), ".", method, method_data)
+                    | (Some(Type(typename)), "::", method, method_data)
+                        if matches!(typename.as_str(), "system.convert" | "convert") =>
                     {
-                        // get the argument list if present
-                        if let Some(argument_expression_list) =
-                            args_list.named_child("argument_expression_list")
+                        let typename = typename.to_lowercase();
+                        let method = match method_data {
+                            Some(Raw(Str(m))) => m.to_lowercase(),
+                            _ => method.to_string(),
+                        }
+                        .to_lowercase();
+
+                        if ((typename == "system.convert" || typename == "convert")
+                            && method == "frombase64string")
+                            || (typename == "convert::frombase64string" && method == "invoke")
                         {
-                            if let Some(arg_1) = argument_expression_list.child(0) {
-                                if let Some(Raw(Str(s))) = arg_1.data() {
-                                    if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
-                                        node.set(Array(
-                                            bytes.iter().map(|b| Num(*b as i64)).collect(),
-                                        ));
+                            if let Some(argument_expression_list) =
+                                args_list.named_child("argument_expression_list")
+                            {
+                                if let Some(arg_1) = argument_expression_list.child(0) {
+                                    if let Some(Raw(Str(s))) = arg_1.data() {
+                                        if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
+                                            node.set(Array(
+                                                bytes.iter().map(|b| Num(*b as i64)).collect(),
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            let re_toint1 = Regex::new(
+                                r"^to(byte|char|int16|uint16|int32|uint32|int64|uint64)$",
+                            )
+                            .unwrap();
+                            let re_toint2 = Regex::new(r"^(?:convert::)?to(byte|char|int16|uint16|int32|uint32|int64|uint64)$").unwrap();
+
+                            if let Some(cap) =
+                                if typename == "system.convert" || typename == "convert" {
+                                    re_toint1.captures(&method)
+                                } else if method == "invoke" {
+                                    re_toint2.captures(&typename)
+                                } else {
+                                    None
+                                }
+                            {
+                                if let Some(int_type) = cap.get(1) {
+                                    if let Some(argument_expression_list) =
+                                        args_list.named_child("argument_expression_list")
+                                    {
+                                        if let (Some(arg_1), Some(arg_2)) = (
+                                            argument_expression_list.child(0),
+                                            argument_expression_list.child(2),
+                                        ) {
+                                            if let (Some(Raw(Str(s))), Some(Raw(Num(base)))) =
+                                                (arg_1.data(), arg_2.data())
+                                            {
+                                                let base = *base as u32;
+
+                                                if let Some(n) = match int_type.as_str() {
+                                                    "byte" => u8::from_str_radix(s, base)
+                                                        .ok()
+                                                        .and_then(|x| Some(x as i64)),
+                                                    "int16" => i16::from_str_radix(s, base)
+                                                        .ok()
+                                                        .and_then(|x| Some(x as i64)),
+                                                    "uint16" => u16::from_str_radix(s, base)
+                                                        .ok()
+                                                        .and_then(|x| Some(x as i64)),
+                                                    "int32" => i32::from_str_radix(s, base)
+                                                        .ok()
+                                                        .and_then(|x| Some(x as i64)),
+                                                    "uint32" => u32::from_str_radix(s, base)
+                                                        .ok()
+                                                        .and_then(|x| Some(x as i64)),
+                                                    "int64" => i64::from_str_radix(s, base).ok(),
+                                                    "uint64" => u64::from_str_radix(s, base)
+                                                        .ok()
+                                                        .and_then(|x| Some(x as i64)),
+                                                    _ => None,
+                                                } {
+                                                    node.set(Raw(Num(n)));
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
