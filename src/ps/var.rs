@@ -634,6 +634,7 @@ mod test {
     use ps::hash::ParseHash;
     use ps::integer::ParseInt;
     use ps::strategy::PowershellStrategy;
+    use ps::string::ParseString;
 
     #[test]
     fn test_static_replacement() {
@@ -1506,6 +1507,49 @@ mod test {
                 .data()
                 .expect("Expecting inferred type"),
             Raw(Num(0))
+        );
+    }
+
+    #[test]
+    fn test_add_assignment_operator_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"to\";$a+=\"ti\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+            .unwrap();
+
+        // We are waiting for
+        // (program inferred_type: None
+        //  (statement_list inferred_type: None
+        //   (pipeline inferred_type: None
+        //     ...)
+        //   (empty_statement inferred_type: None
+        //    ...)
+        //   (pipeline inferred_type: None
+        //    ...)
+        //   (empty_statement inferred_type: None
+        //    ...)
+        //   (pipeline inferred_type: Some(Raw(Str("toti")))  <--- correct infered type
+        //    ...)
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Str("toti".to_string()))
         );
     }
 }
