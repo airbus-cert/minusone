@@ -288,116 +288,11 @@ impl<'a> RuleMut<'a> for Var {
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
                             if let Some(var_name) = Var::extract(var.text()?) {
                                 let scope = self.scope_manager.current_mut();
-                                if let (current_value, Some(add_new)) =
+                                if let (current_value, Some(new_value)) =
                                     (scope.get_var(&var_name), right.data())
                                 {
-                                    match (current_value, operator.text()?, add_new) {
-                                        // Simple assignment that will erase previous data
-                                        (_, "=", d) => {
-                                            scope.assign(&var_name, d.clone());
-                                        }
-
-                                        // += operator
-                                        (Some(Raw(Num(v))), "+=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Num(v + n)))
-                                        }
-                                        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
-                                            if let Ok(n) = n.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v + n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "+=", Raw(Num(n))) => scope.assign(
-                                            &var_name,
-                                            Raw(Str(v.clone().add(&n.to_string()))),
-                                        ),
-                                        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => {
-                                            scope.assign(&var_name, Raw(Str(v.clone().add(&n))))
-                                        }
-
-                                        // -= operator
-                                        (Some(Raw(Num(v))), "-=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Num(v - n)))
-                                        }
-                                        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
-                                            if let Ok(n) = n.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v - n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
-                                            if let Ok(v) = v.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v - n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
-                                            if let (Ok(v), Ok(n)) =
-                                                (v.parse::<i64>(), n.parse::<i64>())
-                                            {
-                                                scope.assign(&var_name, Raw(Num(v - n)))
-                                            }
-                                        }
-
-                                        // *= operator
-                                        (Some(Raw(Num(v))), "*=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Num(v * n)))
-                                        }
-                                        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
-                                            if let Ok(n) = n.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v * n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "*=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Str(v.repeat(*n as usize))))
-                                        }
-                                        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => {
-                                            if let Ok(n) = n.parse::<usize>() {
-                                                scope.assign(&var_name, Raw(Str(v.repeat(n))))
-                                            }
-                                        }
-
-                                        // /= operator
-                                        (Some(Raw(Num(v))), "/=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Num(v / n)))
-                                        }
-                                        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
-                                            if let Ok(n) = n.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v / n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
-                                            if let Ok(v) = v.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v / n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
-                                            if let (Ok(v), Ok(n)) =
-                                                (v.parse::<i64>(), n.parse::<i64>())
-                                            {
-                                                scope.assign(&var_name, Raw(Num(v / n)))
-                                            }
-                                        }
-
-                                        // %= operator
-                                        (Some(Raw(Num(v))), "%=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Num(v % n)))
-                                        }
-                                        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
-                                            if let Ok(n) = n.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v % n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
-                                            if let Ok(v) = v.parse::<i64>() {
-                                                scope.assign(&var_name, Raw(Num(v % n)))
-                                            }
-                                        }
-                                        (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
-                                            if let (Ok(v), Ok(n)) =
-                                                (v.parse::<i64>(), n.parse::<i64>())
-                                            {
-                                                scope.assign(&var_name, Raw(Num(v % n)))
-                                            }
-                                        }
-
+                                    match assign_handler(current_value, operator, new_value) {
+                                        Some(assign_value) => scope.assign(&var_name, assign_value),
                                         _ => scope.forget(&var_name),
                                     }
                                 }
@@ -649,6 +544,86 @@ impl<'a> RuleMut<'a> for Var {
             _ => (),
         }
         Ok(())
+    }
+}
+
+fn assign_handler(
+    current_value: Option<&Powershell>,
+    operator: Node<'_, Powershell>,
+    add_new: &Powershell,
+) -> Option<Powershell> {
+    match (current_value, operator.text().ok()?, add_new) {
+        // Simple assignment that will erase previous data
+        (_, "=", d) => Some(d.clone()),
+
+        // += operator
+        (Some(Raw(Num(v))), "+=", Raw(Num(n))) => Some(Raw(Num(v + n))),
+        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
+            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v + n))))
+        }
+        (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
+        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(&n)))),
+
+        // -= operator
+        (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
+        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
+            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v - n))))
+        }
+        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
+            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v - n))))
+        }
+        (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
+            if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
+                Some(Raw(Num(v - n)))
+            } else {
+                None
+            }
+        }
+
+        // *= operator
+        (Some(Raw(Num(v))), "*=", Raw(Num(n))) => Some(Raw(Num(v * n))),
+        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
+            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v * n))))
+        }
+        (Some(Raw(Str(v))), "*=", Raw(Num(n))) => Some(Raw(Str(v.repeat(*n as usize)))),
+        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => n
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| Some(Raw(Str(v.repeat(n))))),
+
+        // /= operator
+        (Some(Raw(Num(v))), "/=", Raw(Num(n))) => Some(Raw(Num(v / n))),
+        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
+            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v / n))))
+        }
+        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
+            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v / n))))
+        }
+        (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
+            if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
+                Some(Raw(Num(v / n)))
+            } else {
+                None
+            }
+        }
+
+        // %= operator
+        (Some(Raw(Num(v))), "%=", Raw(Num(n))) => Some(Raw(Num(v % n))),
+        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
+            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v % n))))
+        }
+        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
+            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v % n))))
+        }
+        (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
+            if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
+                Some(Raw(Num(v % n)))
+            } else {
+                None
+            }
+        }
+
+        _ => None,
     }
 }
 
