@@ -6,6 +6,7 @@ use regex::Regex;
 use rule::RuleMut;
 use scope::ScopeManager;
 use std::collections::BTreeMap;
+use std::ops::Add;
 use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 
 /// Var is a variable manager that will try to track
@@ -279,18 +280,31 @@ impl<'a> RuleMut<'a> for Var {
         match view.kind() {
             "assignment_expression" => {
                 // Assign var value if it's possible
-                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
+                if let (Some(left), Some(operator), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
                     if let Some(var) = find_variable_node(&left) {
                         // only predictable assignment is handled
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
-                            // make assignment
                             if let Some(var_name) = Var::extract(var.text()?) {
-                                if let Some(data) = right.data() {
-                                    self.scope_manager
-                                        .current_mut()
-                                        .assign(&var_name, data.clone());
-                                } else {
-                                    self.scope_manager.current_mut().forget(&var_name)
+                                let scope = self.scope_manager.current_mut();
+                                if let (current_value, Some(add_new)) = (scope.get_var(&var_name), right.data()) {
+                                    match (current_value, operator.text()?, add_new) {
+                                        // Simple assignment that will erase previous data
+                                        (_, "=", d) => {
+                                            scope.assign(&var_name, d.clone());
+                                        },
+                                        (Some(Raw(Num(v))), "+=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Num(v + n)))
+                                        },
+                                        (Some(Raw(Num(v))), "-=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Num(v - n)))
+                                        },
+                                        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => {
+                                            scope.assign(&var_name, Raw(Str(v.clone().add(&n))))
+                                        },
+                                        _ => {
+                                            scope.forget(&var_name)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1406,6 +1420,92 @@ mod test {
                 .data()
                 .expect("Expecting inferred type"),
             Raw(Num(2))
+        );
+    }
+
+    #[test]
+    fn test_add_assignment_operator_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=1;$a+=1;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+            .unwrap();
+
+        // We are waiting for
+        // (program inferred_type: None
+        //  (statement_list inferred_type: None
+        //   (pipeline inferred_type: None
+        //     ...)
+        //   (empty_statement inferred_type: None
+        //    ...)
+        //   (pipeline inferred_type: None
+        //    ...)
+        //   (empty_statement inferred_type: None
+        //    ...)
+        //   (pipeline inferred_type: Some(Raw(Num(2)))  <--- correct infered type
+        //    ...)
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(2))
+        );
+    }
+
+    #[test]
+    fn test_sub_assignment_operator_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=1;$a-=1;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+            .unwrap();
+
+        // We are waiting for
+        // (program inferred_type: None
+        //  (statement_list inferred_type: None
+        //   (pipeline inferred_type: None
+        //     ...)
+        //   (empty_statement inferred_type: None
+        //    ...)
+        //   (pipeline inferred_type: None
+        //    ...)
+        //   (empty_statement inferred_type: None
+        //    ...)
+        //   (pipeline inferred_type: Some(Raw(Num(0)))  <--- correct infered type
+        //    ...)
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(0))
         );
     }
 }
