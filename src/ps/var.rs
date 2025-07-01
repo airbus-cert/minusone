@@ -280,30 +280,125 @@ impl<'a> RuleMut<'a> for Var {
         match view.kind() {
             "assignment_expression" => {
                 // Assign var value if it's possible
-                if let (Some(left), Some(operator), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+                if let (Some(left), Some(operator), Some(right)) =
+                    (view.child(0), view.child(1), view.child(2))
+                {
                     if let Some(var) = find_variable_node(&left) {
                         // only predictable assignment is handled
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) {
                             if let Some(var_name) = Var::extract(var.text()?) {
                                 let scope = self.scope_manager.current_mut();
-                                if let (current_value, Some(add_new)) = (scope.get_var(&var_name), right.data()) {
+                                if let (current_value, Some(add_new)) =
+                                    (scope.get_var(&var_name), right.data())
+                                {
                                     match (current_value, operator.text()?, add_new) {
                                         // Simple assignment that will erase previous data
                                         (_, "=", d) => {
                                             scope.assign(&var_name, d.clone());
-                                        },
+                                        }
+
+                                        // += operator
                                         (Some(Raw(Num(v))), "+=", Raw(Num(n))) => {
                                             scope.assign(&var_name, Raw(Num(v + n)))
-                                        },
-                                        (Some(Raw(Num(v))), "-=", Raw(Num(n))) => {
-                                            scope.assign(&var_name, Raw(Num(v - n)))
-                                        },
+                                        }
+                                        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
+                                            if let Ok(n) = n.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v + n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "+=", Raw(Num(n))) => scope.assign(
+                                            &var_name,
+                                            Raw(Str(v.clone().add(&n.to_string()))),
+                                        ),
                                         (Some(Raw(Str(v))), "+=", Raw(Str(n))) => {
                                             scope.assign(&var_name, Raw(Str(v.clone().add(&n))))
-                                        },
-                                        _ => {
-                                            scope.forget(&var_name)
                                         }
+
+                                        // -= operator
+                                        (Some(Raw(Num(v))), "-=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Num(v - n)))
+                                        }
+                                        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
+                                            if let Ok(n) = n.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v - n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
+                                            if let Ok(v) = v.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v - n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
+                                            if let (Ok(v), Ok(n)) =
+                                                (v.parse::<i64>(), n.parse::<i64>())
+                                            {
+                                                scope.assign(&var_name, Raw(Num(v - n)))
+                                            }
+                                        }
+
+                                        // *= operator
+                                        (Some(Raw(Num(v))), "*=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Num(v * n)))
+                                        }
+                                        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
+                                            if let Ok(n) = n.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v * n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "*=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Str(v.repeat(*n as usize))))
+                                        }
+                                        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => {
+                                            if let Ok(n) = n.parse::<usize>() {
+                                                scope.assign(&var_name, Raw(Str(v.repeat(n))))
+                                            }
+                                        }
+
+                                        // /= operator
+                                        (Some(Raw(Num(v))), "/=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Num(v / n)))
+                                        }
+                                        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
+                                            if let Ok(n) = n.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v / n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
+                                            if let Ok(v) = v.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v / n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
+                                            if let (Ok(v), Ok(n)) =
+                                                (v.parse::<i64>(), n.parse::<i64>())
+                                            {
+                                                scope.assign(&var_name, Raw(Num(v / n)))
+                                            }
+                                        }
+
+                                        // %= operator
+                                        (Some(Raw(Num(v))), "%=", Raw(Num(n))) => {
+                                            scope.assign(&var_name, Raw(Num(v % n)))
+                                        }
+                                        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
+                                            if let Ok(n) = n.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v % n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
+                                            if let Ok(v) = v.parse::<i64>() {
+                                                scope.assign(&var_name, Raw(Num(v % n)))
+                                            }
+                                        }
+                                        (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
+                                            if let (Ok(v), Ok(n)) =
+                                                (v.parse::<i64>(), n.parse::<i64>())
+                                            {
+                                                scope.assign(&var_name, Raw(Num(v % n)))
+                                            }
+                                        }
+
+                                        _ => scope.forget(&var_name),
                                     }
                                 }
                             }
@@ -1430,14 +1525,10 @@ mod test {
         let mut tree = build_powershell_tree("$a=1;$a+=1;$a").unwrap();
 
         tree.apply_mut_with_strategy(
-            &mut (
-                ParseInt::default(),
-                Forward::default(),
-                Var::default(),
-            ),
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
             PowershellStrategy::default(),
         )
-            .unwrap();
+        .unwrap();
 
         // We are waiting for
         // (program inferred_type: None
@@ -1473,14 +1564,10 @@ mod test {
         let mut tree = build_powershell_tree("$a=1;$a-=1;$a").unwrap();
 
         tree.apply_mut_with_strategy(
-            &mut (
-                ParseInt::default(),
-                Forward::default(),
-                Var::default(),
-            ),
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
             PowershellStrategy::default(),
         )
-            .unwrap();
+        .unwrap();
 
         // We are waiting for
         // (program inferred_type: None
@@ -1516,14 +1603,10 @@ mod test {
         let mut tree = build_powershell_tree("$a=\"to\";$a+=\"ti\";$a").unwrap();
 
         tree.apply_mut_with_strategy(
-            &mut (
-                ParseString::default(),
-                Forward::default(),
-                Var::default(),
-            ),
+            &mut (ParseString::default(), Forward::default(), Var::default()),
             PowershellStrategy::default(),
         )
-            .unwrap();
+        .unwrap();
 
         // We are waiting for
         // (program inferred_type: None
