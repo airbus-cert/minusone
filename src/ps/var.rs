@@ -1520,7 +1520,7 @@ mod test {
     }
 
     #[test]
-    fn test_add_assignment_operator_int() {
+    fn test_add_assignment_operator_int_int() {
         // infer global var in function statement
         let mut tree = build_powershell_tree("$a=1;$a+=1;$a").unwrap();
 
@@ -1557,9 +1557,99 @@ mod test {
             Raw(Num(2))
         );
     }
+    #[test]
+    fn test_add_assignment_operator_int_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=1;$a+=\"1\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(2))
+        );
+    }
+    #[test]
+    fn test_add_assignment_operator_str_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"1\";$a+=1;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Str(String::from("11")))
+        );
+    }
+    #[test]
+    fn test_add_assignment_operator_str_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"1\";$a+=\"1\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Str(String::from("11")))
+        );
+    }
 
     #[test]
-    fn test_sub_assignment_operator_int() {
+    fn test_sub_assignment_operator_int_int() {
         // infer global var in function statement
         let mut tree = build_powershell_tree("$a=1;$a-=1;$a").unwrap();
 
@@ -1570,19 +1660,6 @@ mod test {
         .unwrap();
 
         // We are waiting for
-        // (program inferred_type: None
-        //  (statement_list inferred_type: None
-        //   (pipeline inferred_type: None
-        //     ...)
-        //   (empty_statement inferred_type: None
-        //    ...)
-        //   (pipeline inferred_type: None
-        //    ...)
-        //   (empty_statement inferred_type: None
-        //    ...)
-        //   (pipeline inferred_type: Some(Raw(Num(0)))  <--- correct infered type
-        //    ...)
-
         assert_eq!(
             *tree
                 .root()
@@ -1598,29 +1675,266 @@ mod test {
     }
 
     #[test]
-    fn test_add_assignment_operator_str() {
+    fn test_sub_assignment_operator_int_str() {
         // infer global var in function statement
-        let mut tree = build_powershell_tree("$a=\"to\";$a+=\"ti\";$a").unwrap();
+        let mut tree = build_powershell_tree("$a=1;$a-=\"1\";$a").unwrap();
 
         tree.apply_mut_with_strategy(
-            &mut (ParseString::default(), Forward::default(), Var::default()),
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
             PowershellStrategy::default(),
         )
         .unwrap();
 
         // We are waiting for
-        // (program inferred_type: None
-        //  (statement_list inferred_type: None
-        //   (pipeline inferred_type: None
-        //     ...)
-        //   (empty_statement inferred_type: None
-        //    ...)
-        //   (pipeline inferred_type: None
-        //    ...)
-        //   (empty_statement inferred_type: None
-        //    ...)
-        //   (pipeline inferred_type: Some(Raw(Str("toti")))  <--- correct infered type
-        //    ...)
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(0))
+        );
+    }
+    #[test]
+    fn test_sub_assignment_operator_str_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"1\";$a-=1;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(0))
+        );
+    }
+    #[test]
+    fn test_sub_assignment_operator_str_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"1\";$a-=\"1\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(0))
+        );
+    }
+
+    #[test]
+    fn test_mul_assignment_operator_int_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=2;$a*=3;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(6))
+        );
+    }
+
+    #[test]
+    fn test_mul_assignment_operator_int_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=2;$a*=\"3\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(6))
+        );
+    }
+    #[test]
+    fn test_mul_assignment_operator_str_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"12\";$a*=3;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Str(String::from("121212")))
+        );
+    }
+    #[test]
+    fn test_mul_assignment_operator_str_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"12\";$a*=\"3\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Str(String::from("121212")))
+        );
+    }
+
+    #[test]
+    fn test_div_assignment_operator_int_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=10;$a/=2;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(5))
+        );
+    }
+
+    #[test]
+    fn test_div_assignment_operator_int_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=10;$a/=\"2\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseString::default(),
+                ParseInt::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        println!(
+            "{:?}",
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(4)
+                .unwrap()
+                .data()
+        );
 
         assert_eq!(
             *tree
@@ -1632,7 +1946,184 @@ mod test {
                 .unwrap() // pipeline
                 .data()
                 .expect("Expecting inferred type"),
-            Raw(Str("toti".to_string()))
+            Raw(Num(5))
+        );
+    }
+    #[test]
+    fn test_div_assignment_operator_str_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"10\";$a/=2;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(5))
+        );
+    }
+    #[test]
+    fn test_div_assignment_operator_str_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"10\";$a/=\"2\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(5))
+        );
+    }
+
+    #[test]
+    fn test_mod_assignment_operator_int_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=9;$a%=2;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (ParseInt::default(), Forward::default(), Var::default()),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
+        );
+    }
+
+    #[test]
+    fn test_mod_assignment_operator_int_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=9;$a%=\"2\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
+        );
+    }
+    #[test]
+    fn test_mod_assignment_operator_str_int() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"9\";$a%=2;$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
+        );
+    }
+    #[test]
+    fn test_mod_assignment_operator_str_str() {
+        // infer global var in function statement
+        let mut tree = build_powershell_tree("$a=\"9\";$a%=\"2\";$a").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(4)
+                .unwrap() // pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(1))
         );
     }
 }
