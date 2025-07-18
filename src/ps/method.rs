@@ -2,6 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use error::MinusOneResult;
 use ps::Powershell;
 use ps::Powershell::{Array, Raw, Type};
+use ps::tool::StringTool;
 use ps::Value::{Num, Str};
 use rule::RuleMut;
 use tree::{ControlFlow, NodeMut};
@@ -60,18 +61,18 @@ impl<'a> RuleMut<'a> for Length {
                 match (
                     primary_expression.data(),
                     operator.text()?,
-                    &member_name.text()?.to_lowercase(),
+                    &member_name.text()?.to_string(),
                     member_name.data(),
                 ) {
                     (Some(Array(value)), ".", m, _)
                     | (Some(Array(value)), ".", _, Some(Raw(Str(m))))
-                        if m.to_lowercase() == "length" =>
+                        if m.clone().normalize() == "length" =>
                     {
                         node.set(Raw(Num(value.len() as i64)))
                     }
                     (Some(Raw(Str(s))), ".", m, None)
                     | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))
-                        if m.to_lowercase() == "length" =>
+                        if m.clone().normalize() == "length" =>
                     {
                         node.set(Raw(Num(s.len() as i64)))
                     }
@@ -149,7 +150,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                 ) {
                     (Some(Type(typename)), "::", m, _)
                     | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
-                        if m.to_lowercase() == "frombase64string"
+                        if m.clone().normalize() == "frombase64string"
                             && (typename == "system.convert" || typename == "convert") =>
                     {
                         // infer type of member access
@@ -165,7 +166,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                 match (
                     type_lit.data(),
                     op.text()?,
-                    &member_name.text()?.to_lowercase(),
+                    &member_name.text()?.to_string(),
                     member_name.data(),
                 ) {
                     (Some(Type(typename)), "::", m, _)
@@ -173,7 +174,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                     | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
                     | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
                         if ((typename == "system.convert" || typename == "convert")
-                            && m.to_lowercase() == "frombase64string")
+                            && m.clone().normalize() == "frombase64string")
                             || (typename == "convert::frombase64string" && m == "invoke") =>
                     {
                         // get the argument list if present
@@ -265,13 +266,13 @@ impl<'a> RuleMut<'a> for FromUTF {
                     (Some(Type(typename)), "::", m, _)
                     | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
                         if vec!["utf8", "utf16", "unicode"]
-                            .contains(&m.to_lowercase().as_str())
+                            .contains(&m.clone().normalize().as_str())
                             && (typename == "system.text.encoding"
                                 || typename == "text.encoding") =>
                     {
                         // infer type of member access
                         let mut function_typename = String::from("text.encoding.");
-                        function_typename += &m.to_lowercase();
+                        function_typename += &m.clone().normalize();
                         node.set(Type(function_typename));
                     }
 
@@ -283,7 +284,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                             "text.encoding.unicode",
                         ]
                         .contains(&typename.as_str())
-                            && m.to_lowercase() == "getstring" =>
+                            && m.clone().normalize() == "getstring" =>
                     {
                         let mut function_typename = typename.clone();
                         function_typename += ".getstring";
@@ -305,9 +306,9 @@ impl<'a> RuleMut<'a> for FromUTF {
                     (Some(Type(typename)), ".", m, _)
                     | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
                         if (typename == "text.encoding.utf8"
-                            && m.to_lowercase() == "getstring")
+                            && m.clone().normalize() == "getstring")
                             || (typename == "text.encoding.utf8.getstring"
-                                && m.to_lowercase() == "invoke") =>
+                                && m.clone().normalize() == "invoke") =>
                     {
                         if let Some(argument_expression_list) =
                             args_list.named_child("argument_expression_list")
@@ -334,10 +335,10 @@ impl<'a> RuleMut<'a> for FromUTF {
                     | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
                         if ((typename == "text.encoding.utf16"
                             || typename == "text.encoding.unicode")
-                            && m.to_lowercase() == "getstring")
+                            && m.clone().normalize() == "getstring")
                             || ((typename == "text.encoding.utf16.getstring"
                                 || typename == "text.encoding.unicode.getstring")
-                                && m.to_lowercase() == "invoke") =>
+                                && m.clone().normalize() == "invoke") =>
                     {
                         if let Some(argument_expression_list) =
                             args_list.named_child("argument_expression_list")

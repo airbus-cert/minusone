@@ -1,8 +1,9 @@
 use error::MinusOneResult;
-use ps::Powershell;
+use ps::{Powershell};
 use ps::Powershell::Raw;
 use ps::Value::{Bool, Num, Str};
 use regex::Regex;
+use ps::tool::StringTool;
 use rule::Rule;
 use tree::Node;
 
@@ -20,13 +21,7 @@ fn escape_string(src: &str) -> String {
 }
 
 fn remove_useless_token(src: &str) -> String {
-    let mut result = String::new();
-    for c in src.chars() {
-        if c != '`' {
-            result.push(c);
-        }
-    }
-    result
+    src.replace("`", "")
 }
 
 fn uppercase_first(src: &str) -> String {
@@ -48,7 +43,7 @@ pub struct Linter {
     comment: bool,
     is_param_block: bool,
     statement_block_tab: Vec<bool>,
-    is_multiline: bool,
+    is_multiline: bool
 }
 
 impl<'a> Rule<'a> for Linter {
@@ -97,6 +92,21 @@ impl<'a> Rule<'a> for Linter {
                     self.write(node.text()?.to_lowercase().as_str());
                     return Ok(false);
                 }
+            },
+            // If a member_name is infered as a string
+            "member_name" => {
+                if let Some(Raw(Str(m))) = node.data() {
+                    self.write(&m.clone().remove_tilt().uppercase_first());
+                    return Ok(false);
+                }
+            },
+            "expandable_string_literal" => {
+                self.write(node.text()?);
+                return Ok(false);
+            }
+            "type_spec" => {
+                self.write(&node.text()?.to_string().uppercase_first());
+                return Ok(false);
             }
             _ => (),
         }
@@ -346,7 +356,7 @@ impl Linter {
             comment: false,
             is_param_block: false,
             statement_block_tab: vec![],
-            is_multiline: true,
+            is_multiline: true
         }
     }
 

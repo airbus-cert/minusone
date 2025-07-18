@@ -35,6 +35,7 @@ pub mod strategy;
 pub mod string;
 pub mod typing;
 pub mod var;
+mod tool;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {

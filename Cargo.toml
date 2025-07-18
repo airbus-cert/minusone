@@ -1,6 +1,6 @@
 [package]
 name = "minusone"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Airbus CERT <cert@airbus.com>"]
 description = "A script deobfuscator"
 repository = "https://github.com/airbus-cert/minusone"
@@ -24,7 +24,7 @@ minusone-cli = ["clap"]
 
 [dependencies]
 tree-sitter = "0.25"
-tree-sitter-powershell = "0.25.7"
+tree-sitter-powershell = "0.25.8"
 clap = { version = "^2.33", optional = true }
 base64 = "0.21.5"
 num = "0.4.3"

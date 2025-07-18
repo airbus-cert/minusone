@@ -1,6 +1,7 @@
 use error::MinusOneResult;
-use ps::Powershell;
+use ps::{Powershell};
 use ps::Powershell::{Array, Raw};
+use ps::tool::StringTool;
 use ps::Value::{Bool, Num, Str};
 use rule::RuleMut;
 use tree::{ControlFlow, NodeMut};
@@ -165,24 +166,26 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
                 match (
                     expression.data(),
                     operator.text()?,
-                    member_name.text()?.to_lowercase().as_str(),
+                    &member_name.text()?.to_string(),
+                    member_name.data()
                 ) {
-                    (Some(Raw(Str(src))), ".", "replace") => {
-                        if let Some(argument_expression_list) =
-                            arguments_list.named_child("argument_expression_list")
-                        {
-                            if let (Some(arg_1), Some(arg_2)) = (
-                                argument_expression_list.child(0),
-                                argument_expression_list.child(2),
-                            ) {
-                                if let (Some(Raw(Str(from))), Some(Raw(to))) =
-                                    (arg_1.data(), arg_2.data())
-                                {
-                                    node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
+                    (Some(Raw(Str(src))), ".", m, _) | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
+                        if m.clone().to_lowercase().remove_tilt().remove_quote() == "replace" => {
+                            if let Some(argument_expression_list) =
+                                arguments_list.named_child("argument_expression_list")
+                            {
+                                if let (Some(arg_1), Some(arg_2)) = (
+                                    argument_expression_list.child(0),
+                                    argument_expression_list.child(2),
+                                ) {
+                                    if let (Some(Raw(Str(from))), Some(Raw(to))) =
+                                        (arg_1.data(), arg_2.data())
+                                    {
+                                        node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
+                                    }
                                 }
                             }
                         }
-                    }
                     _ => {}
                 }
             }
@@ -337,25 +340,30 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
                 match (
                     expression.data(),
                     operator.text()?,
-                    member_name.text()?.to_lowercase().as_str(),
+                    &member_name.text()?.to_string(),
+                    member_name.data()
                 ) {
-                    (Some(Raw(Str(src))), ".", "split") => {
-                        if let Some(argument_expression_list) =
-                            arguments_list.named_child("argument_expression_list")
-                        {
-                            if let Some(arg_1) = argument_expression_list.child(0) {
-                                if let Some(Raw(Str(separator))) = arg_1.data() {
-                                    node.reduce(Array(
-                                        src.split(separator)
-                                            .collect::<Vec<&str>>()
-                                            .iter()
-                                            .map(|e| Str(e.to_string()))
-                                            .collect(),
-                                    ));
+
+                    (Some(Raw(Str(src))), ".", m, _) | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
+                        if m.clone().to_lowercase().remove_tilt().remove_quote() == "split" => {
+                            if let Some(argument_expression_list) =
+                                arguments_list.named_child("argument_expression_list")
+                            {
+                                if let Some(arg_1) = argument_expression_list.child(0) {
+                                    if let Some(Raw(Str(separator))) = arg_1.data() {
+                                        // not reduce to have a better deobfuscation
+                                        // if we reduce this step we will maybe lost the string
+                                        node.set(Array(
+                                            src.split(separator)
+                                                .collect::<Vec<&str>>()
+                                                .iter()
+                                                .map(|e| Str(e.to_string()))
+                                                .collect(),
+                                        ));
+                                    }
                                 }
                             }
                         }
-                    }
                     _ => {}
                 }
             }
