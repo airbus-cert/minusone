@@ -4,6 +4,7 @@ use std::collections::HashMap;
 pub struct Variable<T: Clone> {
     inferred_type: Option<T>,
     used: bool,
+    local: bool
 }
 
 impl<T: Clone> Variable<T> {
@@ -11,6 +12,7 @@ impl<T: Clone> Variable<T> {
         Variable {
             inferred_type,
             used: false,
+            local: true
         }
     }
 }
@@ -28,9 +30,13 @@ impl<T: Clone> Scope<T> {
     }
 
     pub fn from(scope: &Scope<T>) -> Self {
-        Scope {
+        let mut s = Scope {
             vars : scope.vars.clone()
+        };
+        for (_, var) in s.vars.iter_mut() {
+            var.local = false;
         }
+        s
     }
 
     pub fn assign(&mut self, var_name: &str, value: T) {
@@ -71,6 +77,13 @@ impl<T: Clone> Scope<T> {
     pub fn get_var_names(&self) -> Vec<String> {
         self.vars.clone().keys().map(|k| k.clone()).collect()
     }
+
+    pub fn is_local(&self, var_name: &str) -> Option<bool> {
+        if let Some(data) = self.vars.get(var_name) {
+            return Some(data.local);
+        }
+        None
+    }
 }
 
 pub struct ScopeManager<T: Clone> {
@@ -89,7 +102,16 @@ impl<T: Clone> ScopeManager<T> {
     }
 
     pub fn leave(&mut self) {
-        self.scopes.pop();
+        let mut last = self.scopes.pop().unwrap();
+        // we will merge the scope
+        for (name, value) in last.vars.iter_mut() {
+                if let Some(inferred_type) = &value.inferred_type {
+                    if !value.local {
+                        self.current_mut().assign(name, inferred_type.clone());
+                    }
+                }
+
+        }
     }
 
     pub fn current_mut(&mut self) -> &mut Scope<T> {

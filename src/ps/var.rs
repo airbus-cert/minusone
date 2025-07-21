@@ -57,7 +57,6 @@ impl Var {
             "ErrorActionPreference",
             "ErrorView",
             "ExecutionContext",
-            "false",
             "FormatEnumerationLimit",
             "HOME",
             "Host",
@@ -92,7 +91,6 @@ impl Var {
             "PWD",
             "ShellId",
             "StackTrace",
-            "true",
             "VerbosePreference",
             "WarningPreference",
             "WhatIfPreference",
@@ -195,7 +193,6 @@ impl Default for Var {
             scope_manager: ScopeManager::new(),
         };
         new.reset_scope_manager();
-
         new
     }
 }
@@ -226,14 +223,8 @@ impl<'a> RuleMut<'a> for Var {
         let view = node.view();
         match view.kind() {
             "program" => self.reset_scope_manager(),
-            "function_statement" => self.scope_manager.enter(),
-            "}" => {
-                if let Some(parent) = view.parent() {
-                    if parent.kind() == "function_statement" {
-                        self.scope_manager.leave();
-                    }
-                }
-            }
+            "{" => self.scope_manager.enter(),
+            "}" => self.scope_manager.leave(),
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
             "statement_block" => {
@@ -284,13 +275,14 @@ impl<'a> RuleMut<'a> for Var {
                     (view.child(0), view.child(1), view.child(2))
                 {
                     if let Some(var) = find_variable_node(&left) {
-                        // only predictable assignment is handled
-                        if flow == ControlFlow::Continue(BranchFlow::Predictable) {
-                            if let Some(var_name) = Var::extract(var.text()?) {
-                                let scope = self.scope_manager.current_mut();
-                                if let (current_value, Some(new_value)) =
-                                    (scope.get_var(&var_name), right.data())
-                                {
+                        if let Some(var_name) = Var::extract(var.text()?) {
+                            let scope = self.scope_manager.current_mut();
+                            if let (current_value, Some(new_value)) =
+                                (scope.get_var(&var_name), right.data())
+                            {
+                                // only predictable assignment is handled of local var
+                                let is_local = scope.is_local(&var_name).unwrap_or(true);
+                                if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
                                     match assign_handler(current_value, operator, new_value) {
                                         Some(assign_value) => scope.assign(&var_name, assign_value),
                                         _ => scope.forget(&var_name),
@@ -702,7 +694,7 @@ mod test {
     use ps::build_powershell_tree;
     use ps::forward::Forward;
     use ps::hash::ParseHash;
-    use ps::integer::ParseInt;
+    use ps::integer::{AddInt, ParseInt};
     use ps::strategy::PowershellStrategy;
     use ps::string::ParseString;
 
@@ -2099,6 +2091,43 @@ mod test {
                 .data()
                 .expect("Expecting inferred type"),
             Raw(Num(1))
+        );
+    }
+
+    #[test]
+    fn test_infer_local_var_type() {
+        let mut tree = build_powershell_tree("try{$foo = 1;$foo + 2}catch{}").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                AddInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+            .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(0)
+                .unwrap() // try_statement
+                .child(1)
+                .unwrap() // statement block
+                .child(1)
+                .unwrap() //statement list
+                .child(2)
+                .unwrap() //pipeline
+                .data()
+                .expect("Expecting inferred type"),
+            Raw(Num(3))
         );
     }
 }
