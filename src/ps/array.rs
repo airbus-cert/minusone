@@ -310,6 +310,10 @@ impl<'a> RuleMut<'a> for AddArray {
                         let mut new_array = array.clone();
                         new_array.push(v.clone());
                         node.reduce(Array(new_array));
+                    },
+                    // add array between both
+                    (Some(Array(right_array)), "+", Some(Array(left_array))) => {
+                        node.reduce(Array([right_array.clone(), left_array.clone()].concat()));
                     }
                     _ => {}
                 }
