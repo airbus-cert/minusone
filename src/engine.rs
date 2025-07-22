@@ -2,8 +2,8 @@ use debug::DebugView;
 use error::MinusOneResult;
 use init::Init;
 use ps;
-use ps::{build_powershell_tree, remove_powershell_extra};
-use tree::{HashMapStorage, Storage, Tree};
+use ps::{build_powershell_tree, build_powershell_tree_for_storage, remove_powershell_extra};
+use tree::{EmptyStorage, HashMapStorage, Storage, Tree};
 
 pub struct Engine<'a, S: Storage> {
     root: Tree<'a, S>,
@@ -17,7 +17,7 @@ impl<'a> DeobfuscateEngine<'a> {
     }
     pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
         Ok(Self {
-            root: build_powershell_tree(src)?,
+            root: build_powershell_tree_for_storage(src)?,
         })
     }
 
@@ -45,4 +45,16 @@ impl<'a> DeobfuscateEngine<'a> {
         self.root.apply(&mut ps_litter_view)?;
         Ok(ps_litter_view.output)
     }
+}
+
+pub type UnusedVarEngine<'a> = Engine<'a, EmptyStorage>;
+
+impl<'a> UnusedVarEngine<'a> {
+    pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
+        Ok(Self {
+            root: build_powershell_tree_for_storage(src)?,
+        })
+    }
+
+
 }

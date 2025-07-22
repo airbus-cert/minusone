@@ -32,6 +32,30 @@ pub trait Storage {
     fn remove(&mut self, node: TreeNode);
 }
 
+#[derive(Default)]
+pub struct EmptyStorage;
+
+impl Storage for EmptyStorage {
+    type Component = ();
+
+    fn get(&self, _: TreeNode) -> Option<&Self::Component> {
+        None
+    }
+
+    fn set(&mut self, _: TreeNode, _: Self::Component) {
+    }
+
+    fn start(&mut self) {
+    }
+
+    fn end(&mut self) -> bool {
+        false
+    }
+
+    fn remove(&mut self, _: TreeNode) {
+    }
+}
+
 /// A possible implementation of storage that
 /// use Hash map as link between node id and data
 pub struct HashMapStorage<T> {

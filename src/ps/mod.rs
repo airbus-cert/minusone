@@ -17,7 +17,7 @@ use ps::string::{
 use ps::typing::ParseType;
 use ps::var::{StaticVar, Var};
 use std::collections::BTreeMap;
-use tree::{HashMapStorage, Tree};
+use tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_powershell::LANGUAGE as powershell_language;
 
 pub mod access;
@@ -162,6 +162,10 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
 }
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
+    build_powershell_tree_for_storage::<HashMapStorage<Powershell>>(source)
+}
+
+pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<T>> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&powershell_language.into())
@@ -169,7 +173,7 @@ pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage
 
     // And the grammar is specified in lowercase
     let tree_sitter = parser.parse(source, None).unwrap();
-    Ok(Tree::<HashMapStorage<Powershell>>::new(
+    Ok(Tree::<T>::new(
         source.as_bytes(),
         tree_sitter,
     ))
