@@ -223,11 +223,18 @@ impl<'a> RuleMut<'a> for Var {
         let view = node.view();
         match view.kind() {
             "program" => self.reset_scope_manager(),
-            "{" => self.scope_manager.enter(),
-            "}" => self.scope_manager.leave(),
+            "function_statement" => self.scope_manager.enter(),
+            "}" => {
+                if let Some(parent) = view.parent() {
+                    if parent.kind() == "statement_block" || parent.kind() == "function_statement" {
+                        self.scope_manager.leave();
+                    }
+                }
+            },
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
             "statement_block" => {
+                self.scope_manager.enter();
                 if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
                     self.forget_assigned_var(&view)?;
                 }

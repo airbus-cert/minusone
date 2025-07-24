@@ -1,6 +1,6 @@
 [package]
 name = "minusone"
-version = "0.3.8"
+version = "0.3.9"
 authors = ["Airbus CERT <cert@airbus.com>"]
 description = "A script deobfuscator"
 repository = "https://github.com/airbus-cert/minusone"
