@@ -234,6 +234,7 @@ impl<'a> RuleMut<'a> for Var {
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
             "statement_block" => {
+                // record var block during new statement blocks
                 self.scope_manager.enter();
                 if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
                     self.forget_assigned_var(&view)?;
@@ -287,12 +288,20 @@ impl<'a> RuleMut<'a> for Var {
                             if let (current_value, Some(new_value)) =
                                 (scope.get_var(&var_name), right.data())
                             {
-                                // only predictable assignment is handled of local var
-                                let is_local = scope.is_local(&var_name).unwrap_or(true);
-                                if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
-                                    match assign_handler(current_value, operator, new_value) {
-                                        Some(assign_value) => scope.assign(&var_name, assign_value),
-                                        _ => scope.forget(&var_name),
+                                // disable anything from for_initializer
+                                if !view
+                                    .get_parent_of_types(vec!["for_initializer"])
+                                    .is_none() {
+                                    scope.forget(&var_name);
+                                }
+                                else {
+                                    // only predictable assignment is handled of local var
+                                    let is_local = scope.is_local(&var_name).unwrap_or(true);
+                                    if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
+                                        match assign_handler(current_value, operator, new_value) {
+                                            Some(assign_value) => scope.assign(&var_name, assign_value),
+                                            _ => scope.forget(&var_name),
+                                        }
                                     }
                                 }
                             }
@@ -314,7 +323,6 @@ impl<'a> RuleMut<'a> for Var {
 
                     // check if we are not on the left part of an assignment expression
                     // already handle by the previous case
-                    // We also exclude member_access for now
                     if view
                         .get_parent_of_types(vec!["left_assignment_expression"])
                         .is_none()
