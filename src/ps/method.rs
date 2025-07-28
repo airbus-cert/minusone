@@ -265,7 +265,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                 ) {
                     (Some(Type(typename)), "::", m, _)
                     | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
-                        if vec!["utf8", "utf16", "unicode"]
+                        if vec!["utf8", "utf16", "unicode", "ascii"]
                             .contains(&m.clone().normalize().as_str())
                             && (typename == "system.text.encoding"
                                 || typename == "text.encoding") =>
@@ -282,6 +282,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                             "text.encoding.utf8",
                             "text.encoding.utf16",
                             "text.encoding.unicode",
+                            "text.encoding.ascii"
                         ]
                         .contains(&typename.as_str())
                             && m.clone().normalize() == "getstring" =>
@@ -305,9 +306,9 @@ impl<'a> RuleMut<'a> for FromUTF {
                 ) {
                     (Some(Type(typename)), ".", m, _)
                     | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                        if (typename == "text.encoding.utf8"
+                        if ((typename == "text.encoding.utf8" || typename == "text.encoding.ascii")
                             && m.clone().normalize() == "getstring")
-                            || (typename == "text.encoding.utf8.getstring"
+                            || ((typename == "text.encoding.utf8.getstring" || typename == "text.encoding.ascii.getstring")
                                 && m.clone().normalize() == "invoke") =>
                     {
                         if let Some(argument_expression_list) =
@@ -368,7 +369,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                                 }
                             }
                         }
-                    }
+                    },
                     _ => (),
                 }
             }
