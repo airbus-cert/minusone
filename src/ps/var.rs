@@ -3,9 +3,9 @@ use ps::Powershell;
 use ps::Powershell::{Array, Null, Raw, Type};
 use ps::Value::{self, Bool, Num, Str};
 use regex::Regex;
-use rule::RuleMut;
+use rule::{Rule, RuleMut};
 use scope::ScopeManager;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Add;
 use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 
@@ -135,7 +135,7 @@ impl Var {
     /// $a => a \
     /// ${var-1} => var-1
     ///
-    fn extract(var: &str) -> Option<String> {
+    pub fn extract(var: &str) -> Option<String> {
         let var = var.to_lowercase();
         let re_simple =
             Regex::new(r"\$(?<provider>([a-zA-Z]+):)?(?<name>[a-zA-Z0-9_?:]+)").unwrap();
@@ -197,7 +197,7 @@ impl Default for Var {
     }
 }
 
-fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
+pub fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     for child in node.iter() {
         if child.kind() == "variable" {
             if let Some(parent) = child.parent() {
@@ -695,6 +695,44 @@ impl<'a> RuleMut<'a> for StaticVar {
                 )))),
                 "$verbosepreference" => node.set(Raw(Str(String::from("SilentlyContinue")))),
                 _ => (),
+            }
+        }
+        Ok(())
+    }
+}
+
+
+#[derive(Default)]
+pub struct UnusedVar {
+    pub vars: HashMap<String, bool>
+}
+
+impl UnusedVar {
+    pub fn is_unused(&self, var_name: &str) -> bool {
+        !self.vars.get(var_name).unwrap_or(&false)
+    }
+}
+
+impl<'a> Rule<'a> for UnusedVar {
+    type Language = ();
+
+    fn enter(
+        &mut self,
+        _node: &Node<'a, Self::Language>,
+    ) -> MinusOneResult<bool> {
+        Ok(true)
+    }
+
+    fn leave(
+        &mut self,
+        node: &Node<'a, Self::Language>,
+    ) -> MinusOneResult<()> {
+        if node.kind() == "variable" {
+            if let Some(var_name) = Var::extract(node.text()?) {
+                if node.get_parent_of_types(vec!["left_assignment_expression"]).is_none()
+                {
+                    self.vars.insert(var_name, true);
+                }
             }
         }
         Ok(())

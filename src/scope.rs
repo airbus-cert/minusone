@@ -105,12 +105,14 @@ impl<T: Clone> ScopeManager<T> {
         let mut last = self.scopes.pop().unwrap();
         // we will merge the scope
         for (name, value) in last.vars.iter_mut() {
+            if !value.local {
                 if let Some(inferred_type) = &value.inferred_type {
-                    if !value.local {
-                        self.current_mut().assign(name, inferred_type.clone());
-                    }
+                    self.current_mut().assign(name, inferred_type.clone());
                 }
-
+                else {
+                    self.current_mut().forget(name);
+                }
+            }
         }
     }
 

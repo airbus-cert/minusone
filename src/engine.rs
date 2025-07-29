@@ -2,7 +2,8 @@ use debug::DebugView;
 use error::MinusOneResult;
 use init::Init;
 use ps;
-use ps::{build_powershell_tree, build_powershell_tree_for_storage, remove_powershell_extra};
+use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
+use ps::linter::RemoveUnusedVar;
 use tree::{EmptyStorage, HashMapStorage, Storage, Tree};
 
 pub struct Engine<'a, S: Storage> {
@@ -37,24 +38,33 @@ impl<'a> DeobfuscateEngine<'a> {
     pub fn lint(&mut self) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new();
         self.root.apply(&mut ps_litter_view)?;
-        Ok(ps_litter_view.output)
+        Ok(CleanEngine::from_powershell(&ps_litter_view.output)?.clean()?)
     }
 
     pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new().set_tab(tab_chr);
         self.root.apply(&mut ps_litter_view)?;
-        Ok(ps_litter_view.output)
+
+        Ok(CleanEngine::from_powershell(&ps_litter_view.output)?.clean()?)
     }
 }
 
-pub type UnusedVarEngine<'a> = Engine<'a, EmptyStorage>;
+pub type CleanEngine<'a> = Engine<'a, EmptyStorage>;
 
-impl<'a> UnusedVarEngine<'a> {
+impl<'a> CleanEngine<'a> {
     pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
         Ok(Self {
             root: build_powershell_tree_for_storage(src)?,
         })
     }
 
-
+    pub fn clean(&mut self) -> MinusOneResult<String> {
+        let mut rule = ps::var::UnusedVar::default();
+        self.root.apply(
+            &mut rule,
+        )?;
+        let mut clean_view = RemoveUnusedVar::new(rule);
+        self.root.apply(&mut clean_view)?;
+        Ok(clean_view.clear()?)
+    }
 }

@@ -4,6 +4,7 @@ use ps::Powershell::Raw;
 use ps::Value::{Bool, Num, Str};
 use regex::Regex;
 use ps::tool::StringTool;
+use ps::var::{find_variable_node, UnusedVar, Var};
 use rule::Rule;
 use tree::Node;
 
@@ -399,13 +400,13 @@ impl Linter {
     }
 }
 
-pub struct RemoveComment {
+pub struct RemoveCode {
     source: String,
     pub output: String,
     last_index: usize,
 }
 
-impl RemoveComment {
+impl RemoveCode {
     pub fn new() -> Self {
         Self {
             source: String::new(),
@@ -413,33 +414,118 @@ impl RemoveComment {
             last_index: 0,
         }
     }
+    pub fn start_program<T>(&mut self, root: &Node<T>) -> MinusOneResult<()> {
+        self.source = root.text()?.to_string();
+        Ok(())
+    }
+
+    pub fn end_program(&mut self) -> MinusOneResult<()> {
+        self.output += &self.source[self.last_index..];
+        Ok(())
+    }
+
+    pub fn remove_node<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
+        while self.source.chars().nth(self.last_index) == Some('\n') {
+            self.last_index += 1;
+        }
+
+        self.output += &self.source[self.last_index..node.start_abs()];
+        self.last_index = node.end_abs();
+        Ok(())
+    }
+}
+
+pub struct RemoveComment {
+    manager: RemoveCode
+}
+
+impl RemoveComment {
+    pub fn new() -> Self {
+        Self {
+            manager: RemoveCode::new()
+        }
+    }
+
+    pub fn clear(self) -> MinusOneResult<String>{
+        Ok(self.manager.output)
+    }
 }
 
 impl<'a> Rule<'a> for RemoveComment {
     type Language = Powershell;
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-        // depending on what am i
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
+                self.manager.start_program(node)?;
             }
             "comment" => {
-                self.output += &self.source[self.last_index..node.start_abs()];
-                self.last_index = node.end_abs();
+                self.manager.remove_node(node)?;
             }
             _ => (),
         }
         Ok(true)
     }
 
-    /// the down to top
+    // the down to top
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         match node.kind() {
-            "program" => self.output += &self.source[self.last_index..],
+            "program" => self.manager.end_program()?,
             _ => (),
         }
 
         Ok(())
     }
 }
+
+pub struct RemoveUnusedVar {
+    rule: UnusedVar,
+    manager: RemoveCode
+}
+
+impl RemoveUnusedVar {
+    pub fn new(rule: UnusedVar) -> Self {
+        Self {
+            manager: RemoveCode::new(),
+            rule
+        }
+    }
+    pub fn clear(self) -> MinusOneResult<String>{
+        Ok(self.manager.output)
+    }
+
+}
+
+impl<'a> Rule<'a> for RemoveUnusedVar {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.manager.start_program(node)?;
+            }
+            "assignment_expression" => {
+                    if let Some(var) = find_variable_node(&node) {
+                        if let Some(var_name) = Var::extract(var.text()?) {
+                            if self.rule.is_unused(&var_name) {
+                                self.manager.remove_node(&node)?;
+                            }
+                        }
+                    }
+            }
+            _ => (),
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        match node.kind() {
+            "program" => self.manager.end_program()?,
+            _ => (),
+        }
+
+        Ok(())
+    }
+}
+
+

@@ -158,7 +158,7 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
 
     let mut source_without_extra = RemoveComment::new();
     root.apply(&mut source_without_extra)?;
-    Ok(source_without_extra.output)
+    Ok(source_without_extra.clear()?)
 }
 
 pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
