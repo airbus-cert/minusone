@@ -64,20 +64,17 @@ impl<'a> RuleMut<'a> for JoinComparison {
             if let (Some(left_expression), Some(operator), Some(right_expression)) =
                 (view.child(0), view.child(1), view.child(2))
             {
-                match (
+                if let (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) = (
                     left_expression.data(),
                     operator.text()?.to_lowercase().as_str(),
                     right_expression.data(),
                 ) {
-                    (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) => {
-                        let result = src_array
-                            .iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<String>>()
-                            .join(join_token);
-                        node.set(Raw(Str(result)));
-                    }
-                    _ => (),
+                    let result = src_array
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(join_token);
+                    node.set(Raw(Str(result)));
                 }
             }
         }
@@ -240,20 +237,17 @@ impl<'a> RuleMut<'a> for JoinOperator {
         let view = node.view();
         if view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1)) {
-                match (
+                if let ("-join", Some(Array(values))) = (
                     operator.text()?.to_lowercase().as_str(),
                     unary_expression.data(),
                 ) {
-                    ("-join", Some(Array(values))) => {
-                        let result = values
-                            .iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<String>>()
-                            .join(""); // by default the join operator join with an empty token
+                    let result = values
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(""); // by default the join operator join with an empty token
 
-                        node.set(Raw(Str(result)));
-                    }
-                    _ => (),
+                    node.set(Raw(Str(result)));
                 }
             }
         }

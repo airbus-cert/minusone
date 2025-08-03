@@ -167,8 +167,8 @@ impl<'a> RuleMut<'a> for ForEach {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "foreach_command" {
-            if view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression"
+        if view.kind() == "foreach_command"
+            && view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression"
             {
                 let script_block_expression = view.child(1).unwrap();
                 if let Some(previous_command) = find_previous_expr(&view.parent().unwrap())? {
@@ -225,7 +225,6 @@ impl<'a> RuleMut<'a> for ForEach {
                     }
                 }
             }
-        }
 
         Ok(())
     }

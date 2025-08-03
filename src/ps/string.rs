@@ -126,11 +126,8 @@ impl<'a> RuleMut<'a> for ConcatString {
             if let (Some(left_op), Some(operator), Some(right_op)) =
                 (view.child(0), view.child(1), view.child(2))
             {
-                match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) => {
-                        node.reduce(Raw(Str(String::from(string_left) + string_right)))
-                    }
-                    _ => {}
+                if let (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) = (left_op.data(), operator.text()?, right_op.data()) {
+                    node.reduce(Raw(Str(String::from(string_left) + string_right)))
                 }
             }
         }
@@ -225,7 +222,7 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
                     (Some(Raw(Str(src))), "-replace", Some(Array(params)))
                     | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) => {
                         // -replace operator need two params
-                        if let (Some(Str(old)), Some(Str(new))) = (params.get(0), params.get(1)) {
+                        if let (Some(Str(old)), Some(Str(new))) = (params.first(), params.get(1)) {
                             node.reduce(Raw(Str(src.replace(old, new))));
                         }
                     }
@@ -292,7 +289,7 @@ impl<'a> RuleMut<'a> for FormatString {
                         let mut result = format_str.clone();
                         for (index, new) in format_args.iter().enumerate() {
                             result = result.replace(
-                                format!("{{{}}}", index).as_str(),
+                                format!("{{{index}}}").as_str(),
                                 new.to_string().as_str(),
                             );
                         }

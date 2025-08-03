@@ -152,7 +152,7 @@ impl Var {
             }
         }
 
-        return None;
+        None
     }
 
     /// Resolve the name of a variable pattern given the current scope
@@ -160,7 +160,7 @@ impl Var {
     /// Use for patterns used by variable, get-variable, set-variable, get-childitem...
     fn resolve_wildcarded(&self, variable_name: String) -> Option<String> {
         if variable_name.contains("*") {
-            let re = Regex::new(&*format!("^{}$", variable_name.replace("*", ".*"))).unwrap();
+            let re = Regex::new(&format!("^{}$", variable_name.replace("*", ".*"))).unwrap();
             let current_scope = self.scope_manager.current();
             let var_names = current_scope.get_var_names();
             let matches: Vec<_> = var_names
@@ -288,7 +288,7 @@ impl<'a> RuleMut<'a> for Var {
                                 (scope.get_var(&var_name), right.data())
                             {
                                 // disable anything from for_initializer
-                                if !view.get_parent_of_types(vec!["for_initializer"]).is_none() {
+                                if view.get_parent_of_types(vec!["for_initializer"]).is_some() {
                                     scope.forget(&var_name);
                                 } else {
                                     // only predictable assignment is handled of local var
@@ -566,18 +566,18 @@ fn assign_handler(
         // += operator
         (Some(Raw(Num(v))), "+=", Raw(Num(n))) => Some(Raw(Num(v + n))),
         (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v + n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v + n)))
         }
         (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
-        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(&n)))),
+        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(n)))),
 
         // -= operator
         (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
         (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v - n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v - n)))
         }
         (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v - n))))
+            v.parse::<i64>().ok().map(|v| Raw(Num(v - n)))
         }
         (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
@@ -590,21 +590,20 @@ fn assign_handler(
         // *= operator
         (Some(Raw(Num(v))), "*=", Raw(Num(n))) => Some(Raw(Num(v * n))),
         (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v * n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v * n)))
         }
         (Some(Raw(Str(v))), "*=", Raw(Num(n))) => Some(Raw(Str(v.repeat(*n as usize)))),
         (Some(Raw(Str(v))), "*=", Raw(Str(n))) => n
             .parse::<usize>()
-            .ok()
-            .and_then(|n| Some(Raw(Str(v.repeat(n))))),
+            .ok().map(|n| Raw(Str(v.repeat(n)))),
 
         // /= operator
         (Some(Raw(Num(v))), "/=", Raw(Num(n))) => Some(Raw(Num(v / n))),
         (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v / n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v / n)))
         }
         (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v / n))))
+            v.parse::<i64>().ok().map(|v| Raw(Num(v / n)))
         }
         (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
@@ -617,10 +616,10 @@ fn assign_handler(
         // %= operator
         (Some(Raw(Num(v))), "%=", Raw(Num(n))) => Some(Raw(Num(v % n))),
         (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v % n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v % n)))
         }
         (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v % n))))
+            v.parse::<i64>().ok().map(|v| Raw(Num(v % n)))
         }
         (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {

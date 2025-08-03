@@ -75,8 +75,7 @@ impl Error {
         Error::MinusOneError(MinusOneError::new(
             MinusOneErrorKind::InvalidProgramIndex,
             format!(
-                "The program is excepted to start at index 0. Found index {}",
-                index
+                "The program is excepted to start at index 0. Found index {index}"
             )
             .as_str(),
         ))

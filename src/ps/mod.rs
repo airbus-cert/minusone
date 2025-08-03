@@ -158,14 +158,14 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
 
     let mut source_without_extra = RemoveComment::new();
     root.apply(&mut source_without_extra)?;
-    Ok(source_without_extra.clear()?)
+    source_without_extra.clear()
 }
 
-pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
+pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<'_, HashMapStorage<Powershell>>> {
     build_powershell_tree_for_storage::<HashMapStorage<Powershell>>(source)
 }
 
-pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<T>> {
+pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<'_, T>> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&powershell_language.into())
