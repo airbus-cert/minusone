@@ -83,8 +83,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
@@ -110,8 +108,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
@@ -138,8 +134,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
@@ -203,8 +197,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
@@ -233,8 +225,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
@@ -264,8 +254,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
@@ -297,8 +285,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, ControlFlow};
@@ -386,8 +372,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
@@ -475,7 +459,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
