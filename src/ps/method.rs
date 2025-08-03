@@ -13,7 +13,6 @@ use crate::tree::{ControlFlow, NodeMut, Node};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -92,7 +91,6 @@ impl<'a> RuleMut<'a> for Length {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -209,7 +207,6 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;

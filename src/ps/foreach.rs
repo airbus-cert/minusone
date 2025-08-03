@@ -33,8 +33,6 @@ fn find_previous_expr<'a>(
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
@@ -118,8 +116,6 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;

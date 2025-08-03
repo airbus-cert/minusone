@@ -16,7 +16,6 @@ pub struct Forward;
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;

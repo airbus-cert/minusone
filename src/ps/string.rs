@@ -87,7 +87,6 @@ impl<'a> RuleMut<'a> for ParseString {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -244,7 +243,6 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;

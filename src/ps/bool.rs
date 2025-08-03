@@ -12,7 +12,6 @@ use crate::tree::{ControlFlow, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -70,7 +69,6 @@ impl<'a> RuleMut<'a> for ParseBool {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -140,7 +138,6 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;

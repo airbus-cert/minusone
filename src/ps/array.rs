@@ -13,7 +13,6 @@ use crate::tree::{ControlFlow, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -80,7 +79,6 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 /// # Example
 /// ```
 /// extern crate tree_sitter;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -166,7 +164,6 @@ impl<'a> RuleMut<'a> for ParseRange {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -250,7 +247,6 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
