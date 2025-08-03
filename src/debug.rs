@@ -1,7 +1,7 @@
-use error::MinusOneResult;
-use rule::Rule;
+use crate::error::MinusOneResult;
+use crate::rule::Rule;
+use crate::tree::Node;
 use std::fmt::Debug;
-use tree::Node;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type

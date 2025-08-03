@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::Raw;
-use ps::Value::{Bool, Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::Raw;
+use crate::ps::Value::{Bool, Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// This rule will infer boolean variable $true $false
 ///
@@ -372,13 +372,13 @@ impl<'a> RuleMut<'a> for Not {
 
 #[cfg(test)]
 mod test {
-    use ps::bool::{BoolAlgebra, Comparison, ParseBool};
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::integer::ParseInt;
-    use ps::string::ParseString;
-    use ps::Powershell::Raw;
-    use ps::Value::Bool;
+    use crate::ps::bool::{BoolAlgebra, Comparison, ParseBool};
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::ParseInt;
+    use crate::ps::string::ParseString;
+    use crate::ps::Powershell::Raw;
+    use crate::ps::Value::Bool;
 
     #[test]
     fn test_parse_bool_true() {

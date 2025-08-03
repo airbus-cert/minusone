@@ -1,8 +1,8 @@
-use error::{Error, MinusOneResult};
-use ps::Powershell;
-use ps::Powershell::Null;
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::{Error, MinusOneResult};
+use crate::ps::Powershell;
+use crate::ps::Powershell::Null;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// The forward rule is use to forward
 /// inferedtype in the most simple case : where there is nothing to do

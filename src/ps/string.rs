@@ -1,10 +1,10 @@
-use error::MinusOneResult;
-use ps::{Powershell};
-use ps::Powershell::{Array, Raw};
-use ps::tool::StringTool;
-use ps::Value::{Bool, Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::{Powershell};
+use crate::ps::Powershell::{Array, Raw};
+use crate::ps::tool::StringTool;
+use crate::ps::Value::{Bool, Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 #[derive(Default)]
 pub struct ParseString;
@@ -374,12 +374,12 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
 
 #[cfg(test)]
 mod test {
-    use ps::array::ParseArrayLiteral;
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::string::{ConcatString, FormatString, ParseString, StringReplaceOp};
-    use ps::Powershell::Raw;
-    use ps::Value::Str;
+    use crate::ps::array::ParseArrayLiteral;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::string::{ConcatString, FormatString, ParseString, StringReplaceOp};
+    use crate::ps::Powershell::Raw;
+    use crate::ps::Value::Str;
 
     #[test]
     fn test_concat_two_elements() {

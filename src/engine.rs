@@ -1,10 +1,10 @@
-use debug::DebugView;
-use error::MinusOneResult;
-use init::Init;
-use ps;
-use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
-use ps::linter::RemoveUnusedVar;
-use tree::{EmptyStorage, HashMapStorage, Storage, Tree};
+use crate::debug::DebugView;
+use crate::error::MinusOneResult;
+use crate::init::Init;
+use crate::ps;
+use crate::ps::{build_powershell_tree_for_storage, remove_powershell_extra};
+use crate::ps::linter::RemoveUnusedVar;
+use crate::tree::{EmptyStorage, HashMapStorage, Storage, Tree};
 
 pub struct Engine<'a, S: Storage> {
     root: Tree<'a, S>,

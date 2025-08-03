@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, Raw, Type};
-use ps::Value::Str;
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, Raw, Type};
+use crate::ps::Value::Str;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// This rule will infer the -join opoerator
 /// in the context of comparison operator

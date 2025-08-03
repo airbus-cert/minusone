@@ -1,11 +1,11 @@
 use base64::{engine::general_purpose, Engine as _};
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, Raw, Type};
-use ps::tool::StringTool;
-use ps::Value::{Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, Raw, Type, PSItem};
+use crate::ps::tool::StringTool;
+use crate::ps::Value::{Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut, Node};
 
 /// Compute the length of predictable Array or string
 ///
@@ -380,15 +380,15 @@ impl<'a> RuleMut<'a> for FromUTF {
 
 #[cfg(test)]
 mod test {
-    use ps::array::{ComputeArrayExpr, ParseArrayLiteral};
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::integer::ParseInt;
-    use ps::method::{DecodeBase64, FromUTF, Length};
-    use ps::string::ParseString;
-    use ps::typing::ParseType;
-    use ps::Powershell::{Array, Raw};
-    use ps::Value::{Num, Str};
+    use crate::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::ParseInt;
+    use crate::ps::method::{DecodeBase64, FromUTF, Length};
+    use crate::ps::string::ParseString;
+    use crate::ps::typing::ParseType;
+    use crate::ps::Powershell::{Array, Raw};
+    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_array_length() {

@@ -1,5 +1,5 @@
-use error::MinusOneResult;
-use tree::{ControlFlow, Node, NodeMut};
+use crate::error::MinusOneResult;
+use crate::tree::{ControlFlow, Node, NodeMut};
 
 pub trait RuleMut<'a> {
     type Language;

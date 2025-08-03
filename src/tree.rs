@@ -1,5 +1,5 @@
-use error::MinusOneResult;
-use rule::{Rule, RuleMut};
+use crate::error::MinusOneResult;
+use crate::rule::{Rule, RuleMut};
 use std::collections::HashMap;
 use std::ops;
 use std::str::Utf8Error;
