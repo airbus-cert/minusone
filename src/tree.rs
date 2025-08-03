@@ -215,7 +215,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node_view.kind(), "program");
     /// ```
-    pub fn view(&self) -> Node<T> {
+    pub fn view(&self) -> Node<'_, T> {
         Node::new(self.inner, self.source, self.storage)
     }
 
@@ -359,7 +359,7 @@ impl<'a, T> NodeMut<'a, T> {
 
                 // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
-                    l.1 = l.1 - 1;
+                    l.1 -= 1;
                 }
             }
         }
@@ -560,7 +560,7 @@ impl<'a, T> NodeMut<'a, T> {
 
                 // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
-                    l.1 = l.1 - 1;
+                    l.1 -= 1;
                 }
             }
         }
@@ -723,7 +723,7 @@ impl<'a, T> Node<'a, T> {
 
                 // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
-                    l.1 = l.1 - 1;
+                    l.1 -= 1;
                 }
             }
         }
@@ -868,7 +868,7 @@ where
         node.apply(rule)
     }
 
-    pub fn root(&self) -> MinusOneResult<Node<S::Component>> {
+    pub fn root(&self) -> MinusOneResult<Node<'_, S::Component>> {
         Ok(Node::new(
             self.tree_sitter.root_node(),
             self.source,

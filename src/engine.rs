@@ -30,7 +30,7 @@ impl<'a> DeobfuscateEngine<'a> {
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
         self.root.apply_mut_with_strategy(
             &mut ps::RuleSet::init(),
-            ps::strategy::PowershellStrategy::default(),
+            ps::strategy::PowershellStrategy,
         )?;
         Ok(())
     }
@@ -38,14 +38,14 @@ impl<'a> DeobfuscateEngine<'a> {
     pub fn lint(&mut self) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new();
         self.root.apply(&mut ps_litter_view)?;
-        Ok(CleanEngine::from_powershell(&ps_litter_view.output)?.clean()?)
+        CleanEngine::from_powershell(&ps_litter_view.output)?.clean()
     }
 
     pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new().set_tab(tab_chr);
         self.root.apply(&mut ps_litter_view)?;
 
-        Ok(CleanEngine::from_powershell(&ps_litter_view.output)?.clean()?)
+        CleanEngine::from_powershell(&ps_litter_view.output)?.clean()
     }
 }
 
@@ -65,6 +65,6 @@ impl<'a> CleanEngine<'a> {
         )?;
         let mut clean_view = RemoveUnusedVar::new(rule);
         self.root.apply(&mut clean_view)?;
-        Ok(clean_view.clear()?)
+        clean_view.clear()
     }
 }

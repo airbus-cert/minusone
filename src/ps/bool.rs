@@ -255,8 +255,8 @@ impl<'a> RuleMut<'a> for Comparison {
                     // Str and bool comparison
                     (Some(Raw(Str(left_value))), "-eq", Some(Raw(Bool(right_value)))) => {
                         node.set(Raw(Bool(
-                            (left_value.to_lowercase() == "true" && *right_value == true)
-                                || (left_value.to_lowercase() == "false" && *right_value == false),
+                            (left_value.to_lowercase() == "true" && *right_value)
+                                || (left_value.to_lowercase() == "false" && !(*right_value)),
                         )))
                     }
                     (Some(Raw(Bool(left_value))), "-eq", Some(Raw(Str(right_value)))) => {
@@ -267,8 +267,8 @@ impl<'a> RuleMut<'a> for Comparison {
                     }
                     (Some(Raw(Str(left_value))), "-ne", Some(Raw(Bool(right_value)))) => {
                         node.set(Raw(Bool(
-                            !((left_value.to_lowercase() == "true" && *right_value == true)
-                                || (left_value.to_lowercase() == "false" && *right_value == false)),
+                            !((left_value.to_lowercase() == "true" && *right_value)
+                                || (left_value.to_lowercase() == "false" && !(*right_value))),
                         )))
                     }
                     (Some(Raw(Bool(left_value))), "-ne", Some(Raw(Str(right_value)))) => {
@@ -285,7 +285,7 @@ impl<'a> RuleMut<'a> for Comparison {
                     (Some(Raw(Bool(true))), "-ge", Some(Raw(Str(_)))) => node.set(Raw(Bool(true))),
                     (Some(Raw(Bool(false))), "-gt", Some(Raw(_))) => node.set(Raw(Bool(false))),
                     (Some(Raw(Bool(false))), "-ge", Some(Raw(Str(right_value)))) => {
-                        node.set(Raw(Bool(right_value.len() == 0)))
+                        node.set(Raw(Bool(right_value.is_empty())))
                     }
 
                     // String to number comparison
