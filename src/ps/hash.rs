@@ -1,10 +1,10 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{HashEntry, HashMap, Raw};
-use ps::Value::Str;
-use rule::RuleMut;
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{HashEntry, HashMap, Raw};
+use crate::ps::Value::Str;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 use std::collections::BTreeMap;
-use tree::{ControlFlow, NodeMut};
 
 #[derive(Default)]
 pub struct ParseHash;

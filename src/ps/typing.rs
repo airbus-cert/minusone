@@ -1,8 +1,8 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::Type;
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::Type;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 #[derive(Default)]
 pub struct ParseType;

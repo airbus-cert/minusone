@@ -1,6 +1,6 @@
-use rule::RuleMut;
-use tree::{NodeMut, ControlFlow};
-use error::{MinusOneResult, Error};
+use crate::rule::RuleMut;
+use crate::tree::{NodeMut, ControlFlow};
+use crate::error::{MinusOneResult, Error};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum PowershellDetect {

@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::Raw;
-use ps::Value::Num;
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::Raw;
+use crate::ps::Value::Num;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// Parse int will interpret integer node into Rust world
 /// as decimal
@@ -215,8 +215,8 @@ impl<'a> RuleMut<'a> for MultInt {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
 
     #[test]
     fn test_add_two_elements() {

@@ -1,12 +1,12 @@
-use error::MinusOneResult;
-use ps::{Powershell};
-use ps::Powershell::Raw;
-use ps::Value::{Bool, Num, Str};
-use regex::Regex;
-use ps::tool::StringTool;
-use ps::var::{find_variable_node, UnusedVar, Var};
-use rule::Rule;
-use tree::Node;
+use crate::error::MinusOneResult;
+use crate::ps::{Powershell};
+use crate::ps::Powershell::Raw;
+use crate::ps::Value::{Bool, Num, Str};
+use crate::regex::Regex;
+use crate::ps::tool::StringTool;
+use crate::ps::var::{find_variable_node, UnusedVar, Var};
+use crate::rule::Rule;
+use crate::tree::Node;
 
 fn escape_string(src: &str) -> String {
     let mut result = String::new();
