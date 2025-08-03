@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, PSItem, Raw, Type};
-use ps::Value::{Bool, Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, PSItem, Raw, Type};
+use crate::ps::Value::{Bool, Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -16,7 +16,6 @@ pub struct Cast;
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -173,8 +172,7 @@ impl<'a> RuleMut<'a> for Cast {
                         }
                         _ => ()
                     }
-                } else {
-                }
+                } 
             }
 
             // Forward inferred type in case of cast expression
@@ -228,16 +226,16 @@ impl<'a> RuleMut<'a> for CastNull {
 
 #[cfg(test)]
 mod test {
-    use ps::array::ParseArrayLiteral;
-    use ps::build_powershell_tree;
-    use ps::cast::Cast;
-    use ps::foreach::{ForEach, PSItemInferrator};
-    use ps::forward::Forward;
-    use ps::integer::{AddInt, ParseInt};
-    use ps::string::{ConcatString, ParseString};
-    use ps::typing::ParseType;
-    use ps::Powershell::{Array, Raw};
-    use ps::Value::{Num, Str};
+    use crate::ps::array::ParseArrayLiteral;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::cast::Cast;
+    use crate::ps::foreach::{ForEach, PSItemInferrator};
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::{AddInt, ParseInt};
+    use crate::ps::string::{ConcatString, ParseString};
+    use crate::ps::typing::ParseType;
+    use crate::ps::Powershell::{Array, Raw};
+    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_cast_int_to_char() {

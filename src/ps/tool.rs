@@ -23,7 +23,7 @@ impl StringTool for String {
     fn uppercase_first(self) -> String {
         let mut v = self.to_lowercase();
         let s = v.get_mut(0..1);
-        s.map(|s| s.make_ascii_uppercase());
+        if let Some(s) = s { s.make_ascii_uppercase() }
         v
     }
 

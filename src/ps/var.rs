@@ -1,13 +1,13 @@
-use error::{Error, MinusOneResult};
-use ps::Powershell;
-use ps::Powershell::{Array, Null, Raw, Type};
-use ps::Value::{self, Bool, Num, Str};
-use regex::Regex;
-use rule::{Rule, RuleMut};
-use scope::ScopeManager;
+use crate::error::{Error, MinusOneResult};
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, Null, Raw, Type};
+use crate::ps::Value::{self, Bool, Num, Str};
+use crate::regex::Regex;
+use crate::rule::{Rule, RuleMut};
+use crate::scope::ScopeManager;
+use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Add;
-use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 
 /// Var is a variable manager that will try to track
 /// static var assignement and propagte it in the code
@@ -17,7 +17,6 @@ use tree::{BranchFlow, ControlFlow, Node, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -153,7 +152,7 @@ impl Var {
             }
         }
 
-        return None;
+        None
     }
 
     /// Resolve the name of a variable pattern given the current scope
@@ -161,7 +160,7 @@ impl Var {
     /// Use for patterns used by variable, get-variable, set-variable, get-childitem...
     fn resolve_wildcarded(&self, variable_name: String) -> Option<String> {
         if variable_name.contains("*") {
-            let re = Regex::new(&*format!("^{}$", variable_name.replace("*", ".*"))).unwrap();
+            let re = Regex::new(&format!("^{}$", variable_name.replace("*", ".*"))).unwrap();
             let current_scope = self.scope_manager.current();
             let var_names = current_scope.get_var_names();
             let matches: Vec<_> = var_names
@@ -230,7 +229,7 @@ impl<'a> RuleMut<'a> for Var {
                         self.scope_manager.leave();
                     }
                 }
-            },
+            }
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
             "statement_block" => {
@@ -289,17 +288,18 @@ impl<'a> RuleMut<'a> for Var {
                                 (scope.get_var(&var_name), right.data())
                             {
                                 // disable anything from for_initializer
-                                if !view
-                                    .get_parent_of_types(vec!["for_initializer"])
-                                    .is_none() {
+                                if view.get_parent_of_types(vec!["for_initializer"]).is_some() {
                                     scope.forget(&var_name);
-                                }
-                                else {
+                                } else {
                                     // only predictable assignment is handled of local var
                                     let is_local = scope.is_local(&var_name).unwrap_or(true);
-                                    if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
+                                    if flow == ControlFlow::Continue(BranchFlow::Predictable)
+                                        || is_local
+                                    {
                                         match assign_handler(current_value, operator, new_value) {
-                                            Some(assign_value) => scope.assign(&var_name, assign_value),
+                                            Some(assign_value) => {
+                                                scope.assign(&var_name, assign_value)
+                                            }
                                             _ => scope.forget(&var_name),
                                         }
                                     }
@@ -566,18 +566,18 @@ fn assign_handler(
         // += operator
         (Some(Raw(Num(v))), "+=", Raw(Num(n))) => Some(Raw(Num(v + n))),
         (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v + n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v + n)))
         }
         (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
-        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(&n)))),
+        (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(n)))),
 
         // -= operator
         (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
         (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v - n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v - n)))
         }
         (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v - n))))
+            v.parse::<i64>().ok().map(|v| Raw(Num(v - n)))
         }
         (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
@@ -590,21 +590,20 @@ fn assign_handler(
         // *= operator
         (Some(Raw(Num(v))), "*=", Raw(Num(n))) => Some(Raw(Num(v * n))),
         (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v * n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v * n)))
         }
         (Some(Raw(Str(v))), "*=", Raw(Num(n))) => Some(Raw(Str(v.repeat(*n as usize)))),
         (Some(Raw(Str(v))), "*=", Raw(Str(n))) => n
             .parse::<usize>()
-            .ok()
-            .and_then(|n| Some(Raw(Str(v.repeat(n))))),
+            .ok().map(|n| Raw(Str(v.repeat(n)))),
 
         // /= operator
         (Some(Raw(Num(v))), "/=", Raw(Num(n))) => Some(Raw(Num(v / n))),
         (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v / n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v / n)))
         }
         (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v / n))))
+            v.parse::<i64>().ok().map(|v| Raw(Num(v / n)))
         }
         (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
@@ -617,10 +616,10 @@ fn assign_handler(
         // %= operator
         (Some(Raw(Num(v))), "%=", Raw(Num(n))) => Some(Raw(Num(v % n))),
         (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().and_then(|n| Some(Raw(Num(v % n))))
+            n.parse::<i64>().ok().map(|n| Raw(Num(v % n)))
         }
         (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().and_then(|v| Some(Raw(Num(v % n))))
+            v.parse::<i64>().ok().map(|v| Raw(Num(v % n)))
         }
         (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
@@ -641,7 +640,6 @@ fn assign_handler(
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -701,10 +699,9 @@ impl<'a> RuleMut<'a> for StaticVar {
     }
 }
 
-
 #[derive(Default)]
 pub struct UnusedVar {
-    pub vars: HashMap<String, bool>
+    pub vars: HashMap<String, bool>,
 }
 
 impl UnusedVar {
@@ -716,20 +713,16 @@ impl UnusedVar {
 impl<'a> Rule<'a> for UnusedVar {
     type Language = ();
 
-    fn enter(
-        &mut self,
-        _node: &Node<'a, Self::Language>,
-    ) -> MinusOneResult<bool> {
+    fn enter(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         Ok(true)
     }
 
-    fn leave(
-        &mut self,
-        node: &Node<'a, Self::Language>,
-    ) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         if node.kind() == "variable" {
             if let Some(var_name) = Var::extract(node.text()?) {
-                if node.get_parent_of_types(vec!["left_assignment_expression"]).is_none()
+                if node
+                    .get_parent_of_types(vec!["left_assignment_expression"])
+                    .is_none()
                 {
                     self.vars.insert(var_name, true);
                 }
@@ -742,14 +735,14 @@ impl<'a> Rule<'a> for UnusedVar {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::access::AccessHashMap;
-    use ps::bool::ParseBool;
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::hash::ParseHash;
-    use ps::integer::{AddInt, ParseInt};
-    use ps::strategy::PowershellStrategy;
-    use ps::string::ParseString;
+    use crate::ps::access::AccessHashMap;
+    use crate::ps::bool::ParseBool;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::hash::ParseHash;
+    use crate::ps::integer::{AddInt, ParseInt};
+    use crate::ps::strategy::PowershellStrategy;
+    use crate::ps::string::ParseString;
 
     #[test]
     fn test_static_replacement() {
@@ -2161,7 +2154,7 @@ mod test {
             ),
             PowershellStrategy::default(),
         )
-            .unwrap();
+        .unwrap();
 
         // We are waiting for
         assert_eq!(

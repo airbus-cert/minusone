@@ -1,10 +1,10 @@
-use error::MinusOneResult;
-use ps::{Powershell};
-use ps::Powershell::{Array, Raw};
-use ps::tool::StringTool;
-use ps::Value::{Bool, Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::{Powershell};
+use crate::ps::Powershell::{Array, Raw};
+use crate::ps::tool::StringTool;
+use crate::ps::Value::{Bool, Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 #[derive(Default)]
 pub struct ParseString;
@@ -87,7 +87,6 @@ impl<'a> RuleMut<'a> for ParseString {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -127,11 +126,8 @@ impl<'a> RuleMut<'a> for ConcatString {
             if let (Some(left_op), Some(operator), Some(right_op)) =
                 (view.child(0), view.child(1), view.child(2))
             {
-                match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) => {
-                        node.reduce(Raw(Str(String::from(string_left) + string_right)))
-                    }
-                    _ => {}
+                if let (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) = (left_op.data(), operator.text()?, right_op.data()) {
+                    node.reduce(Raw(Str(String::from(string_left) + string_right)))
                 }
             }
         }
@@ -226,7 +222,7 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
                     (Some(Raw(Str(src))), "-replace", Some(Array(params)))
                     | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) => {
                         // -replace operator need two params
-                        if let (Some(Str(old)), Some(Str(new))) = (params.get(0), params.get(1)) {
+                        if let (Some(Str(old)), Some(Str(new))) = (params.first(), params.get(1)) {
                             node.reduce(Raw(Str(src.replace(old, new))));
                         }
                     }
@@ -244,7 +240,6 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -294,7 +289,7 @@ impl<'a> RuleMut<'a> for FormatString {
                         let mut result = format_str.clone();
                         for (index, new) in format_args.iter().enumerate() {
                             result = result.replace(
-                                format!("{{{}}}", index).as_str(),
+                                format!("{{{index}}}").as_str(),
                                 new.to_string().as_str(),
                             );
                         }
@@ -374,12 +369,12 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
 
 #[cfg(test)]
 mod test {
-    use ps::array::ParseArrayLiteral;
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::string::{ConcatString, FormatString, ParseString, StringReplaceOp};
-    use ps::Powershell::Raw;
-    use ps::Value::Str;
+    use crate::ps::array::ParseArrayLiteral;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::string::{ConcatString, FormatString, ParseString, StringReplaceOp};
+    use crate::ps::Powershell::Raw;
+    use crate::ps::Value::Str;
 
     #[test]
     fn test_concat_two_elements() {

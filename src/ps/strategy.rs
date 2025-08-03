@@ -1,10 +1,10 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::Raw;
-use ps::Value::Bool;
-use tree::BranchFlow::{Predictable, Unpredictable};
-use tree::ControlFlow::{Break, Continue};
-use tree::{ControlFlow, Node, Strategy};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::Raw;
+use crate::ps::Value::Bool;
+use crate::tree::BranchFlow::{Predictable, Unpredictable};
+use crate::tree::ControlFlow::{Break, Continue};
+use crate::tree::{ControlFlow, Node, Strategy};
 
 #[derive(Default)]
 pub struct PowershellStrategy;

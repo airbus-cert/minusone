@@ -1,11 +1,11 @@
 use base64::{engine::general_purpose, Engine as _};
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, Raw, Type};
-use ps::tool::StringTool;
-use ps::Value::{Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, Raw, Type};
+use crate::ps::tool::StringTool;
+use crate::ps::Value::{Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// Compute the length of predictable Array or string
 ///
@@ -13,7 +13,6 @@ use tree::{ControlFlow, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -92,7 +91,6 @@ impl<'a> RuleMut<'a> for Length {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -209,7 +207,6 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -265,7 +262,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                 ) {
                     (Some(Type(typename)), "::", m, _)
                     | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
-                        if vec!["utf8", "utf16", "unicode", "ascii"]
+                        if ["utf8", "utf16", "unicode", "ascii"]
                             .contains(&m.clone().normalize().as_str())
                             && (typename == "system.text.encoding"
                                 || typename == "text.encoding") =>
@@ -278,12 +275,10 @@ impl<'a> RuleMut<'a> for FromUTF {
 
                     (Some(Type(typename)), ".", m, _)
                     | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                        if vec![
-                            "text.encoding.utf8",
+                        if ["text.encoding.utf8",
                             "text.encoding.utf16",
                             "text.encoding.unicode",
-                            "text.encoding.ascii"
-                        ]
+                            "text.encoding.ascii"]
                         .contains(&typename.as_str())
                             && m.clone().normalize() == "getstring" =>
                     {
@@ -315,19 +310,16 @@ impl<'a> RuleMut<'a> for FromUTF {
                             args_list.named_child("argument_expression_list")
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
-                                match arg_1.data() {
-                                    Some(Array(a)) => {
-                                        let mut int_vec = Vec::new();
-                                        for value in a.iter() {
-                                            if let Num(n) = value {
-                                                int_vec.push(*n as u8);
-                                            }
-                                        }
-                                        if let Ok(s) = String::from_utf8(int_vec) {
-                                            node.set(Raw(Str(s)));
+                                if let Some(Array(a)) = arg_1.data() {
+                                    let mut int_vec = Vec::new();
+                                    for value in a.iter() {
+                                        if let Num(n) = value {
+                                            int_vec.push(*n as u8);
                                         }
                                     }
-                                    _ => {}
+                                    if let Ok(s) = String::from_utf8(int_vec) {
+                                        node.set(Raw(Str(s)));
+                                    }
                                 }
                             }
                         }
@@ -345,27 +337,23 @@ impl<'a> RuleMut<'a> for FromUTF {
                             args_list.named_child("argument_expression_list")
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
-                                match arg_1.data() {
-                                    Some(Array(a)) => {
-                                        let mut int_vec = Vec::new();
-                                        for value in a.iter() {
-                                            if let Num(n) = value {
-                                                int_vec.push(*n as u8);
-                                            }
-                                        }
-
-                                        let int_vec: Vec<u16> = int_vec
-                                            .chunks_exact(2)
-                                            .into_iter()
-                                            .map(|a| u16::from_ne_bytes([a[0], a[1]]))
-                                            .collect();
-                                        let int_vec = int_vec.as_slice();
-
-                                        if let Ok(s) = String::from_utf16(&int_vec) {
-                                            node.set(Raw(Str(s)));
+                                if let Some(Array(a)) = arg_1.data() {
+                                    let mut int_vec = Vec::new();
+                                    for value in a.iter() {
+                                        if let Num(n) = value {
+                                            int_vec.push(*n as u8);
                                         }
                                     }
-                                    _ => {}
+
+                                    let int_vec: Vec<u16> = int_vec
+                                        .chunks_exact(2)
+                                        .map(|a| u16::from_ne_bytes([a[0], a[1]]))
+                                        .collect();
+                                    let int_vec = int_vec.as_slice();
+
+                                    if let Ok(s) = String::from_utf16(int_vec) {
+                                        node.set(Raw(Str(s)));
+                                    }
                                 }
                             }
                         }
@@ -380,15 +368,15 @@ impl<'a> RuleMut<'a> for FromUTF {
 
 #[cfg(test)]
 mod test {
-    use ps::array::{ComputeArrayExpr, ParseArrayLiteral};
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::integer::ParseInt;
-    use ps::method::{DecodeBase64, FromUTF, Length};
-    use ps::string::ParseString;
-    use ps::typing::ParseType;
-    use ps::Powershell::{Array, Raw};
-    use ps::Value::{Num, Str};
+    use crate::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::ParseInt;
+    use crate::ps::method::{DecodeBase64, FromUTF, Length};
+    use crate::ps::string::ParseString;
+    use crate::ps::typing::ParseType;
+    use crate::ps::Powershell::{Array, Raw};
+    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_array_length() {

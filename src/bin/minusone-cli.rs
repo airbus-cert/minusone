@@ -1,7 +1,3 @@
-extern crate clap;
-extern crate minusone;
-extern crate tree_sitter_powershell;
-
 use clap::{App, Arg};
 use minusone::engine::DeobfuscateEngine;
 use std::{fs, process};

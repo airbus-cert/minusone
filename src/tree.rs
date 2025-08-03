@@ -1,5 +1,5 @@
-use error::MinusOneResult;
-use rule::{Rule, RuleMut};
+use crate::error::MinusOneResult;
+use crate::rule::{Rule, RuleMut};
 use std::collections::HashMap;
 use std::ops;
 use std::str::Utf8Error;
@@ -83,8 +83,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
@@ -110,8 +108,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
@@ -138,8 +134,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage};
@@ -203,8 +197,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
@@ -223,7 +215,7 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node_view.kind(), "program");
     /// ```
-    pub fn view(&self) -> Node<T> {
+    pub fn view(&self) -> Node<'_, T> {
         Node::new(self.inner, self.source, self.storage)
     }
 
@@ -233,8 +225,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
@@ -264,8 +254,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
@@ -297,8 +285,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, ControlFlow};
@@ -373,7 +359,7 @@ impl<'a, T> NodeMut<'a, T> {
 
                 // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
-                    l.1 = l.1 - 1;
+                    l.1 -= 1;
                 }
             }
         }
@@ -386,8 +372,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
-    ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
     /// use minusone::tree::{Storage, HashMapStorage, NodeMut, BranchFlow, ControlFlow, Strategy, Node};
@@ -475,7 +459,6 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     /// extern crate tree_sitter;
     /// extern crate tree_sitter_powershell;
-    /// extern crate minusone;
     ///
     /// use tree_sitter::{Parser, Language};
     /// use tree_sitter_powershell::LANGUAGE as powershell_language;
@@ -577,7 +560,7 @@ impl<'a, T> NodeMut<'a, T> {
 
                 // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
-                    l.1 = l.1 - 1;
+                    l.1 -= 1;
                 }
             }
         }
@@ -740,7 +723,7 @@ impl<'a, T> Node<'a, T> {
 
                 // decrement number of children handled
                 if let Some(l) = stack.last_mut() {
-                    l.1 = l.1 - 1;
+                    l.1 -= 1;
                 }
             }
         }
@@ -885,7 +868,7 @@ where
         node.apply(rule)
     }
 
-    pub fn root(&self) -> MinusOneResult<Node<S::Component>> {
+    pub fn root(&self) -> MinusOneResult<Node<'_, S::Component>> {
         Ok(Node::new(
             self.tree_sitter.root_node(),
             self.source,

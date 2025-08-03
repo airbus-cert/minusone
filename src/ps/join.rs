@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, Raw, Type};
-use ps::Value::Str;
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, Raw, Type};
+use crate::ps::Value::Str;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// This rule will infer the -join opoerator
 /// in the context of comparison operator
@@ -14,7 +14,6 @@ use tree::{ControlFlow, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -65,20 +64,17 @@ impl<'a> RuleMut<'a> for JoinComparison {
             if let (Some(left_expression), Some(operator), Some(right_expression)) =
                 (view.child(0), view.child(1), view.child(2))
             {
-                match (
+                if let (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) = (
                     left_expression.data(),
                     operator.text()?.to_lowercase().as_str(),
                     right_expression.data(),
                 ) {
-                    (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) => {
-                        let result = src_array
-                            .iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<String>>()
-                            .join(join_token);
-                        node.set(Raw(Str(result)));
-                    }
-                    _ => (),
+                    let result = src_array
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(join_token);
+                    node.set(Raw(Str(result)));
                 }
             }
         }
@@ -94,7 +90,6 @@ impl<'a> RuleMut<'a> for JoinComparison {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -197,7 +192,6 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -243,20 +237,17 @@ impl<'a> RuleMut<'a> for JoinOperator {
         let view = node.view();
         if view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1)) {
-                match (
+                if let ("-join", Some(Array(values))) = (
                     operator.text()?.to_lowercase().as_str(),
                     unary_expression.data(),
                 ) {
-                    ("-join", Some(Array(values))) => {
-                        let result = values
-                            .iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<String>>()
-                            .join(""); // by default the join operator join with an empty token
+                    let result = values
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(""); // by default the join operator join with an empty token
 
-                        node.set(Raw(Str(result)));
-                    }
-                    _ => (),
+                    node.set(Raw(Str(result)));
                 }
             }
         }

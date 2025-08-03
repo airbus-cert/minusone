@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::{Array, Raw};
-use ps::Value::Num;
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, Raw};
+use crate::ps::Value::Num;
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// Parse array literal
 ///
@@ -13,7 +13,6 @@ use tree::{ControlFlow, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -80,7 +79,6 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 /// # Example
 /// ```
 /// extern crate tree_sitter;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -166,7 +164,6 @@ impl<'a> RuleMut<'a> for ParseRange {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -250,7 +247,6 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -325,14 +321,14 @@ impl<'a> RuleMut<'a> for AddArray {
 
 #[cfg(test)]
 mod test {
-    use ps::access::AccessString;
-    use ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::integer::{AddInt, ParseInt};
-    use ps::string::ParseString;
-    use ps::Powershell::Array;
-    use ps::Value::{Num, Str};
+    use crate::ps::access::AccessString;
+    use crate::ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::{AddInt, ParseInt};
+    use crate::ps::string::ParseString;
+    use crate::ps::Powershell::Array;
+    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_init_num_array() {

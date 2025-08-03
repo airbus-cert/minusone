@@ -1,24 +1,24 @@
-use error::{Error, MinusOneResult};
-use ps::access::{AccessArray, AccessHashMap, AccessString};
-use ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
-use ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
-use ps::cast::{Cast, CastNull};
-use ps::foreach::{ForEach, PSItemInferrator};
-use ps::forward::Forward;
-use ps::hash::ParseHash;
-use ps::integer::{AddInt, MultInt, ParseInt};
-use ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
-use ps::linter::RemoveComment;
-use ps::method::{DecodeBase64, FromUTF, Length};
-use ps::string::{
+use crate::error::{Error, MinusOneResult};
+use crate::ps::access::{AccessArray, AccessHashMap, AccessString};
+use crate::ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
+use crate::ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
+use crate::ps::cast::{Cast, CastNull};
+use crate::ps::foreach::{ForEach, PSItemInferrator};
+use crate::ps::forward::Forward;
+use crate::ps::hash::ParseHash;
+use crate::ps::integer::{AddInt, MultInt, ParseInt};
+use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
+use crate::ps::linter::RemoveComment;
+use crate::ps::method::{DecodeBase64, FromUTF, Length};
+use crate::ps::string::{
     ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
     StringSplitMethod,
 };
-use ps::typing::ParseType;
-use ps::var::{StaticVar, Var};
-use std::collections::BTreeMap;
-use tree::{HashMapStorage, Storage, Tree};
+use crate::ps::typing::ParseType;
+use crate::ps::var::{StaticVar, Var};
+use crate::tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_powershell::LANGUAGE as powershell_language;
+use std::collections::BTreeMap;
 
 pub mod access;
 pub mod array;
@@ -158,14 +158,14 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
 
     let mut source_without_extra = RemoveComment::new();
     root.apply(&mut source_without_extra)?;
-    Ok(source_without_extra.clear()?)
+    source_without_extra.clear()
 }
 
-pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<HashMapStorage<Powershell>>> {
+pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<'_, HashMapStorage<Powershell>>> {
     build_powershell_tree_for_storage::<HashMapStorage<Powershell>>(source)
 }
 
-pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<T>> {
+pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<'_, T>> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&powershell_language.into())

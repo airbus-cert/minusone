@@ -1,7 +1,7 @@
-use error::MinusOneResult;
-use rule::Rule;
+use crate::error::MinusOneResult;
+use crate::rule::Rule;
+use crate::tree::Node;
 use std::fmt::Debug;
-use tree::Node;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type
@@ -26,8 +26,6 @@ impl<T> DebugView<T> {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::{build_powershell_tree, Powershell};
 /// use minusone::debug::DebugView;

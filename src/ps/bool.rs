@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell;
-use ps::Powershell::Raw;
-use ps::Value::{Bool, Num, Str};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell;
+use crate::ps::Powershell::Raw;
+use crate::ps::Value::{Bool, Num, Str};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// This rule will infer boolean variable $true $false
 ///
@@ -12,7 +12,6 @@ use tree::{ControlFlow, NodeMut};
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -70,7 +69,6 @@ impl<'a> RuleMut<'a> for ParseBool {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -140,7 +138,6 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
@@ -258,8 +255,8 @@ impl<'a> RuleMut<'a> for Comparison {
                     // Str and bool comparison
                     (Some(Raw(Str(left_value))), "-eq", Some(Raw(Bool(right_value)))) => {
                         node.set(Raw(Bool(
-                            (left_value.to_lowercase() == "true" && *right_value == true)
-                                || (left_value.to_lowercase() == "false" && *right_value == false),
+                            (left_value.to_lowercase() == "true" && *right_value)
+                                || (left_value.to_lowercase() == "false" && !(*right_value)),
                         )))
                     }
                     (Some(Raw(Bool(left_value))), "-eq", Some(Raw(Str(right_value)))) => {
@@ -270,8 +267,8 @@ impl<'a> RuleMut<'a> for Comparison {
                     }
                     (Some(Raw(Str(left_value))), "-ne", Some(Raw(Bool(right_value)))) => {
                         node.set(Raw(Bool(
-                            !((left_value.to_lowercase() == "true" && *right_value == true)
-                                || (left_value.to_lowercase() == "false" && *right_value == false)),
+                            !((left_value.to_lowercase() == "true" && *right_value)
+                                || (left_value.to_lowercase() == "false" && !(*right_value))),
                         )))
                     }
                     (Some(Raw(Bool(left_value))), "-ne", Some(Raw(Str(right_value)))) => {
@@ -288,7 +285,7 @@ impl<'a> RuleMut<'a> for Comparison {
                     (Some(Raw(Bool(true))), "-ge", Some(Raw(Str(_)))) => node.set(Raw(Bool(true))),
                     (Some(Raw(Bool(false))), "-gt", Some(Raw(_))) => node.set(Raw(Bool(false))),
                     (Some(Raw(Bool(false))), "-ge", Some(Raw(Str(right_value)))) => {
-                        node.set(Raw(Bool(right_value.len() == 0)))
+                        node.set(Raw(Bool(right_value.is_empty())))
                     }
 
                     // String to number comparison
@@ -372,13 +369,13 @@ impl<'a> RuleMut<'a> for Not {
 
 #[cfg(test)]
 mod test {
-    use ps::bool::{BoolAlgebra, Comparison, ParseBool};
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::integer::ParseInt;
-    use ps::string::ParseString;
-    use ps::Powershell::Raw;
-    use ps::Value::Bool;
+    use crate::ps::bool::{BoolAlgebra, Comparison, ParseBool};
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::ParseInt;
+    use crate::ps::string::ParseString;
+    use crate::ps::Powershell::Raw;
+    use crate::ps::Value::Bool;
 
     #[test]
     fn test_parse_bool_true() {

@@ -1,9 +1,9 @@
-use error::MinusOneResult;
-use ps::Powershell::{Array, Raw};
-use ps::Value::Str;
-use ps::{Powershell, Value};
-use rule::RuleMut;
-use tree::{ControlFlow, NodeMut};
+use crate::error::MinusOneResult;
+use crate::ps::Powershell::{Array, Raw};
+use crate::ps::Value::Str;
+use crate::ps::{Powershell, Value};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, NodeMut};
 
 /// This function get char at index position
 /// even if the index is negative
@@ -40,7 +40,6 @@ fn get_array_at_index(s: &Vec<Value>, index: i64) -> Option<&Value> {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -190,7 +189,6 @@ impl<'a> RuleMut<'a> for AccessArray {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
 ///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
@@ -281,11 +279,11 @@ impl<'a> RuleMut<'a> for AccessHashMap {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ps::array::ParseArrayLiteral;
-    use ps::build_powershell_tree;
-    use ps::forward::Forward;
-    use ps::integer::ParseInt;
-    use ps::string::ParseString;
+    use crate::ps::array::ParseArrayLiteral;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::ParseInt;
+    use crate::ps::string::ParseString;
 
     #[test]
     fn test_access_string_element_from_int() {

@@ -1,8 +1,8 @@
-use error::{Error, MinusOneResult};
-use ps::Powershell;
-use ps::Powershell::{Array, PSItem, Raw};
-use rule::RuleMut;
-use tree::{ControlFlow, Node, NodeMut};
+use crate::error::{Error, MinusOneResult};
+use crate::ps::Powershell;
+use crate::ps::Powershell::{Array, PSItem, Raw};
+use crate::rule::RuleMut;
+use crate::tree::{ControlFlow, Node, NodeMut};
 
 fn find_previous_expr<'a>(
     command: &Node<'a, Powershell>,
@@ -33,8 +33,6 @@ fn find_previous_expr<'a>(
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
@@ -118,8 +116,6 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 /// ```
 /// extern crate tree_sitter;
 /// extern crate tree_sitter_powershell;
-/// extern crate minusone;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
@@ -171,8 +167,8 @@ impl<'a> RuleMut<'a> for ForEach {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "foreach_command" {
-            if view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression"
+        if view.kind() == "foreach_command"
+            && view.child_count() == 2 && view.child(1).unwrap().kind() == "script_block_expression"
             {
                 let script_block_expression = view.child(1).unwrap();
                 if let Some(previous_command) = find_previous_expr(&view.parent().unwrap())? {
@@ -229,7 +225,6 @@ impl<'a> RuleMut<'a> for ForEach {
                     }
                 }
             }
-        }
 
         Ok(())
     }
@@ -237,16 +232,16 @@ impl<'a> RuleMut<'a> for ForEach {
 
 #[cfg(test)]
 mod test {
-    use ps::array::ParseArrayLiteral;
-    use ps::build_powershell_tree;
-    use ps::cast::Cast;
-    use ps::foreach::{ForEach, PSItemInferrator};
-    use ps::forward::Forward;
-    use ps::integer::ParseInt;
-    use ps::string::ParseString;
-    use ps::typing::ParseType;
-    use ps::Powershell::Array;
-    use ps::Value::{Num, Str};
+    use crate::ps::array::ParseArrayLiteral;
+    use crate::ps::build_powershell_tree;
+    use crate::ps::cast::Cast;
+    use crate::ps::foreach::{ForEach, PSItemInferrator};
+    use crate::ps::forward::Forward;
+    use crate::ps::integer::ParseInt;
+    use crate::ps::string::ParseString;
+    use crate::ps::typing::ParseType;
+    use crate::ps::Powershell::Array;
+    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_foreach_transparent() {
