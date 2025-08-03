@@ -340,12 +340,6 @@ impl<'a> Rule<'a> for Linter {
     }
 }
 
-impl Default for Linter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Linter {
     pub fn new() -> Self {
         Linter {
@@ -405,12 +399,6 @@ pub struct RemoveCode {
     last_index: usize,
 }
 
-impl Default for RemoveCode {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl RemoveCode {
     pub fn new() -> Self {
         Self {
@@ -442,12 +430,6 @@ impl RemoveCode {
 
 pub struct RemoveComment {
     manager: RemoveCode
-}
-
-impl Default for RemoveComment {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl RemoveComment {

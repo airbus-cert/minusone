@@ -22,12 +22,6 @@ pub struct Scope<T: Clone> {
     vars: HashMap<String, Variable<T>>,
 }
 
-impl<T: Clone> Default for Scope<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<T: Clone> Scope<T> {
     pub fn new() -> Self {
         Scope {
@@ -94,12 +88,6 @@ impl<T: Clone> Scope<T> {
 
 pub struct ScopeManager<T: Clone> {
     scopes: Vec<Scope<T>>,
-}
-
-impl<T: Clone> Default for ScopeManager<T> {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl<T: Clone> ScopeManager<T> {
