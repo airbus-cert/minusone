@@ -1,24 +1,28 @@
-use crate::error::{Error, MinusOneResult};
-use crate::ps::access::{AccessArray, AccessHashMap, AccessString};
-use crate::ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
-use crate::ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
-use crate::ps::cast::{Cast, CastNull};
-use crate::ps::foreach::{ForEach, PSItemInferrator};
-use crate::ps::forward::Forward;
-use crate::ps::hash::ParseHash;
-use crate::ps::integer::{AddInt, MultInt, ParseInt};
-use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
-use crate::ps::linter::RemoveComment;
-use crate::ps::method::{DecodeBase64, FromUTF, Length};
-use crate::ps::string::{
-    ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
-    StringSplitMethod,
-};
-use crate::ps::typing::ParseType;
-use crate::ps::var::{StaticVar, Var};
-use crate::tree::{HashMapStorage, Storage, Tree};
-use tree_sitter_powershell::LANGUAGE as powershell_language;
 use std::collections::BTreeMap;
+use tree_sitter_powershell::LANGUAGE as powershell_language;
+
+use crate::error::{Error, MinusOneResult};
+use crate::tree::{HashMapStorage, Storage, Tree};
+
+use crate::ps::{
+    access::{AccessArray, AccessHashMap, AccessString},
+    array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange},
+    bool::{BoolAlgebra, Comparison, Not, ParseBool},
+    cast::{Cast, CastNull},
+    foreach::{ForEach, PSItemInferrator},
+    forward::Forward,
+    hash::ParseHash,
+    integer::{AddInt, MultInt, ParseInt},
+    join::{JoinComparison, JoinOperator, JoinStringMethod},
+    linter::RemoveComment,
+    method::{DecodeBase64, FromUTF, Length},
+    string::{
+        ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
+        StringSplitMethod,
+    },
+    typing::ParseType,
+    var::{StaticVar, Var},
+};
 
 pub mod access;
 pub mod array;
@@ -33,9 +37,9 @@ pub mod linter;
 pub mod method;
 pub mod strategy;
 pub mod string;
+mod tool;
 pub mod typing;
 pub mod var;
-mod tool;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -165,7 +169,9 @@ pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<'_, HashMapSto
     build_powershell_tree_for_storage::<HashMapStorage<Powershell>>(source)
 }
 
-pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<'_, T>> {
+pub fn build_powershell_tree_for_storage<T: Storage + Default>(
+    source: &str,
+) -> MinusOneResult<Tree<T>> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&powershell_language.into())
@@ -173,8 +179,5 @@ pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> 
 
     // And the grammar is specified in lowercase
     let tree_sitter = parser.parse(source, None).unwrap();
-    Ok(Tree::<T>::new(
-        source.as_bytes(),
-        tree_sitter,
-    ))
+    Ok(Tree::<T>::new(source.as_bytes(), tree_sitter))
 }

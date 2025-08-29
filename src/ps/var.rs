@@ -1,13 +1,16 @@
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Add;
+
 use crate::error::{Error, MinusOneResult};
-use crate::ps::Powershell;
-use crate::ps::Powershell::{Array, Null, Raw, Type};
-use crate::ps::Value::{self, Bool, Num, Str};
 use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
-use std::collections::{BTreeMap, HashMap};
-use std::ops::Add;
+
+use crate::ps::{
+    Powershell::{self, Array, Null, Raw, Type},
+    Value::{self, Bool, Num, Str},
+};
 
 /// Var is a variable manager that will try to track
 /// static var assignement and propagte it in the code
@@ -562,20 +565,14 @@ fn assign_handler(
 
         // += operator
         (Some(Raw(Num(v))), "+=", Raw(Num(n))) => Some(Raw(Num(v + n))),
-        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v + n)))
-        }
+        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v + n))),
         (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
         (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(n)))),
 
         // -= operator
         (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
-        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v - n)))
-        }
-        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().map(|v| Raw(Num(v - n)))
-        }
+        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v - n))),
+        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => v.parse::<i64>().ok().map(|v| Raw(Num(v - n))),
         (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
                 Some(Raw(Num(v - n)))
@@ -586,22 +583,16 @@ fn assign_handler(
 
         // *= operator
         (Some(Raw(Num(v))), "*=", Raw(Num(n))) => Some(Raw(Num(v * n))),
-        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v * n)))
-        }
+        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v * n))),
         (Some(Raw(Str(v))), "*=", Raw(Num(n))) => Some(Raw(Str(v.repeat(*n as usize)))),
-        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => n
-            .parse::<usize>()
-            .ok().map(|n| Raw(Str(v.repeat(n)))),
+        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => {
+            n.parse::<usize>().ok().map(|n| Raw(Str(v.repeat(n))))
+        }
 
         // /= operator
         (Some(Raw(Num(v))), "/=", Raw(Num(n))) => Some(Raw(Num(v / n))),
-        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v / n)))
-        }
-        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().map(|v| Raw(Num(v / n)))
-        }
+        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v / n))),
+        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => v.parse::<i64>().ok().map(|v| Raw(Num(v / n))),
         (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
                 Some(Raw(Num(v / n)))
@@ -612,12 +603,8 @@ fn assign_handler(
 
         // %= operator
         (Some(Raw(Num(v))), "%=", Raw(Num(n))) => Some(Raw(Num(v % n))),
-        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v % n)))
-        }
-        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().map(|v| Raw(Num(v % n)))
-        }
+        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v % n))),
+        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => v.parse::<i64>().ok().map(|v| Raw(Num(v % n))),
         (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
                 Some(Raw(Num(v % n)))

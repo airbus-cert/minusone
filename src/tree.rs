@@ -1,10 +1,11 @@
-use crate::error::MinusOneResult;
-use crate::rule::{Rule, RuleMut};
 use std::collections::HashMap;
 use std::ops;
 use std::str::Utf8Error;
 use tree_sitter::{Node as TreeNode, Tree as TreeSitter};
 use tree_sitter_traversal2::{traverse, Order};
+
+use crate::error::MinusOneResult;
+use crate::rule::{Rule, RuleMut};
 
 /// Node components are stored following
 /// a storage pattern
@@ -42,18 +43,15 @@ impl Storage for EmptyStorage {
         None
     }
 
-    fn set(&mut self, _: TreeNode, _: Self::Component) {
-    }
+    fn set(&mut self, _: TreeNode, _: Self::Component) {}
 
-    fn start(&mut self) {
-    }
+    fn start(&mut self) {}
 
     fn end(&mut self) -> bool {
         false
     }
 
-    fn remove(&mut self, _: TreeNode) {
-    }
+    fn remove(&mut self, _: TreeNode) {}
 }
 
 /// A possible implementation of storage that

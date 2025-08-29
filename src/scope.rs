@@ -4,7 +4,7 @@ use std::collections::HashMap;
 pub struct Variable<T: Clone> {
     inferred_type: Option<T>,
     used: bool,
-    local: bool
+    local: bool,
 }
 
 impl<T: Clone> Variable<T> {
@@ -12,7 +12,7 @@ impl<T: Clone> Variable<T> {
         Variable {
             inferred_type,
             used: false,
-            local: true
+            local: true,
         }
     }
 }
@@ -31,7 +31,7 @@ impl<T: Clone> Scope<T> {
 
     pub fn from(scope: &Scope<T>) -> Self {
         let mut s = Scope {
-            vars : scope.vars.clone()
+            vars: scope.vars.clone(),
         };
         for (_, var) in s.vars.iter_mut() {
             var.local = false;
@@ -108,8 +108,7 @@ impl<T: Clone> ScopeManager<T> {
             if !value.local {
                 if let Some(inferred_type) = &value.inferred_type {
                     self.current_mut().assign(name, inferred_type.clone());
-                }
-                else {
+                } else {
                     self.current_mut().forget(name);
                 }
             }

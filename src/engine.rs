@@ -1,10 +1,11 @@
-use crate::debug::DebugView;
-use crate::error::MinusOneResult;
-use crate::init::Init;
-use crate::ps;
-use crate::ps::{build_powershell_tree_for_storage, remove_powershell_extra};
-use crate::ps::linter::RemoveUnusedVar;
-use crate::tree::{EmptyStorage, HashMapStorage, Storage, Tree};
+use debug::DebugView;
+use error::MinusOneResult;
+use init::Init;
+use tree::{EmptyStorage, HashMapStorage, Storage, Tree};
+
+use ps::{
+    self, build_powershell_tree_for_storage, linter::RemoveUnusedVar, remove_powershell_extra,
+};
 
 pub struct Engine<'a, S: Storage> {
     root: Tree<'a, S>,
@@ -28,10 +29,8 @@ impl<'a> DeobfuscateEngine<'a> {
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
-        self.root.apply_mut_with_strategy(
-            &mut ps::RuleSet::init(),
-            ps::strategy::PowershellStrategy,
-        )?;
+        self.root
+            .apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy)?;
         Ok(())
     }
 
@@ -60,9 +59,7 @@ impl<'a> CleanEngine<'a> {
 
     pub fn clean(&mut self) -> MinusOneResult<String> {
         let mut rule = ps::var::UnusedVar::default();
-        self.root.apply(
-            &mut rule,
-        )?;
+        self.root.apply(&mut rule)?;
         let mut clean_view = RemoveUnusedVar::new(rule);
         self.root.apply(&mut clean_view)?;
         clean_view.clear()

@@ -1,12 +1,15 @@
-use crate::error::MinusOneResult;
-use crate::ps::{Powershell};
-use crate::ps::Powershell::Raw;
-use crate::ps::Value::{Bool, Num, Str};
-use crate::regex::Regex;
-use crate::ps::tool::StringTool;
-use crate::ps::var::{find_variable_node, UnusedVar, Var};
-use crate::rule::Rule;
-use crate::tree::Node;
+use error::MinusOneResult;
+use regex::Regex;
+use rule::Rule;
+use tree::Node;
+
+use ps::{
+    tool::StringTool,
+    var::{find_variable_node, UnusedVar, Var},
+    Powershell,
+    Powershell::Raw,
+    Value::{Bool, Num, Str},
+};
 
 fn escape_string(src: &str) -> String {
     let mut result = String::new();
@@ -28,7 +31,9 @@ fn remove_useless_token(src: &str) -> String {
 fn uppercase_first(src: &str) -> String {
     let mut v = src.to_lowercase();
     let s = v.get_mut(0..1);
-    if let Some(s) = s { s.make_ascii_uppercase() }
+    if let Some(s) = s {
+        s.make_ascii_uppercase()
+    }
     v
 }
 
@@ -44,7 +49,7 @@ pub struct Linter {
     comment: bool,
     is_param_block: bool,
     statement_block_tab: Vec<bool>,
-    is_multiline: bool
+    is_multiline: bool,
 }
 
 impl<'a> Rule<'a> for Linter {
@@ -93,14 +98,14 @@ impl<'a> Rule<'a> for Linter {
                     self.write(node.text()?.to_lowercase().as_str());
                     return Ok(false);
                 }
-            },
+            }
             // If a member_name is infered as a string
             "member_name" => {
                 if let Some(Raw(Str(m))) = node.data() {
                     self.write(&m.clone().remove_tilt().uppercase_first());
                     return Ok(false);
                 }
-            },
+            }
             "expandable_string_literal" => {
                 self.write(node.text()?);
                 return Ok(false);
@@ -137,9 +142,10 @@ impl<'a> Rule<'a> for Linter {
                     }
                     // ignore these tokens if we are in case of code elysium
                     else if (node.kind() == "{" || node.kind() == "}")
-                        && !*self.statement_block_tab.last().unwrap_or(&true) {
-                            return Ok(false);
-                        }
+                        && !*self.statement_block_tab.last().unwrap_or(&true)
+                    {
+                        return Ok(false);
+                    }
                 }
                 "command_elements" => self.write(" "),
                 "param_block" => {
@@ -187,7 +193,8 @@ impl<'a> Rule<'a> for Linter {
                                         if bool_condition {
                                             self.statement_block_tab.pop();
                                             return Ok(false);
-                                        } else if let Some(last) = self.statement_block_tab.last_mut()
+                                        } else if let Some(last) =
+                                            self.statement_block_tab.last_mut()
                                         {
                                             *last = false;
                                         }
@@ -297,9 +304,10 @@ impl<'a> Rule<'a> for Linter {
                     // new statement in a block
                     if node.kind() == "statement_list"
                         && *self.statement_block_tab.last().unwrap_or(&true)
-                        && !is_inline(node) {
-                            self.untab();
-                        }
+                        && !is_inline(node)
+                    {
+                        self.untab();
+                    }
                 }
                 _ => (),
             }
@@ -350,7 +358,7 @@ impl Linter {
             comment: false,
             is_param_block: false,
             statement_block_tab: vec![],
-            is_multiline: true
+            is_multiline: true,
         }
     }
 
@@ -429,17 +437,17 @@ impl RemoveCode {
 }
 
 pub struct RemoveComment {
-    manager: RemoveCode
+    manager: RemoveCode,
 }
 
 impl RemoveComment {
     pub fn new() -> Self {
         Self {
-            manager: RemoveCode::new()
+            manager: RemoveCode::new(),
         }
     }
 
-    pub fn clear(self) -> MinusOneResult<String>{
+    pub fn clear(self) -> MinusOneResult<String> {
         Ok(self.manager.output)
     }
 }
@@ -462,7 +470,9 @@ impl<'a> Rule<'a> for RemoveComment {
 
     // the down to top
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-        if node.kind() == "program" { self.manager.end_program()? }
+        if node.kind() == "program" {
+            self.manager.end_program()?
+        }
 
         Ok(())
     }
@@ -470,20 +480,19 @@ impl<'a> Rule<'a> for RemoveComment {
 
 pub struct RemoveUnusedVar {
     rule: UnusedVar,
-    manager: RemoveCode
+    manager: RemoveCode,
 }
 
 impl RemoveUnusedVar {
     pub fn new(rule: UnusedVar) -> Self {
         Self {
             manager: RemoveCode::new(),
-            rule
+            rule,
         }
     }
-    pub fn clear(self) -> MinusOneResult<String>{
+    pub fn clear(self) -> MinusOneResult<String> {
         Ok(self.manager.output)
     }
-
 }
 
 impl<'a> Rule<'a> for RemoveUnusedVar {
@@ -495,13 +504,13 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                 self.manager.start_program(node)?;
             }
             "assignment_expression" => {
-                    if let Some(var) = find_variable_node(node) {
-                        if let Some(var_name) = Var::extract(var.text()?) {
-                            if self.rule.is_unused(&var_name) {
-                                self.manager.remove_node(node)?;
-                            }
+                if let Some(var) = find_variable_node(&node) {
+                    if let Some(var_name) = Var::extract(var.text()?) {
+                        if self.rule.is_unused(&var_name) {
+                            self.manager.remove_node(&node)?;
                         }
                     }
+                }
             }
             _ => (),
         }
@@ -509,10 +518,10 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
     }
 
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-        if node.kind() == "program" { self.manager.end_program()? }
+        if node.kind() == "program" {
+            self.manager.end_program()?
+        }
 
         Ok(())
     }
 }
-
-
