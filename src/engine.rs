@@ -4,7 +4,7 @@ use init::Init;
 use tree::{EmptyStorage, HashMapStorage, Storage, Tree};
 
 use ps::{
-    self, build_powershell_tree_for_storage, linter::RemoveUnusedVar, remove_powershell_extra,
+    self, build_powershell_tree_for_storage, linter::RemoveUnusedVars, remove_powershell_extra,
 };
 
 pub struct Engine<'a, S: Storage> {
@@ -58,9 +58,9 @@ impl<'a> CleanEngine<'a> {
     }
 
     pub fn clean(&mut self) -> MinusOneResult<String> {
-        let mut rule = ps::var::UnusedVar::default();
+        let mut rule = ps::var::UnusedVars::default();
         self.root.apply(&mut rule)?;
-        let mut clean_view = RemoveUnusedVar::new(rule);
+        let mut clean_view = RemoveUnusedVars::new(rule);
         self.root.apply(&mut clean_view)?;
         clean_view.clear()
     }

@@ -5,7 +5,7 @@ use tree::Node;
 
 use ps::{
     tool::StringTool,
-    var::{find_variable_node, UnusedVar, Var},
+    var::{find_variable_node, UnusedVars, Var},
     Powershell,
     Powershell::Raw,
     Value::{Bool, Num, Str},
@@ -478,13 +478,13 @@ impl<'a> Rule<'a> for RemoveComment {
     }
 }
 
-pub struct RemoveUnusedVar {
-    rule: UnusedVar,
+pub struct RemoveUnusedVars {
+    rule: UnusedVars,
     manager: RemoveCode,
 }
 
-impl RemoveUnusedVar {
-    pub fn new(rule: UnusedVar) -> Self {
+impl RemoveUnusedVars {
+    pub fn new(rule: UnusedVars) -> Self {
         Self {
             manager: RemoveCode::new(),
             rule,
@@ -495,7 +495,7 @@ impl RemoveUnusedVar {
     }
 }
 
-impl<'a> Rule<'a> for RemoveUnusedVar {
+impl<'a> Rule<'a> for RemoveUnusedVars {
     type Language = ();
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {

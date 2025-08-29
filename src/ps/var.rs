@@ -684,17 +684,17 @@ impl<'a> RuleMut<'a> for StaticVar {
 }
 
 #[derive(Default)]
-pub struct UnusedVar {
-    pub vars: HashMap<String, bool>,
+pub struct UnusedVars {
+    pub used_vars: HashMap<String, bool>,
 }
 
-impl UnusedVar {
+impl UnusedVars {
     pub fn is_unused(&self, var_name: &str) -> bool {
-        !self.vars.get(var_name).unwrap_or(&false)
+        !self.used_vars.get(var_name).unwrap_or(&false)
     }
 }
 
-impl<'a> Rule<'a> for UnusedVar {
+impl<'a> Rule<'a> for UnusedVars {
     type Language = ();
 
     fn enter(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
@@ -708,7 +708,7 @@ impl<'a> Rule<'a> for UnusedVar {
                     .get_parent_of_types(vec!["left_assignment_expression"])
                     .is_none()
                 {
-                    self.vars.insert(var_name, true);
+                    self.used_vars.insert(var_name, true);
                 }
             }
         }
