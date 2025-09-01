@@ -14,9 +14,6 @@ pub struct Cast;
 ///
 /// # Example
 /// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;

@@ -31,17 +31,15 @@ fn find_previous_expr<'a>(
 ///
 /// # Example
 /// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-/// use minusone::ps::build_powershell_tree;
-/// use minusone::ps::forward::Forward;
-/// use minusone::ps::integer::ParseInt;
-/// use minusone::ps::linter::Linter;
-/// use minusone::ps::cast::Cast;
-/// use minusone::ps::foreach::{PSItemInferrator, ForEach};
-/// use minusone::ps::join::JoinOperator;
-/// use minusone::ps::array::ParseArrayLiteral;
-/// use minusone::ps::typing::ParseType;
+/// # use minusone::ps::build_powershell_tree;
+/// # use minusone::ps::forward::Forward;
+/// # use minusone::ps::integer::ParseInt;
+/// # use minusone::ps::linter::Linter;
+/// # use minusone::ps::cast::Cast;
+/// # use minusone::ps::foreach::{PSItemInferrator, ForEach};
+/// # use minusone::ps::join::JoinOperator;
+/// # use minusone::ps::array::ParseArrayLiteral;
+/// # use minusone::ps::typing::ParseType;
 ///
 /// let mut tree = build_powershell_tree("-join ((0x61, 0x62, 0x63)|% {[char]$_})").unwrap();
 /// tree.apply_mut(&mut (
@@ -114,8 +112,6 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 ///
 /// # Example
 /// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
