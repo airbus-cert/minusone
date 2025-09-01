@@ -10,8 +10,6 @@ use crate::tree::{ControlFlow, NodeMut};
 ///
 /// # Example
 /// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
 /// use minusone::tree::{HashMapStorage, Tree};
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;

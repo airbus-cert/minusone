@@ -38,9 +38,6 @@ fn get_array_at_index(s: &Vec<Value>, index: i64) -> Option<&Value> {
 ///
 /// # Example
 /// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::ParseInt;
@@ -187,9 +184,6 @@ impl<'a> RuleMut<'a> for AccessArray {
 ///
 /// # Example
 /// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-///
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::forward::Forward;
 /// use minusone::ps::integer::{ParseInt, AddInt};
