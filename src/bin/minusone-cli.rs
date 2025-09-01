@@ -1,3 +1,6 @@
+extern crate clap;
+extern crate minusone;
+
 use clap::{App, Arg};
 use minusone::engine::DeobfuscateEngine;
 use std::{fs, process};
