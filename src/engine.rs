@@ -39,10 +39,9 @@ impl<'a> DeobfuscatePowershellEngine<'a> {
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
-        self.0.root.apply_mut_with_strategy(
-            &mut ps::RuleSet::init(),
-            ps::strategy::PowershellStrategy::default(),
-        )?;
+        self.0
+            .root
+            .apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy)?;
         Ok(())
     }
 
