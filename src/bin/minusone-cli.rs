@@ -2,8 +2,10 @@ extern crate clap;
 extern crate minusone;
 
 use clap::{App, Arg};
-use minusone::engine::DeobfuscateEngine;
-use std::{fs, process};
+use std::fs;
+
+use minusone::engine::{CleanPowershellEngine, DeobfuscatePowershellEngine, PowershellEngine};
+use minusone::error::exit_with_error;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -37,25 +39,25 @@ fn main() {
     .unwrap();
 
     // Always remove extra rule (comments) to get an accurate version of the deobfuscated scripts
-    match DeobfuscateEngine::remove_extra(&source) {
-        Ok(remove_comment) => {
-            let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).unwrap();
-            engine.deobfuscate().unwrap();
+    match CleanPowershellEngine::clean_source(&source) {
+        Ok(clean_source) => match PowershellEngine::new(&clean_source) {
+            Ok(engine) => {
+                let mut ps_engine = DeobfuscatePowershellEngine(engine);
+                ps_engine.deobfuscate().unwrap();
 
-            if matches.is_present("debug") {
-                engine.debug();
-            } else {
-                println!("{}", engine.lint().unwrap());
-            }
+                if matches.is_present("debug") {
+                    ps_engine.debug();
+                } else {
+                    println!("{}", ps_engine.lint().unwrap());
+                }
 
-            if matches.is_present("time") {
-                let elapsed = now.elapsed();
-                println!("\n\nElapsed: {:.2?}", elapsed);
+                if matches.is_present("time") {
+                    let elapsed = now.elapsed();
+                    println!("\n\nElapsed: {:.2?}", elapsed);
+                }
             }
-        }
-        Err(e) => {
-            eprintln!("[x] ERROR: Cannot clean the source\n--> {:?}", e);
-            process::exit(1);
-        }
+            Err(e) => exit_with_error("Cannot parse the clean source", e),
+        },
+        Err(e) => exit_with_error("Cannot clean the source", e),
     }
 }
