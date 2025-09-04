@@ -29,10 +29,6 @@ pub struct DeobfuscatePowershellEngine<'a>(
 );
 
 impl<'a> DeobfuscatePowershellEngine<'a> {
-    pub fn remove_extra(src: &'a str) -> MinusOneResult<String> {
-        remove_powershell_extra(src)
-    }
-
     pub fn debug(&self) {
         let mut debub_view = DebugView::new();
         self.0.root.apply(&mut debub_view).unwrap();
@@ -41,27 +37,30 @@ impl<'a> DeobfuscatePowershellEngine<'a> {
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
         self.0
             .root
-            .apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy)?;
-        Ok(())
+            .apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy)
     }
 
     pub fn lint(&mut self) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new();
         self.0.root.apply(&mut ps_litter_view)?;
-        CleanPowershellEngine(PowershellEngine::new(&ps_litter_view.output)?).clean()
+        CleanPowershellEngine(PowershellEngine::new(&ps_litter_view.output)?).clean_output()
     }
 
     pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::new().set_tab(tab_chr);
         self.0.root.apply(&mut ps_litter_view)?;
-        CleanPowershellEngine(PowershellEngine::new(&ps_litter_view.output)?).clean()
+        CleanPowershellEngine(PowershellEngine::new(&ps_litter_view.output)?).clean_output()
     }
 }
 
 pub struct CleanPowershellEngine<'a>(PowershellEngine<'a, EmptyStorage>);
 
 impl<'a> CleanPowershellEngine<'a> {
-    pub fn clean(&mut self) -> MinusOneResult<String> {
+    pub fn clean_source(src: &'a str) -> MinusOneResult<String> {
+        remove_powershell_extra(src)
+    }
+
+    pub fn clean_output(&mut self) -> MinusOneResult<String> {
         let mut rule = ps::var::UnusedVars::default();
         self.0.root.apply(&mut rule)?;
         let mut clean_view = RemoveUnusedVars::new(rule);

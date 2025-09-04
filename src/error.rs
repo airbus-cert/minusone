@@ -74,10 +74,7 @@ impl Error {
     pub fn invalid_program_index(index: usize) -> Self {
         Error::MinusOneError(MinusOneError::new(
             MinusOneErrorKind::InvalidProgramIndex,
-            format!(
-                "The program is excepted to start at index 0. Found index {index}"
-            )
-            .as_str(),
+            format!("The program is excepted to start at index 0. Found index {index}").as_str(),
         ))
     }
 
@@ -96,3 +93,8 @@ impl From<Utf8Error> for Error {
 }
 
 pub type MinusOneResult<T> = Result<T, Error>;
+
+pub fn exit_with_error(s: &str, e: Error) {
+    eprintln!("[x] ERROR: {}\n--> {:?}", s, e);
+    std::process::exit(1);
+}
