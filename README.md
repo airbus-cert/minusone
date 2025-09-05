@@ -192,6 +192,7 @@ pub type RuleSet = (
     ForEach,            // It will used PSItem rules to inferred foreach-object command
     StringReplaceMethod,// It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
     ComputeArrayExpr,   // It will infer array that start with @
+    NewObjectArray      // It will infer arrays created via New-Object
     StringReplaceOp,    // It will infer replace method apply to a string by using the -replace operator
     StaticVar,          // It will infer value of known variable : $pshome, $shellid
     CastNull,           // It will infer value of +$() or -$() which will produce 0

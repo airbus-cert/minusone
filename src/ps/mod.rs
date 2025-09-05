@@ -1,6 +1,6 @@
 use crate::error::{Error, MinusOneResult};
 use crate::ps::access::{AccessArray, AccessHashMap, AccessString};
-use crate::ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
+use crate::ps::array::{AddArray, ComputeArrayExpr, NewObjectArray, ParseArrayLiteral, ParseRange};
 use crate::ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
 use crate::ps::cast::{Cast, CastNull};
 use crate::ps::foreach::{ForEach, PSItemInferrator};
@@ -115,6 +115,7 @@ pub type RuleSet = (
     ForEach,      // It will used PSItem rules to inferred foreach-object command
     StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
     ComputeArrayExpr,    // It will infer array that start with @
+    NewObjectArray, // Infers arrays constructed via New-Object cmdlet
     StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
     StaticVar,       // It will infer value of known variable : $pshome, $shellid
     CastNull,        // It will infer value of +$() or -$() which will produce 0

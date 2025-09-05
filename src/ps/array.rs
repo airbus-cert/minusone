@@ -1,4 +1,4 @@
-use crate::error::MinusOneResult;
+use crate::error::{Error, MinusOneError, MinusOneErrorKind, MinusOneResult};
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, Raw};
 use crate::ps::Value::Num;
@@ -303,7 +303,7 @@ impl<'a> RuleMut<'a> for AddArray {
                         let mut new_array = array.clone();
                         new_array.push(v.clone());
                         node.reduce(Array(new_array));
-                    },
+                    }
                     // add array between both
                     (Some(Array(right_array)), "+", Some(Array(left_array))) => {
                         node.reduce(Array([right_array.clone(), left_array.clone()].concat()));
@@ -316,10 +316,136 @@ impl<'a> RuleMut<'a> for AddArray {
     }
 }
 
+/// This rule will generate an array resulting from a `New-Object` command invocation.
+///
+/// # Example
+/// ```
+/// extern crate tree_sitter;
+///
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::integer::ParseInt;
+/// use minusone::ps::array::NewObjectArray;
+/// use minusone::ps::Value::Num;
+/// use minusone::ps::Powershell::Array;
+///
+/// let mut tree = build_powershell_tree("New-Object byte[] 16").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     Forward::default(),
+///     NewObjectArray::default(),
+///     )
+/// ).unwrap();
+///
+/// assert_eq!(
+///     tree.root()
+///     .unwrap()
+///     .child(0)
+///     .unwrap()
+///     .child(0)
+///     .unwrap()
+///     .data(),
+///     Some(&Array(vec![Num(0); 16]))
+/// );
+/// ```
+#[derive(Default, Debug, Clone)]
+pub struct NewObjectArray {
+    max_size: Option<usize>,
+}
+
+impl NewObjectArray {
+    /// Returns a new [`NewObjectArray`] with no maximum capacity. Untrusted script input can cause
+    /// unbounded vec allocation.
+    pub fn new() -> Self {
+        Self { max_size: None }
+    }
+
+    /// Returns a [`NewObjectArray`] with a maximum capacity. Will infer array data no larger than
+    /// this upper bound. Invocations exceeding this value will cause an error to be returned
+    /// from [`RuleMut::leave`].
+    pub fn with_max_capacity(max_size: usize) -> Self {
+        Self {
+            max_size: Some(max_size),
+        }
+    }
+}
+
+impl<'a> RuleMut<'a> for NewObjectArray {
+    type Language = Powershell;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+
+        if view.kind() != "command" || view.child_count() != 2 {
+            return Ok(());
+        }
+
+        if let (Some(command_name), Some(command_elements)) = (
+            view.named_child("command_name"),
+            view.named_child("command_elements"),
+        ) {
+            if command_name
+                .text()
+                .is_ok_and(|name| name.to_lowercase() == "new-object")
+                && command_elements.child_count() == 4
+                && command_elements
+                    .child(0)
+                    .is_some_and(|c| c.kind() == "command_argument_sep")
+                && command_elements.child(1).is_some_and(|c1| {
+                    c1.kind() == "generic_token"
+                        && matches!(c1.text(), Ok(t) if ["byte[]", "int[]"].iter().any(|typ| **typ == t.to_lowercase()))
+                })
+                && command_elements
+                    .child(2)
+                    .is_some_and(|c2| c2.kind() == "command_argument_sep")
+                && command_elements
+                    .child(3)
+                    .filter(|c| c.data().is_some())
+                    .is_some()
+            {
+                if let Some(Raw(Num(size))) =
+                    command_elements.child(3).as_ref().and_then(|c| c.data())
+                {
+                    if matches!(self.max_size, Some(max_size) if (*size) as usize > max_size) {
+                        return Err(Error::MinusOneError(
+                            MinusOneError::new(
+                                MinusOneErrorKind::InvalidProgram, 
+                                &format!("Array of length {} exceeds maximum array length", size)
+                            )
+                        ));
+                    }
+                    node.set(Array(vec![
+                        Num(0);
+                        std::cmp::max(
+                            (*size) as usize,
+                            self.max_size.unwrap_or_default()
+                        )
+                    ]));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::ps::access::AccessString;
-    use crate::ps::array::{AddArray, ComputeArrayExpr, ParseArrayLiteral, ParseRange};
+    use crate::ps::array::{
+        AddArray, ComputeArrayExpr, NewObjectArray, ParseArrayLiteral, ParseRange,
+    };
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::{AddInt, ParseInt};
@@ -515,6 +641,29 @@ mod test {
                 .data()
                 .expect("Inferred type"),
             Array(vec![Num(-1), Num(-2), Num(-3)])
+        );
+    }
+
+    #[test]
+    fn test_new_object_array() {
+        let mut tree = build_powershell_tree("New-Object byte[] 16").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default()))
+            .unwrap();
+        tree.apply_mut(&mut NewObjectArray::default()).unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred data"),
+            Array(vec![Num(0); 16]),
         );
     }
 }
