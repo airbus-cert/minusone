@@ -1,0 +1,19 @@
+[package]
+name = "minusonejs"
+version = "0.4.0"
+edition = "2021"
+
+[package.metadata.component]
+package = "airbus-cert:minusone"
+
+
+[profile.release]
+lto = false
+panic = "abort"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+minusone = { path = ".." }
+wit-bindgen = "0.45.0"

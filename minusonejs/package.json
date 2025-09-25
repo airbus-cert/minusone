@@ -1,0 +1,13 @@
+{
+  "name": "minusone",
+  "version": "0.4.0",
+  "description": "Reverse operation of script obfuscation",
+  "license": "ISC",
+  "author": "dolphino",
+  "type": "module",
+  "main": "minusone.js",
+  "dependencies": {
+    "@babel/runtime": "^7.28.4",
+    "@bytecodealliance/jco": "^1.14.0"
+  }
+}
