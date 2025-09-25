@@ -1,0 +1,55 @@
+root_dir := source_dir()
+pkg_name := "minusone"
+cargo_name := "minusonejs"
+
+sdk_url := "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz"
+sdk_path := root_dir / "target/wasi-sdk-27.0-x86_64-linux"
+target_build_dir := root_dir / "target/wasm32-wasip2/release"
+target_pkg_dir := root_dir / "target" / pkg_name
+target_serve_dir := root_dir / "tests/www/"
+export RUSTFLAGS := "-L " + sdk_path + "/share/wasi-sysroot/lib/wasm32-wasip2"
+export CXXSTDLIB := "c++"
+export CC := sdk_path + "/bin/clang"
+export CXX := sdk_path + "/bin/clang++"
+export CFLAGS := "-Wno-everything"
+export CXXFLAGS := "-fno-exceptions"
+
+pack: init build transpile
+
+init:
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    mkdir -p {{ root_dir }}/target
+
+    if ! command -v jco >/dev/null 2>&1
+    then
+        echo "Installing jco with npm"
+        # TODO:: Package jco in nix
+        npm install -g @bytecodealliance/jco
+    fi
+
+    if [ ! -d {{ sdk_path }} ]
+    then
+        echo "Downloading WASI SDK..."
+        wget --output-document {{ root_dir }}/target/wasi-sdk-27.0-x86_64-linux.tar.gz {{ sdk_url }}
+        tar xvf {{ root_dir }}/target/wasi-sdk-27.0-x86_64-linux.tar.gz --directory {{ root_dir }}/target/
+    fi
+
+build: init
+    cargo component build --release --target=wasm32-wasip2
+
+transpile dir=(target_pkg_dir): init
+    jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7))
+    cp {{ root_dir }}/package.json {{ dir }}/
+    cd {{ dir }} && npm i
+
+serve: init build (transpile (target_serve_dir))
+    cd {{ target_serve_dir }} && just serve
+
+clean:
+    -cargo clean
+    -rm -r {{ root_dir }}/target/
+
+clean_js:
+    -rm -r {{ target_pkg_dir }}
+    -git clean -fXd {{ target_serve_dir }}
