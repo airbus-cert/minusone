@@ -18,18 +18,10 @@ pack: init build transpile
 init:
     #!/usr/bin/env bash
     set -euxo pipefail
-    mkdir -p {{ root_dir }}/target
-
-    if ! command -v jco >/dev/null 2>&1
-    then
-        echo "Installing jco with npm"
-        # TODO:: Package jco in nix
-        npm install -g @bytecodealliance/jco
-    fi
-
     if [ ! -d {{ sdk_path }} ]
     then
         echo "Downloading WASI SDK..."
+        mkdir -p {{ root_dir }}/target
         wget --output-document {{ root_dir }}/target/wasi-sdk-27.0-x86_64-linux.tar.gz {{ sdk_url }}
         tar xvf {{ root_dir }}/target/wasi-sdk-27.0-x86_64-linux.tar.gz --directory {{ root_dir }}/target/
     fi
@@ -38,7 +30,7 @@ build: init
     cargo component build --release --target=wasm32-wasip2
 
 transpile dir=(target_pkg_dir) flags="-Om": init
-    jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
+    npx run @bytecodealliance/jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
     cp {{ root_dir }}/package.json {{ dir }}/
     cd {{ dir }} && npm i
 
