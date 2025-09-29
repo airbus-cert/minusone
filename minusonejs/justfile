@@ -30,7 +30,7 @@ build: init
     cargo component build --release --target=wasm32-wasip2
 
 transpile dir=(target_pkg_dir) flags="-Om": init
-    npx run @bytecodealliance/jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
+    npx @bytecodealliance/jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
     cp {{ root_dir }}/package.json {{ dir }}/
     cd {{ dir }} && npm i
 
