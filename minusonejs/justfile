@@ -1,7 +1,6 @@
 root_dir := source_dir()
 pkg_name := "minusone"
 cargo_name := "minusonejs"
-
 sdk_url := "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz"
 sdk_path := root_dir / "target/wasi-sdk-27.0-x86_64-linux"
 target_build_dir := root_dir / "target/wasm32-wasip2/release"
@@ -38,12 +37,15 @@ init:
 build: init
     cargo component build --release --target=wasm32-wasip2
 
-transpile dir=(target_pkg_dir): init
-    jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7))
+transpile dir=(target_pkg_dir) flags="-Om": init
+    jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
     cp {{ root_dir }}/package.json {{ dir }}/
     cd {{ dir }} && npm i
 
-serve: init build (transpile (target_serve_dir))
+publish: pack
+    cd {{ target_pkg_dir }} && npm publish --access=public
+
+serve: init build (transpile (target_serve_dir) "")
     cd {{ target_serve_dir }} && just serve
 
 clean:

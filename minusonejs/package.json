@@ -1,9 +1,9 @@
 {
-  "name": "minusone",
+  "name": "@airbus-cert/minusone",
   "version": "0.4.0",
   "description": "Reverse operation of script obfuscation",
   "license": "ISC",
-  "author": "dolphino",
+  "author": "airbus-cert",
   "type": "module",
   "main": "minusone.js",
   "dependencies": {
