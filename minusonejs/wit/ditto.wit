@@ -1,5 +1,6 @@
 package airbus-cert:minusone;
 
 world minusone {
-  export deobfuscate: func(source: string) -> string;
+  export get-languages: func() -> list<string>;
+  export deobfuscate: func(source: string, language: string) -> result<string, string>;
 }
