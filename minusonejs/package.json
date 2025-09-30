@@ -1,6 +1,6 @@
 {
   "name": "@airbus-cert/minusone",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "description": "Reverse operation of script obfuscation",
   "license": "ISC",
   "author": "airbus-cert",
