@@ -34,4 +34,8 @@
       enable = true;
     };
   };
+
+  enterTest = ''
+    just test
+  '';
 }

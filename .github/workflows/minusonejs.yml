@@ -1,4 +1,4 @@
-name: Unit Test
+name: Minusonejs build test
 
 on:
   push:
@@ -17,5 +17,6 @@ jobs:
       - name: Install devenv.sh
         run: nix profile install nixpkgs#devenv
 
-      - name: Test minusone build
-        run: devenv shell cargo test
+      - name: Test minusonejs build
+        shell: devenv shell bash -- -e {0}
+        run: cd minusonejs && just build
