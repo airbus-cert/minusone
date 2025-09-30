@@ -6,13 +6,17 @@ Run minusone in your browser!
 
 - devenv
 
+If you auto load devenv shell with .envrc, you can just run the commands of this Readme in your shell.
+Otherwise, you might start a devenv shell with:
+```bash
+devenv shell
+```
+
 ## Build step
 
 Just use the `justfile` recipe:
-
 ```bash
-devenv shell  # or load automatically it with .envrc
-just pack
+just build
 ```
 
 The project is build with wasm32-wasip2, then transpiled to JS thanks to `jco`.
