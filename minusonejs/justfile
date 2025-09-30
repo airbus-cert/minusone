@@ -6,6 +6,7 @@ sdk_path := root_dir / "target/wasi-sdk-27.0-x86_64-linux"
 target_build_dir := root_dir / "target/wasm32-wasip2/release"
 target_pkg_dir := root_dir / "target" / pkg_name
 target_serve_dir := root_dir / "tests/www/"
+
 export RUSTFLAGS := "-L " + sdk_path + "/share/wasi-sysroot/lib/wasm32-wasip2"
 export CXXSTDLIB := "c++"
 export CC := sdk_path + "/bin/clang"
@@ -13,7 +14,14 @@ export CXX := sdk_path + "/bin/clang++"
 export CFLAGS := "-Wno-everything"
 export CXXFLAGS := "-fno-exceptions"
 
-pack: init build transpile
+build: init build_wasip2 transpile
+build_browser: init build_wasip2 (transpile (target_serve_dir) "")
+
+publish: build
+    cd {{ target_pkg_dir }} && npm publish --access=public
+
+serve: build_browser
+    cd {{ target_serve_dir }} && just serve
 
 init:
     #!/usr/bin/env bash
@@ -26,19 +34,14 @@ init:
         tar xvf {{ root_dir }}/target/wasi-sdk-27.0-x86_64-linux.tar.gz --directory {{ root_dir }}/target/
     fi
 
-build: init
+build_wasip2: init
     cargo component build --release --target=wasm32-wasip2
 
 transpile dir=(target_pkg_dir) flags="-Om": init
-    npx @bytecodealliance/jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
+    npx @bytecodealliance/jco transpile {{ target_build_dir }}/{{ cargo_name }}.wasm \
+        -o {{ dir }} --name {{ pkg_name }} --no-nodejs-compat --base64-cutoff $((10**7)) {{ flags }}
     cp {{ root_dir }}/package.json {{ dir }}/
     cd {{ dir }} && npm i
-
-publish: pack
-    cd {{ target_pkg_dir }} && npm publish --access=public
-
-serve: init build (transpile (target_serve_dir) "")
-    cd {{ target_serve_dir }} && just serve
 
 clean:
     -cargo clean
