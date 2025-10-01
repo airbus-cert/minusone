@@ -6,8 +6,10 @@
   "author": "airbus-cert",
   "type": "module",
   "main": "minusone.js",
-  "dependencies": {
-    "@babel/runtime": "^7.28.4",
+  "devDependencies": {
     "@bytecodealliance/jco": "^1.14.0"
+  },
+  "dependencies": {
+    "@bytecodealliance/preview2-shim": "^0.17.4"
   }
 }
