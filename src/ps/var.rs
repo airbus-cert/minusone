@@ -565,7 +565,13 @@ fn assign_handler(
         (Some(Raw(Num(v))), "+=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v + n))),
         (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
         (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(n)))),
-
+        (Some(Array(values)), "+=", Array(new_values)) => {
+            Some(
+                Array(
+                    [values.clone(), new_values.clone()].concat()
+                )
+            )
+        },
         // -= operator
         (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
         (Some(Raw(Num(v))), "-=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v - n))),
@@ -717,6 +723,7 @@ impl<'a> Rule<'a> for UnusedVar {
 mod test {
     use super::*;
     use crate::ps::access::AccessHashMap;
+    use crate::ps::array::ParseArrayLiteral;
     use crate::ps::bool::ParseBool;
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
@@ -2155,6 +2162,52 @@ mod test {
                 .data()
                 .expect("Expecting inferred type"),
             Raw(Num(3))
+        );
+    }
+
+    #[test]
+    fn test_array_concatenation() {
+        let mut tree = build_powershell_tree(
+            r#"
+            $foo = 1, 2
+            $bar = 3, 4
+            $foo += $bar
+            Write-Host $foo
+            "#,
+        )
+        .expect("A valid powershell tree");
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                AddInt::default(),
+                ParseString::default(),
+                Forward::default(),
+                ParseArrayLiteral::default(),
+                Var::default(),
+            ),
+            PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        // We are waiting for
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap() // statement_list
+                .child(3)
+                .unwrap() // Write-Host pipeline
+                .child(0)
+                .unwrap() // Write-host command
+                .named_child("command_elements")
+                .unwrap() // cmd elements
+                .child(1)
+                .unwrap() // args
+                .data()
+                .expect("Expecting inferred type"),
+            Array(vec![Num(1), Num(2), Num(3), Num(4)])
         );
     }
 }
