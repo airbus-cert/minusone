@@ -562,26 +562,16 @@ fn assign_handler(
 
         // += operator
         (Some(Raw(Num(v))), "+=", Raw(Num(n))) => Some(Raw(Num(v + n))),
-        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v + n)))
-        }
+        (Some(Raw(Num(v))), "+=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v + n))),
         (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
         (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(n)))),
         (Some(Array(values)), "+=", Array(new_values)) => {
-            Some(
-                Array(
-                    [values.clone(), new_values.clone()].concat()
-                )
-            )
-        },
+            Some(Array([values.clone(), new_values.clone()].concat()))
+        }
         // -= operator
         (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
-        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v - n)))
-        }
-        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().map(|v| Raw(Num(v - n)))
-        }
+        (Some(Raw(Num(v))), "-=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v - n))),
+        (Some(Raw(Str(v))), "-=", Raw(Num(n))) => v.parse::<i64>().ok().map(|v| Raw(Num(v - n))),
         (Some(Raw(Str(v))), "-=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
                 Some(Raw(Num(v - n)))
@@ -592,22 +582,16 @@ fn assign_handler(
 
         // *= operator
         (Some(Raw(Num(v))), "*=", Raw(Num(n))) => Some(Raw(Num(v * n))),
-        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v * n)))
-        }
+        (Some(Raw(Num(v))), "*=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v * n))),
         (Some(Raw(Str(v))), "*=", Raw(Num(n))) => Some(Raw(Str(v.repeat(*n as usize)))),
-        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => n
-            .parse::<usize>()
-            .ok().map(|n| Raw(Str(v.repeat(n)))),
+        (Some(Raw(Str(v))), "*=", Raw(Str(n))) => {
+            n.parse::<usize>().ok().map(|n| Raw(Str(v.repeat(n))))
+        }
 
         // /= operator
         (Some(Raw(Num(v))), "/=", Raw(Num(n))) => Some(Raw(Num(v / n))),
-        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v / n)))
-        }
-        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().map(|v| Raw(Num(v / n)))
-        }
+        (Some(Raw(Num(v))), "/=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v / n))),
+        (Some(Raw(Str(v))), "/=", Raw(Num(n))) => v.parse::<i64>().ok().map(|v| Raw(Num(v / n))),
         (Some(Raw(Str(v))), "/=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
                 Some(Raw(Num(v / n)))
@@ -618,12 +602,8 @@ fn assign_handler(
 
         // %= operator
         (Some(Raw(Num(v))), "%=", Raw(Num(n))) => Some(Raw(Num(v % n))),
-        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => {
-            n.parse::<i64>().ok().map(|n| Raw(Num(v % n)))
-        }
-        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => {
-            v.parse::<i64>().ok().map(|v| Raw(Num(v % n)))
-        }
+        (Some(Raw(Num(v))), "%=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v % n))),
+        (Some(Raw(Str(v))), "%=", Raw(Num(n))) => v.parse::<i64>().ok().map(|v| Raw(Num(v % n))),
         (Some(Raw(Str(v))), "%=", Raw(Str(n))) => {
             if let (Ok(v), Ok(n)) = (v.parse::<i64>(), n.parse::<i64>()) {
                 Some(Raw(Num(v % n)))
