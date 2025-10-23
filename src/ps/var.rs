@@ -566,12 +566,8 @@ fn assign_handler(
         (Some(Raw(Str(v))), "+=", Raw(Num(n))) => Some(Raw(Str(v.clone().add(&n.to_string())))),
         (Some(Raw(Str(v))), "+=", Raw(Str(n))) => Some(Raw(Str(v.clone().add(n)))),
         (Some(Array(values)), "+=", Array(new_values)) => {
-            Some(
-                Array(
-                    [values.clone(), new_values.clone()].concat()
-                )
-            )
-        },
+            Some(Array([values.clone(), new_values.clone()].concat()))
+        }
         // -= operator
         (Some(Raw(Num(v))), "-=", Raw(Num(n))) => Some(Raw(Num(v - n))),
         (Some(Raw(Num(v))), "-=", Raw(Str(n))) => n.parse::<i64>().ok().map(|n| Raw(Num(v - n))),
