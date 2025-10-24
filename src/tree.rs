@@ -42,18 +42,15 @@ impl Storage for EmptyStorage {
         None
     }
 
-    fn set(&mut self, _: TreeNode, _: Self::Component) {
-    }
+    fn set(&mut self, _: TreeNode, _: Self::Component) {}
 
-    fn start(&mut self) {
-    }
+    fn start(&mut self) {}
 
     fn end(&mut self) -> bool {
         false
     }
 
-    fn remove(&mut self, _: TreeNode) {
-    }
+    fn remove(&mut self, _: TreeNode) {}
 }
 
 /// A possible implementation of storage that

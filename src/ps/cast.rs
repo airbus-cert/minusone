@@ -169,7 +169,7 @@ impl<'a> RuleMut<'a> for Cast {
                         }
                         _ => ()
                     }
-                } 
+                }
             }
 
             // Forward inferred type in case of cast expression

@@ -421,7 +421,7 @@ impl<'a> RuleMut<'a> for NewObjectArray {
                     if matches!(self.max_size, Some(max_size) if (*size) as usize > max_size) {
                         return Err(Error::MinusOneError(
                             MinusOneError::new(
-                                MinusOneErrorKind::InvalidProgram, 
+                                MinusOneErrorKind::InvalidProgram,
                                 &format!("Array of length {} exceeds maximum array length", size)
                             )
                         ));
