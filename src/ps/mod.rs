@@ -9,6 +9,7 @@ use crate::ps::hash::ParseHash;
 use crate::ps::integer::{AddInt, MultInt, ParseInt};
 use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
 use crate::ps::linter::RemoveComment;
+use crate::ps::loops::ForStatement;
 use crate::ps::method::{DecodeBase64, FromUTF, Length};
 use crate::ps::string::{
     ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
@@ -31,6 +32,7 @@ pub mod hash;
 pub mod integer;
 pub mod join;
 pub mod linter;
+pub mod loops;
 pub mod method;
 pub mod strategy;
 pub mod string;
@@ -135,6 +137,7 @@ pub type RuleSet = (
     StringSplitMethod, // Handle split method
     AccessArray,  // Handle static array element access
     AccessHashMap, // Handle hashmap access
+    ForStatement  // Infer for condition to remove fake loops
 );
 
 pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
