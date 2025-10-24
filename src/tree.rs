@@ -15,12 +15,12 @@ pub trait Storage {
     ///
     /// This is the non mutable interface
     /// The date is optional
-    fn get(&self, node: TreeNode) -> Option<&Self::Component>;
+    fn get(&self, node: usize) -> Option<&Self::Component>;
 
     /// Retrieve the associated date for a node, and allow update
     ///
     /// This is the mutable version
-    fn set(&mut self, node: TreeNode, data: Self::Component);
+    fn set(&mut self, node: usize, data: Self::Component);
 
     /// Start a update round
     fn start(&mut self);
@@ -29,7 +29,7 @@ pub trait Storage {
     fn end(&mut self) -> bool;
 
     /// Remove data from starage
-    fn remove(&mut self, node: TreeNode);
+    fn remove(&mut self, node: usize);
 }
 
 #[derive(Default)]
@@ -38,11 +38,11 @@ pub struct EmptyStorage;
 impl Storage for EmptyStorage {
     type Component = ();
 
-    fn get(&self, _: TreeNode) -> Option<&Self::Component> {
+    fn get(&self, _: usize) -> Option<&Self::Component> {
         None
     }
 
-    fn set(&mut self, _: TreeNode, _: Self::Component) {}
+    fn set(&mut self, _: usize, _: Self::Component) {}
 
     fn start(&mut self) {}
 
@@ -50,7 +50,7 @@ impl Storage for EmptyStorage {
         false
     }
 
-    fn remove(&mut self, _: TreeNode) {}
+    fn remove(&mut self, _: usize) {}
 }
 
 /// A possible implementation of storage that
@@ -90,13 +90,13 @@ impl<T> Storage for HashMapStorage<T> {
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
     ///
-    /// assert_eq!(storage.get(ts_tree.root_node()), None)
+    /// assert_eq!(storage.get(ts_tree.root_node().id()), None)
     /// ```
-    fn get(&self, node: TreeNode) -> Option<&Self::Component> {
-        if !self.map.contains_key(&node.id()) {
+    fn get(&self, node_id: usize) -> Option<&Self::Component> {
+        if !self.map.contains_key(&node_id) {
             return None;
         }
-        Some(self.map.get(&node.id()).unwrap())
+        Some(self.map.get(&node_id).unwrap())
     }
 
     /// It will get a reference to the associated data of the node
@@ -115,12 +115,12 @@ impl<T> Storage for HashMapStorage<T> {
     /// let ts_tree = parser.parse("4+5", None).unwrap();
     /// let mut storage = HashMapStorage::<u32>::default();
     ///
-    /// storage.set(ts_tree.root_node(), 42);
+    /// storage.set(ts_tree.root_node().id(), 42);
     ///
-    /// assert_eq!(storage.get(ts_tree.root_node()), Some(&42))
+    /// assert_eq!(storage.get(ts_tree.root_node().id()), Some(&42))
     /// ```
-    fn set(&mut self, node: TreeNode, data: Self::Component) {
-        self.map.insert(node.id(), data);
+    fn set(&mut self, node_id: usize, data: Self::Component) {
+        self.map.insert(node_id, data);
         self.is_updated = true;
     }
 
@@ -142,7 +142,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// let mut storage = HashMapStorage::<u32>::default();
     ///
     /// storage.start();
-    /// storage.set(ts_tree.root_node(), 42);
+    /// storage.set(ts_tree.root_node().id(), 42);
     ///
     /// assert_eq!(storage.end(), true)
     /// ```
@@ -153,8 +153,8 @@ impl<T> Storage for HashMapStorage<T> {
         self.is_updated
     }
 
-    fn remove(&mut self, node: TreeNode) {
-        self.map.remove(&node.id());
+    fn remove(&mut self, node_id: usize) {
+        self.map.remove(&node_id);
     }
 }
 
@@ -185,6 +185,11 @@ impl<'a, T> NodeMut<'a, T> {
             source,
             storage,
         }
+    }
+
+    /// Return the id associated with the inner tree node
+    pub fn id(&self) -> usize {
+        self.inner.id()
     }
 
     /// A const view of the mutable node
@@ -241,7 +246,37 @@ impl<'a, T> NodeMut<'a, T> {
     /// assert_eq!(node.view().data(), Some(&42));
     /// ```
     pub fn set(&mut self, data: T) {
-        self.storage.set(self.inner, data)
+        self.set_by_node_id(self.inner.id(), data)
+    }
+
+    /// Set a data to a node
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage, NodeMut};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(&powershell_language.into()).unwrap();
+    ///
+    /// let source = "4+5";
+    /// let ts_tree = parser.parse(source, None).unwrap();
+    ///
+    /// let mut storage = HashMapStorage::<u32>::default();
+    ///
+    /// let mut root = NodeMut::new(ts_tree.root_node(), source.as_bytes(), &mut storage);
+    /// let right = root.view().smallest_child().child(2).unwrap();
+    ///
+    /// root.set_by_node_id(right.id(), 42);
+    ///
+    /// let right = root.view().smallest_child().child(2).unwrap();
+    /// assert_eq!(right.data(), Some(&42));
+    /// ```
+    pub fn set_by_node_id(&mut self, node_id: usize, data: T) {
+        self.storage.set(node_id, data)
     }
 
     /// Reduce data node
@@ -270,9 +305,9 @@ impl<'a, T> NodeMut<'a, T> {
     /// assert_eq!(node.view().data(), Some(&42));
     /// ```
     pub fn reduce(&mut self, data: T) {
-        self.storage.set(self.inner, data);
+        self.set(data);
         for i in 0..self.inner.child_count() {
-            self.storage.remove(self.inner.child(i).unwrap());
+            self.storage.remove(self.inner.child(i).unwrap().id());
         }
     }
 
@@ -596,6 +631,11 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
+    /// Return the id associated with the inner tree node
+    pub fn id(&self) -> usize {
+        self.node.id()
+    }
+
     pub fn child(&self, index: usize) -> Option<Node<'a, T>> {
         Some(Node::new(
             self.node.child(index)?,
@@ -608,6 +648,17 @@ impl<'a, T> Node<'a, T> {
         self.node
             .child_by_field_name(index)
             .map(|node| Node::new(node, self.source, self.storage))
+    }
+
+    pub fn smallest_child(self) -> Node<'a, T> {
+        if let Some(first_child) = self.child(0) {
+            if self.start_abs() == first_child.start_abs()
+                && self.end_abs() == first_child.end_abs()
+            {
+                return first_child.smallest_child();
+            }
+        }
+        self
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
@@ -657,7 +708,7 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn data(&self) -> Option<&T> {
-        self.storage.get(self.node)
+        self.storage.get(self.node.id())
     }
 
     pub fn text(&self) -> Result<&str, Utf8Error> {
