@@ -23,7 +23,7 @@ impl<'a> DeobfuscateEngine<'a> {
     }
 
     pub fn debug(&self) {
-        let mut debub_view = DebugView::new();
+        let mut debub_view = DebugView::default();
         self.root.apply(&mut debub_view).unwrap();
     }
 
@@ -34,13 +34,13 @@ impl<'a> DeobfuscateEngine<'a> {
     }
 
     pub fn lint(&mut self) -> MinusOneResult<String> {
-        let mut ps_litter_view = ps::linter::Linter::new();
+        let mut ps_litter_view = ps::linter::Linter::default();
         self.root.apply(&mut ps_litter_view)?;
         CleanEngine::from_powershell(&ps_litter_view.output)?.clean()
     }
 
     pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
-        let mut ps_litter_view = ps::linter::Linter::new().set_tab(tab_chr);
+        let mut ps_litter_view = ps::linter::Linter::default().set_tab(tab_chr);
         self.root.apply(&mut ps_litter_view)?;
 
         CleanEngine::from_powershell(&ps_litter_view.output)?.clean()

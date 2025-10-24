@@ -10,9 +10,9 @@ pub struct DebugView<T> {
     _use: Option<T>,
 }
 
-impl<T> DebugView<T> {
-    pub fn new() -> Self {
-        DebugView {
+impl<T> Default for DebugView<T> {
+    fn default() -> Self {
+        Self {
             tab_space: 0,
             _use: None,
         }
@@ -31,7 +31,7 @@ impl<T> DebugView<T> {
 /// use minusone::debug::DebugView;
 ///
 /// let mut tree = build_powershell_tree("4").unwrap();
-/// let mut debub_view = DebugView::new();
+/// let mut debub_view = DebugView::default();
 /// tree.apply(&mut debub_view).unwrap(); // it will print you the tree over the console
 ///
 /// ```

@@ -25,7 +25,7 @@ pub struct Forward;
 ///     ParseInt::default(),
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "42");

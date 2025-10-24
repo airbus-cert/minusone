@@ -29,7 +29,7 @@ use std::ops::Add;
 /// ").unwrap();
 /// tree.apply_mut_with_strategy(&mut (ParseInt::default(), Forward::default(), Var::default()), PowershellStrategy::default()).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\
@@ -186,7 +186,7 @@ impl Var {
 impl Default for Var {
     fn default() -> Self {
         let mut new = Var {
-            scope_manager: ScopeManager::new(),
+            scope_manager: ScopeManager::default(),
         };
         new.reset_scope_manager();
         new
@@ -636,7 +636,7 @@ fn assign_handler(
 /// ").unwrap();
 /// tree.apply_mut_with_strategy(&mut (ParseInt::default(), Forward::default(), Var::default()), PowershellStrategy::default()).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\
