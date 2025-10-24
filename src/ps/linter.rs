@@ -198,6 +198,16 @@ impl<'a> Rule<'a> for Linter {
                         }
                     }
                 }
+                "for_statement" => {
+                    if let Some(condition) = parent.named_child("for_condition") {
+                        if let Some(&Raw(Bool(false))) = condition.data() {
+                            if node.kind() == "statement_block" {
+                                self.statement_block_tab.pop();
+                            }
+                            return Ok(false);
+                        }
+                    }
+                }
                 _ => (),
             }
         }
