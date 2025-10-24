@@ -94,7 +94,7 @@ impl<'a> RuleMut<'a> for ParseString {
 /// let mut tree = build_powershell_tree("'foo' + 'bar'").unwrap();
 /// tree.apply_mut(&mut (ParseString::default(), Forward::default(), ConcatString::default())).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"foobar\"");
@@ -254,7 +254,7 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
 ///     ParseArrayLiteral::default())
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"hello world\"");

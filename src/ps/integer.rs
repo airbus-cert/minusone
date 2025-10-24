@@ -19,7 +19,7 @@ use crate::tree::{ControlFlow, NodeMut};
 /// let mut tree = build_powershell_tree("4 + 0x5").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "4 + 5");
@@ -88,7 +88,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 /// let mut tree = build_powershell_tree("4 + 5 - 2").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), AddInt::default())).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "7");
@@ -154,7 +154,7 @@ impl<'a> RuleMut<'a> for AddInt {
 /// let mut tree = build_powershell_tree("3 * 4 / 12").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), Forward::default(), MultInt::default())).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "1");

@@ -345,9 +345,9 @@ impl<'a> Rule<'a> for Linter {
     }
 }
 
-impl Linter {
-    pub fn new() -> Self {
-        Linter {
+impl Default for Linter {
+    fn default() -> Self {
+        Self {
             output: String::new(),
             tab: vec!["".to_string()],
             tab_char: " ".to_string(),
@@ -358,7 +358,9 @@ impl Linter {
             is_multiline: true,
         }
     }
+}
 
+impl Linter {
     pub fn tab(&mut self) {
         let current = self.current_tab().clone() + &self.tab_char;
         self.tab.push(current);
@@ -398,6 +400,7 @@ impl Linter {
     }
 }
 
+#[derive(Default)]
 pub struct RemoveCode {
     source: String,
     pub output: String,
@@ -405,13 +408,6 @@ pub struct RemoveCode {
 }
 
 impl RemoveCode {
-    pub fn new() -> Self {
-        Self {
-            source: String::new(),
-            output: String::new(),
-            last_index: 0,
-        }
-    }
     pub fn start_program<T>(&mut self, root: &Node<T>) -> MinusOneResult<()> {
         self.source = root.text()?.to_string();
         Ok(())
@@ -433,17 +429,12 @@ impl RemoveCode {
     }
 }
 
+#[derive(Default)]
 pub struct RemoveComment {
     manager: RemoveCode,
 }
 
 impl RemoveComment {
-    pub fn new() -> Self {
-        Self {
-            manager: RemoveCode::new(),
-        }
-    }
-
     pub fn clear(self) -> MinusOneResult<String> {
         Ok(self.manager.output)
     }
@@ -483,7 +474,7 @@ pub struct RemoveUnusedVar {
 impl RemoveUnusedVar {
     pub fn new(rule: UnusedVar) -> Self {
         Self {
-            manager: RemoveCode::new(),
+            manager: RemoveCode::default(),
             rule,
         }
     }

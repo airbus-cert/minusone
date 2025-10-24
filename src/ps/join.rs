@@ -32,7 +32,7 @@ use crate::tree::{ControlFlow, NodeMut};
 ///     AccessString::default()
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"invoke-expression\"");
@@ -108,7 +108,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 ///     ParseType::default()
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
@@ -207,7 +207,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 ///     JoinOperator::default()
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");

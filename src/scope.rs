@@ -22,13 +22,15 @@ pub struct Scope<T: Clone> {
     vars: HashMap<String, Variable<T>>,
 }
 
-impl<T: Clone> Scope<T> {
-    pub fn new() -> Self {
-        Scope {
+impl<T: Clone> Default for Scope<T> {
+    fn default() -> Self {
+        Self {
             vars: HashMap::new(),
         }
     }
+}
 
+impl<T: Clone> Scope<T> {
     pub fn from(scope: &Scope<T>) -> Self {
         let mut s = Scope {
             vars: scope.vars.clone(),
@@ -90,13 +92,15 @@ pub struct ScopeManager<T: Clone> {
     scopes: Vec<Scope<T>>,
 }
 
-impl<T: Clone> ScopeManager<T> {
-    pub fn new() -> Self {
+impl<T: Clone> Default for ScopeManager<T> {
+    fn default() -> Self {
         ScopeManager {
-            scopes: vec![Scope::new()], // default scope
+            scopes: vec![Scope::default()], // default scope
         }
     }
+}
 
+impl<T: Clone> ScopeManager<T> {
     pub fn enter(&mut self) {
         self.scopes.push(Scope::from(self.current()))
     }
@@ -128,7 +132,7 @@ impl<T: Clone> ScopeManager<T> {
     }
 
     pub fn reset(&mut self) {
-        self.scopes = vec![Scope::new()]
+        self.scopes = vec![Scope::default()]
     }
 
     pub fn forget_everywhere(&mut self, var_name: &str) {

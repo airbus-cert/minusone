@@ -23,7 +23,7 @@ use crate::tree::{ControlFlow, NodeMut};
 ///     BoolAlgebra::default(),
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "$true");
@@ -80,7 +80,7 @@ impl<'a> RuleMut<'a> for ParseBool {
 ///     BoolAlgebra::default(),
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "$false");
@@ -152,7 +152,7 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 ///     Comparison::default(),
 /// )).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "$true");
@@ -270,8 +270,8 @@ impl<'a> RuleMut<'a> for Comparison {
                     }
                     (Some(Raw(Bool(left_value))), "-ne", Some(Raw(Str(right_value)))) => {
                         node.set(Raw(Bool(
-                            !((!right_value.is_empty() && *left_value)
-                                || (right_value.is_empty() && !*left_value)),
+                            (!right_value.is_empty() || *left_value)
+                                && (!*left_value || right_value.is_empty()),
                         )))
                     }
 

@@ -18,6 +18,7 @@ use crate::ps::typing::ParseType;
 use crate::ps::var::{StaticVar, Var};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use tree_sitter_powershell::LANGUAGE as powershell_language;
 
 pub mod access;
@@ -53,14 +54,18 @@ impl Value {
     }
 }
 
-impl ToString for Value {
-    fn to_string(&self) -> String {
-        match self {
-            Value::Num(e) => e.to_string(),
-            Value::Str(s) => s.clone(),
-            Value::Bool(true) => "True".to_string(),
-            Value::Bool(false) => "False".to_string(),
-        }
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Value::Num(e) => e.to_string(),
+                Value::Str(s) => s.clone(),
+                Value::Bool(true) => "True".to_string(),
+                Value::Bool(false) => "False".to_string(),
+            }
+        )
     }
 }
 
@@ -96,7 +101,6 @@ pub enum Powershell {
 
 /// This is the rule set use to perform
 /// inferred type in Powershell deobfuscation
-
 pub type RuleSet = (
     Forward,      // Special rule that will forward inferred value in case the node is transparent
     ParseInt,     // Parse integer
@@ -157,7 +161,7 @@ pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
         return Err(Error::invalid_program_index(root_node.start_abs()));
     }
 
-    let mut source_without_extra = RemoveComment::new();
+    let mut source_without_extra = RemoveComment::default();
     root.apply(&mut source_without_extra)?;
     source_without_extra.clear()
 }

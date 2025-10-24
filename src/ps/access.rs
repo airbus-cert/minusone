@@ -19,7 +19,7 @@ fn get_at_index(s: &str, index: i64) -> Option<String> {
     s.chars().nth(uz_index).map(|c| c.to_string())
 }
 
-fn get_array_at_index(s: &Vec<Value>, index: i64) -> Option<&Value> {
+fn get_array_at_index(s: &[Value], index: i64) -> Option<&Value> {
     let mut uz_index = index as usize;
 
     // negative value is allowed by powershell
@@ -58,7 +58,7 @@ fn get_array_at_index(s: &Vec<Value>, index: i64) -> Option<&Value> {
 ///     )
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "\"cba\"");
@@ -207,7 +207,7 @@ impl<'a> RuleMut<'a> for AccessArray {
 ///     )
 /// ).unwrap();
 ///
-/// let mut ps_litter_view = Linter::new();
+/// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
 ///
 /// assert_eq!(ps_litter_view.output, "6");
