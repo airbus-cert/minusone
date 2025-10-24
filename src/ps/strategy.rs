@@ -25,6 +25,15 @@ impl Strategy<Powershell> for PowershellStrategy {
                         // Any other inferred type led to unpredictable branch visit
                         Ok(Continue(Unpredictable))
                     }
+                    "for_statement" => {
+                        if let Some(condition) = parent.named_child("for_condition") {
+                            if let Some(Raw(Bool(false))) = condition.data() {
+                                return Ok(Break);
+                            }
+                        }
+
+                        Ok(Continue(Unpredictable))
+                    }
                     "if_statement" => {
                         // if ($true) control flow
                         if let Some(condition) = parent.named_child("condition") {
@@ -115,7 +124,7 @@ impl Strategy<Powershell> for PowershellStrategy {
             // All this statement are labeled and not inferred at this moment
             "trap_statement" | "try_statement" | "catch_clause" | "finally_clause"
             | "data_statement" | "parallel_statement" | "sequence_statement"
-            | "switch_statement" | "foreach_statement" | "for_statement" | "while_statement" => {
+            | "switch_statement" | "foreach_statement" | "while_statement" => {
                 Ok(Continue(Unpredictable))
             }
             // Any other node than statement block become unpredictable
