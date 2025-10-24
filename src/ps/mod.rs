@@ -24,6 +24,7 @@ pub mod access;
 pub mod array;
 pub mod bool;
 pub mod cast;
+pub mod comparison;
 pub mod foreach;
 pub mod forward;
 pub mod hash;
