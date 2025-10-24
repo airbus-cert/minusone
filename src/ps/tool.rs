@@ -14,8 +14,7 @@ impl StringTool for String {
     fn remove_quote(self) -> Self {
         if let (Some('"'), Some('"')) = (self.chars().nth(0), self.chars().nth(self.len())) {
             self[1..self.len() - 1].to_string()
-        }
-        else {
+        } else {
             self
         }
     }
@@ -23,7 +22,9 @@ impl StringTool for String {
     fn uppercase_first(self) -> String {
         let mut v = self.to_lowercase();
         let s = v.get_mut(0..1);
-        if let Some(s) = s { s.make_ascii_uppercase() }
+        if let Some(s) = s {
+            s.make_ascii_uppercase()
+        }
         v
     }
 

@@ -17,8 +17,8 @@ use crate::ps::string::{
 use crate::ps::typing::ParseType;
 use crate::ps::var::{StaticVar, Var};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use tree_sitter_powershell::LANGUAGE as powershell_language;
 use std::collections::BTreeMap;
+use tree_sitter_powershell::LANGUAGE as powershell_language;
 
 pub mod access;
 pub mod array;
@@ -33,9 +33,9 @@ pub mod linter;
 pub mod method;
 pub mod strategy;
 pub mod string;
+mod tool;
 pub mod typing;
 pub mod var;
-mod tool;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -115,7 +115,7 @@ pub type RuleSet = (
     ForEach,      // It will used PSItem rules to inferred foreach-object command
     StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
     ComputeArrayExpr,    // It will infer array that start with @
-    NewObjectArray, // Infers arrays constructed via New-Object cmdlet
+    NewObjectArray,      // Infers arrays constructed via New-Object cmdlet
     StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
     StaticVar,       // It will infer value of known variable : $pshome, $shellid
     CastNull,        // It will infer value of +$() or -$() which will produce 0
@@ -166,7 +166,9 @@ pub fn build_powershell_tree(source: &str) -> MinusOneResult<Tree<'_, HashMapSto
     build_powershell_tree_for_storage::<HashMapStorage<Powershell>>(source)
 }
 
-pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> MinusOneResult<Tree<'_, T>> {
+pub fn build_powershell_tree_for_storage<T: Storage + Default>(
+    source: &str,
+) -> MinusOneResult<Tree<'_, T>> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&powershell_language.into())
@@ -174,8 +176,5 @@ pub fn build_powershell_tree_for_storage<T: Storage + Default>(source: &str) -> 
 
     // And the grammar is specified in lowercase
     let tree_sitter = parser.parse(source, None).unwrap();
-    Ok(Tree::<T>::new(
-        source.as_bytes(),
-        tree_sitter,
-    ))
+    Ok(Tree::<T>::new(source.as_bytes(), tree_sitter))
 }
