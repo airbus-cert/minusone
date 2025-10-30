@@ -71,9 +71,9 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
         let view = node.view();
         if view.kind() == "for_statement" {
             if let (Some(initialisation), Some(comparison)) = (
-                view.named_child("for_condition")
-                    .map(|n| n.smallest_child()),
                 view.named_child("for_initializer")
+                    .map(|n| n.smallest_child()),
+                view.named_child("for_condition")
                     .map(|n| n.smallest_child()),
             ) {
                 if comparison.kind() == "comparison_expression"
@@ -161,7 +161,6 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
             // Track control flow statments
             // TODO: Review control flow count if we are in imbricated loops
             "flow_control_statement" => {
-                println!("statment++");
                 self.statment_count += 1;
 
                 // Infer dead code afer flow control in a loop
@@ -221,7 +220,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
         match view.kind() {
             "for_statement" => {
-                if self.statment_count == 1 {
+                if view.data().is_none() && self.statment_count == 1 {
                     if let Some(statement_list) = view
                         .child(8)
                         .filter(|n| n.kind() == "statement_block")

@@ -202,14 +202,24 @@ impl<'a> Rule<'a> for Linter {
                         }
                     }
                 }
-                "for_statement" => {
-                    if let Some(&Powershell::Loop(LoopStatus::Dead)) = parent.data() {
+                "for_statement" => match parent.data() {
+                    Some(&Powershell::Loop(LoopStatus::Dead)) => {
                         if node.kind() == "statement_block" {
                             self.statement_block_tab.pop();
                         }
                         return Ok(false);
                     }
-                }
+                    Some(&Powershell::Loop(LoopStatus::OneTurn)) => match node.kind() {
+                        "statement_block" => {
+                            self.enter();
+                        }
+                        _ => {
+                            self.statement_block_tab.pop();
+                            return Ok(false);
+                        }
+                    },
+                    _ => (),
+                },
                 _ => (),
             }
         }
