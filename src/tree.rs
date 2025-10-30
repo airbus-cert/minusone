@@ -650,7 +650,7 @@ impl<'a, T> Node<'a, T> {
             .map(|node| Node::new(node, self.source, self.storage))
     }
 
-    pub fn smallest_child(self) -> Node<'a, T> {
+    pub fn smallest_child(&self) -> Node<'a, T> {
         if let Some(first_child) = self.child(0) {
             if self.start_abs() == first_child.start_abs()
                 && self.end_abs() == first_child.end_abs()
@@ -658,7 +658,8 @@ impl<'a, T> Node<'a, T> {
                 return first_child.smallest_child();
             }
         }
-        self
+
+        Node::new(self.node, self.source, self.storage)
     }
 
     pub fn iter(&self) -> NodeIterator<'a, T> {
