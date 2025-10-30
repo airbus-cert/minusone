@@ -932,7 +932,7 @@ mod test {
         .unwrap();
 
         // We are waiting for
-        // Write-Debug 5
+        // Write-Debug 0
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
@@ -940,7 +940,7 @@ mod test {
         //     (command_name inferred_type: None)
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //      (variable inferred_type: Some(Num(0)))))))
         assert_eq!(
             *tree
                 .root()
@@ -980,7 +980,7 @@ mod test {
         .unwrap();
 
         // We are waiting for
-        // Write-Debug 5
+        // Write-Debug 8
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
@@ -988,7 +988,7 @@ mod test {
         //     (command_name inferred_type: None)
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //      (variable inferred_type: Some(Num(8)))))))
         assert_eq!(
             *tree
                 .root()
@@ -1025,7 +1025,7 @@ mod test {
         .unwrap();
 
         // We are waiting for
-        // Write-Debug 5
+        // Write-Debug 6
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
@@ -1033,7 +1033,7 @@ mod test {
         //     (command_name inferred_type: None)
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //      (variable inferred_type: Some(Num(6)))))))
         assert_eq!(
             *tree
                 .root()
@@ -1113,7 +1113,7 @@ mod test {
         .unwrap();
 
         // We are waiting for
-        // Write-Debug 5
+        // Write-Debug 7
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
@@ -1121,7 +1121,7 @@ mod test {
         //     (command_name inferred_type: None)
         //     (command_elements inferred_type: None)
         //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //      (variable inferred_type: Some(Num(7)))))))
         assert_eq!(
             *tree
                 .root()

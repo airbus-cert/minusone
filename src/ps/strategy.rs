@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
-use crate::ps::Powershell;
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::Bool;
+use crate::ps::{LoopStatus, Powershell};
 use crate::tree::BranchFlow::{Predictable, Unpredictable};
 use crate::tree::ControlFlow::{Break, Continue};
 use crate::tree::{ControlFlow, Node, Strategy};
@@ -26,10 +26,8 @@ impl Strategy<Powershell> for PowershellStrategy {
                         Ok(Continue(Unpredictable))
                     }
                     "for_statement" => {
-                        if let Some(condition) = parent.named_child("for_condition") {
-                            if let Some(Raw(Bool(false))) = condition.data() {
-                                return Ok(Break);
-                            }
+                        if let Some(Powershell::Loop(LoopStatus::Dead)) = parent.data() {
+                            return Ok(Break);
                         }
 
                         Ok(Continue(Unpredictable))

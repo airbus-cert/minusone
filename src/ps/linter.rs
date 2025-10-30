@@ -1,9 +1,9 @@
 use crate::error::MinusOneResult;
 use crate::ps::tool::StringTool;
 use crate::ps::var::{find_variable_node, UnusedVar, Var};
-use crate::ps::Powershell;
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::{Bool, Num, Str};
+use crate::ps::{LoopStatus, Powershell};
 use crate::regex::Regex;
 use crate::rule::Rule;
 use crate::tree::Node;
@@ -203,13 +203,11 @@ impl<'a> Rule<'a> for Linter {
                     }
                 }
                 "for_statement" => {
-                    if let Some(condition) = parent.named_child("for_condition") {
-                        if let Some(&Raw(Bool(false))) = condition.data() {
-                            if node.kind() == "statement_block" {
-                                self.statement_block_tab.pop();
-                            }
-                            return Ok(false);
+                    if let Some(&Powershell::Loop(LoopStatus::Dead)) = parent.data() {
+                        if node.kind() == "statement_block" {
+                            self.statement_block_tab.pop();
                         }
+                        return Ok(false);
                     }
                 }
                 _ => (),

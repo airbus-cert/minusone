@@ -9,7 +9,7 @@ use crate::ps::hash::ParseHash;
 use crate::ps::integer::{AddInt, MultInt, ParseInt};
 use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
 use crate::ps::linter::RemoveComment;
-use crate::ps::loops::ForStatement;
+use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
 use crate::ps::method::{DecodeBase64, FromUTF, Length};
 use crate::ps::string::{
     ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
@@ -90,9 +90,18 @@ impl Value {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub enum LoopStatus {
+    Inifite,
+    Dead,
+    OneTurn,
+    Unknown,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Powershell {
     Raw(Value),
+    Loop(LoopStatus),
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     Null,
@@ -141,7 +150,8 @@ pub type RuleSet = (
     StringSplitMethod, // Handle split method
     AccessArray,  // Handle static array element access
     AccessHashMap, // Handle hashmap access
-    ForStatement  // Infer for condition to remove fake loops
+    ForStatementCondition, // Infer for condition to remove fake loops
+    ForStatementFlowControl, // Simplify for statment based on flow control
 );
 
 pub fn remove_powershell_extra(source: &str) -> MinusOneResult<String> {
