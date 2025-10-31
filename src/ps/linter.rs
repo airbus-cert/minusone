@@ -53,6 +53,10 @@ impl<'a> Rule<'a> for Linter {
     type Language = Powershell;
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        if node.data() == Some(&Powershell::Null) {
+            return Ok(false);
+        }
+
         // depending on what am i
         match node.kind() {
             "script_block" => {
@@ -131,6 +135,19 @@ impl<'a> Rule<'a> for Linter {
                     _ => (),
                 },
                 "statement_block" => {
+                    if let Some(grand_parent) = parent.parent() {
+                        if grand_parent.kind() == "for_statement"
+                            && grand_parent.data() == Some(&Powershell::Loop(LoopStatus::OneTurn))
+                        {
+                            if node.kind() == "statement_list" {
+                                self.statement_block_tab.pop();
+                                return Ok(true);
+                            } else {
+                                return Ok(false);
+                            }
+                        }
+                    }
+
                     // tab for new block
                     if node.kind() == "statement_list" {
                         if !is_inline(node) && *self.statement_block_tab.last().unwrap_or(&true) {
@@ -209,15 +226,11 @@ impl<'a> Rule<'a> for Linter {
                         }
                         return Ok(false);
                     }
-                    Some(&Powershell::Loop(LoopStatus::OneTurn)) => match node.kind() {
-                        "statement_block" => {
-                            self.enter();
-                        }
-                        _ => {
-                            self.statement_block_tab.pop();
-                            return Ok(false);
-                        }
-                    },
+                    Some(&Powershell::Loop(LoopStatus::OneTurn))
+                        if node.kind() != "statement_block" =>
+                    {
+                        return Ok(false);
+                    }
                     _ => (),
                 },
                 _ => (),
