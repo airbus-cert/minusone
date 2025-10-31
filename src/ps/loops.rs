@@ -1,7 +1,7 @@
 use crate::{
     ps::{
         comparison::infer_comparison,
-        LoopStatus,
+        LoopStatus::{Dead, Inifite, OneTurn},
         Powershell::{self, Loop},
         Value,
     },
@@ -105,7 +105,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
                                 .then_some(1)
                                 .and(infer_comparison(&comp_left, &operator, &value)))
                         {
-                            node.reduce(Loop(LoopStatus::Dead));
+                            node.reduce(Loop(Dead));
                         }
                     }
                 }
@@ -220,7 +220,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
                         match iter.next().map(|n| n.smallest_child().kind()) {
                             Some("break" | "return" | "exit" | "throw") => {
-                                node.set(Loop(LoopStatus::OneTurn));
+                                node.set(Loop(OneTurn));
 
                                 // TODO: What if we set the node but it was after the break and was Some(Null)
                                 // ex: for ($i = 0; $true;) {$i; break; $i} should give "0" but gives "0\n0" currently
@@ -230,7 +230,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                                     })
                                 });
                             }
-                            Some("continue") => node.set(Loop(LoopStatus::Inifite)),
+                            Some("continue") => node.set(Loop(Inifite)),
                             _ => {}
                         }
                     }
@@ -249,8 +249,8 @@ mod test {
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
     use crate::ps::loops::ForStatementCondition;
-    use crate::ps::Powershell::Raw;
-    use crate::ps::Value::Bool;
+    use crate::ps::LoopStatus::Dead;
+    use crate::ps::Powershell::Loop;
 
     #[test]
     fn test_dead_for_statement() {
@@ -262,19 +262,6 @@ mod test {
         ))
         .unwrap();
 
-        println!(
-            "{:?}",
-            tree.root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(4)
-                .unwrap()
-                .data()
-        );
-
         assert_eq!(
             *tree
                 .root()
@@ -283,11 +270,9 @@ mod test {
                 .unwrap()
                 .child(0)
                 .unwrap()
-                .child(4)
-                .unwrap()
                 .data()
                 .expect("Inferred type"),
-            Raw(Bool(false))
+            Loop(Dead)
         );
     }
 
