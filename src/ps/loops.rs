@@ -129,7 +129,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 /// use minusone::ps::integer::AddInt;
 /// use minusone::ps::loops::{ForStatementCondition, ForStatementFlowControl};
 ///
-/// let mut tree = build_powershell_tree("for ($i = 42; $i -lt 200; $i++) {echo $i; break; echo $i + 1}").unwrap();
+/// let mut tree = build_powershell_tree("for ($i = 42; $i -lt 200; $i++) {$i; break; $i}").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     AddInt::default(),
@@ -248,9 +248,10 @@ mod test {
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
-    use crate::ps::loops::ForStatementCondition;
-    use crate::ps::LoopStatus::Dead;
-    use crate::ps::Powershell::Loop;
+    use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
+    use crate::ps::LoopStatus::{Dead, OneTurn};
+    use crate::ps::Powershell::{Loop, Raw};
+    use crate::ps::Value::Num;
 
     #[test]
     fn test_dead_for_statement() {
@@ -273,6 +274,52 @@ mod test {
                 .data()
                 .expect("Inferred type"),
             Loop(Dead)
+        );
+    }
+
+    #[test]
+    fn test_one_turn_for_statement() {
+        let mut tree =
+            build_powershell_tree("for ($i = 0; $i -lt 1000; $i++) {$i; break; $i = $i - 1}")
+                .unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ForStatementFlowControl::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Loop(OneTurn)
+        );
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(8)
+                .unwrap()
+                .child(1)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .smallest_child()
+                .data()
+                .expect("Inferred type"),
+            Raw(Num(0))
         );
     }
 
