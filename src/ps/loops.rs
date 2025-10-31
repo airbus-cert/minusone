@@ -3,18 +3,19 @@ use crate::{
         comparison::infer_comparison,
         LoopStatus,
         Powershell::{self, Loop},
+        Value,
     },
     rule::RuleMut,
 };
 
 struct IteratorVariable {
     name: String,
-    value: Powershell,
+    value: Value,
     pub references: Vec<usize>,
 }
 
 impl IteratorVariable {
-    fn new(name: String, value: Powershell) -> Self {
+    fn new(name: String, value: Value) -> Self {
         Self {
             name,
             value,
@@ -134,7 +135,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 ///     AddInt::default(),
 ///     Forward::default(),
 ///     ForStatementCondition::default(),
-///     FlowControlForStatement::default(),
+///     ForStatementFlowControl::default(),
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::default();
@@ -153,14 +154,22 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
     fn enter(
         &mut self,
+        _node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        _flow: crate::tree::ControlFlow,
+    ) -> crate::error::MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
             // Track control flow statments
-            // TODO: Review control flow count if we are in imbricated loops
             "flow_control_statement" => {
+                // TODO: Review control flow count if we are in imbricated loops
                 self.statment_count += 1;
 
                 // Infer dead code afer flow control in a loop
@@ -176,27 +185,21 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     node.set_by_node_id(id, Powershell::Null);
                 }
             }
-            "variable" => {
-                if view.get_parent_of_types(vec!["for_initializer"]).is_some()
-                    && view
-                        .get_parent_of_types(vec!["left_assignment_expression"])
-                        .is_some()
-                {
-                    if let Some(assignmenent) =
-                        view.get_parent_of_types(vec!["assignment_expression"])
-                    {
-                        if let Some(right) = assignmenent.named_child("right_assignment") {
-                            if let Some(data) = right.data() {
-                                {
-                                    self.iterators.push(IteratorVariable::new(
-                                        view.text().unwrap().to_string(),
-                                        data.clone(),
-                                    ));
-                                }
-                            }
-                        }
+            "assignment_expression"
+                if view.get_parent_of_types(vec!["for_initializer"]).is_some() =>
+            {
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
+                    if let Some(Powershell::Raw(value)) = right.data() {
+                        self.iterators.push(IteratorVariable::new(
+                            left.text().unwrap().to_string(),
+                            value.clone(),
+                        ));
                     }
-                } else if let Some(iterator_variable) = self
+                }
+            }
+
+            "variable" => {
+                if let Some(iterator_variable) = self
                     .iterators
                     .iter_mut()
                     .find(|n| n.name == view.text().unwrap().to_string())
@@ -204,21 +207,6 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     iterator_variable.references.push(node.id());
                 }
             }
-
-            _ => (),
-        }
-
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut crate::tree::NodeMut<'a, Self::Language>,
-        _flow: crate::tree::ControlFlow,
-    ) -> crate::error::MinusOneResult<()> {
-        let view = node.view();
-
-        match view.kind() {
             "for_statement" => {
                 if view.data().is_none() && self.statment_count == 1 {
                     if let Some(statement_list) = view
@@ -237,9 +225,9 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                                 // TODO: What if we set the node but it was after the break and was Some(Null)
                                 // ex: for ($i = 0; $true;) {$i; break; $i} should give "0" but gives "0\n0" currently
                                 self.iterators.iter().for_each(|it| {
-                                    it.references
-                                        .iter()
-                                        .for_each(|&id| node.set_by_node_id(id, it.value.clone()))
+                                    it.references.iter().for_each(|&id| {
+                                        node.set_by_node_id(id, Powershell::Raw(it.value.clone()))
+                                    })
                                 });
                             }
                             Some("continue") => node.set(Loop(LoopStatus::Inifite)),
