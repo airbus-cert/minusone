@@ -53,7 +53,7 @@ impl<'a> Rule<'a> for Linter {
     type Language = Powershell;
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-        if node.data() == Some(&Powershell::Null) {
+        if node.data() == Some(&Powershell::DeadCode) {
             return Ok(false);
         }
 
