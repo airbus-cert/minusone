@@ -104,7 +104,7 @@ pub enum Powershell {
     Loop(LoopStatus),
     Array(Vec<Value>),
     PSItem(Vec<Value>),
-    Null,
+    DeadCode,
     HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type

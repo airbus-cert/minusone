@@ -181,7 +181,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .map(|n| n.id().clone())
                     .collect();
                 for id in following_children_ids {
-                    node.set_by_node_id(id, Powershell::Null);
+                    node.set_by_node_id(id, Powershell::DeadCode);
                 }
             }
             "assignment_expression"

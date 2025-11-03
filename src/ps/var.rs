@@ -1,6 +1,5 @@
 use crate::error::{Error, MinusOneResult};
-use crate::ps::Powershell;
-use crate::ps::Powershell::{Array, Null, Raw, Type};
+use crate::ps::Powershell::{self, Array, DeadCode, Loop, Raw, Type};
 use crate::ps::Value::{self, Bool, Num, Str};
 use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
@@ -670,7 +669,7 @@ impl<'a> RuleMut<'a> for StaticVar {
             match view.text()?.to_lowercase().as_str() {
                 "$shellid" => node.set(Raw(Str(String::from("Microsoft.Powershell")))),
                 "$?" => node.set(Raw(Bool(true))),
-                "$null" => node.set(Null),
+                "$null" => node.set(DeadCode),
                 "$pshome" => node.set(Raw(Str(String::from(
                     "C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
                 )))),
