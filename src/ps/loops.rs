@@ -177,7 +177,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .parent()
                     .unwrap()
                     .iter()
-                    .skip_while(|n| n.id() == view.id())
+                    .skip_while(|n| n.id() != view.id())
                     .skip(1)
                     .map(|n| n.id().clone())
                     .collect();
