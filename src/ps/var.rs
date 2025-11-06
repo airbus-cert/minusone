@@ -1,5 +1,5 @@
 use crate::error::{Error, MinusOneResult};
-use crate::ps::Powershell::{self, Array, DeadCode, Loop, Raw, Type};
+use crate::ps::Powershell::{self, Array, DeadCode, Raw, Type};
 use crate::ps::Value::{self, Bool, Num, Str};
 use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
@@ -237,9 +237,7 @@ impl<'a> RuleMut<'a> for Var {
             }
 
             "while_statement" => {
-                // before evaluate while condition
-                // we need to forget all var that will be assigned in corresponding statement block
-                self.forget_assigned_var(&view)?;
+                node.start_transaction()?;
             }
 
             // in the enter function because pre increment before assigned
