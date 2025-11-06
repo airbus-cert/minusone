@@ -2,8 +2,8 @@ use crate::{
     ps::{
         comparison::infer_comparison,
         LoopStatus::{Dead, Inifite, OneTurn},
-        Powershell::{self, Loop},
-        Value,
+        Powershell::{self, Loop, Raw},
+        Value::{self, Bool},
     },
     rule::RuleMut,
 };
@@ -70,46 +70,57 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "for_statement" {
-            if let (Some(initialisation), Some(comparison)) = (
-                view.named_child("for_initializer")
-                    .map(|n| n.smallest_child()),
-                view.named_child("for_condition")
-                    .map(|n| n.smallest_child()),
-            ) {
-                if comparison.kind() == "comparison_expression"
-                    && initialisation.kind() == "assignment_expression"
-                {
-                    if let (
-                        Some(var_name),
-                        Some(value),
-                        Some(comp_left),
-                        Some(operator),
-                        Some(comp_right),
-                    ) = (
-                        initialisation
-                            .child(0)
-                            .and_then(|n| Some(n.text().ok()?.to_lowercase())),
-                        initialisation.child(2),
-                        comparison.child(0),
-                        comparison.child(1),
-                        comparison.child(2),
-                    ) {
-                        if let Some(false) = infer_comparison(&comp_left, &operator, &comp_right)
-                            .or(
-                                (comp_left.text().unwrap_or_default().to_lowercase() == var_name)
-                                    .then_some(1)
-                                    .and(infer_comparison(&value, &operator, &comp_right)),
-                            )
-                            .or((comp_right.text().unwrap_or_default() == var_name)
-                                .then_some(1)
-                                .and(infer_comparison(&comp_left, &operator, &value)))
-                        {
-                            node.reduce(Loop(Dead));
+        match view.kind() {
+            "for_statement" => {
+                if let (Some(initialisation), Some(comparison)) = (
+                    view.named_child("for_initializer")
+                        .map(|n| n.smallest_child()),
+                    view.named_child("for_condition")
+                        .map(|n| n.smallest_child()),
+                ) {
+                    if comparison.kind() == "comparison_expression"
+                        && initialisation.kind() == "assignment_expression"
+                    {
+                        if let (
+                            Some(var_name),
+                            Some(value),
+                            Some(comp_left),
+                            Some(operator),
+                            Some(comp_right),
+                        ) = (
+                            initialisation
+                                .child(0)
+                                .and_then(|n| Some(n.text().ok()?.to_lowercase())),
+                            initialisation.child(2),
+                            comparison.child(0),
+                            comparison.child(1),
+                            comparison.child(2),
+                        ) {
+                            if let Some(false) =
+                                infer_comparison(&comp_left, &operator, &comp_right)
+                                    .or((comp_left.text().unwrap_or_default().to_lowercase()
+                                        == var_name)
+                                        .then_some(1)
+                                        .and(infer_comparison(&value, &operator, &comp_right)))
+                                    .or((comp_right.text().unwrap_or_default() == var_name)
+                                        .then_some(1)
+                                        .and(infer_comparison(&comp_left, &operator, &value)))
+                            {
+                                node.set(Loop(Dead));
+                            }
                         }
                     }
                 }
             }
+            "while_condition" => {
+                if let Some(&Raw(Bool(false))) = view.data() {
+                    node.set_by_node_id(view.parent().unwrap().id(), Loop(Dead));
+                    node.apply_transaction();
+                } else {
+                    node.abort_transaction();
+                }
+            }
+            _ => (),
         }
 
         Ok(())
