@@ -7,6 +7,7 @@ pub enum MinusOneErrorKind {
     InvalidParent,
     InvalidProgram,
     InvalidProgramIndex,
+    NestedTranscations,
     Unknown,
 }
 
@@ -82,6 +83,13 @@ impl Error {
         Error::MinusOneError(MinusOneError::new(
             MinusOneErrorKind::InvalidParent,
             "A parent node is expected",
+        ))
+    }
+
+    pub fn nested_transactions() -> Self {
+        Error::MinusOneError(MinusOneError::new(
+            MinusOneErrorKind::NestedTranscations,
+            "Cannot start transaction: transaction already started",
         ))
     }
 }
