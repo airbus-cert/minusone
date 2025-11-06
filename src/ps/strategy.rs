@@ -15,23 +15,12 @@ impl Strategy<Powershell> for PowershellStrategy {
             "statement_block" => {
                 let parent = node.parent().unwrap();
                 match parent.kind() {
-                    "while_statement" => {
-                        // Don't visit node inferred node with a branch set to false
-                        if let Some(condition) = parent.named_child("condition") {
-                            if let Some(Raw(Bool(false))) = condition.data() {
-                                return Ok(Break);
-                            }
-                        }
-                        // Any other inferred type led to unpredictable branch visit
-                        Ok(Continue(Unpredictable))
-                    }
-                    "for_statement" => {
-                        if let Some(Powershell::Loop(LoopStatus::Dead)) = parent.data() {
-                            return Ok(Break);
-                        }
+                    "for_statement" | "while_statement" => match parent.data() {
+                        Some(Powershell::Loop(LoopStatus::Dead)) => Ok(Break),
+                        Some(Powershell::Loop(LoopStatus::OneTurn)) => Ok(Continue(Predictable)),
+                        _ => Ok(Continue(Unpredictable)),
+                    },
 
-                        Ok(Continue(Unpredictable))
-                    }
                     "if_statement" => {
                         // if ($true) control flow
                         if let Some(condition) = parent.named_child("condition") {
@@ -119,6 +108,8 @@ impl Strategy<Powershell> for PowershellStrategy {
                 // We were not able to infer type so we are in an unpredictable case
                 Ok(Continue(Unpredictable))
             }
+            // Do not visit for iterator, as it is unsure if and when they are executed
+            "for_iterator" => Ok(Break),
             // All this statement are labeled and not inferred at this moment
             "trap_statement" | "try_statement" | "catch_clause" | "finally_clause"
             | "data_statement" | "parallel_statement" | "sequence_statement"

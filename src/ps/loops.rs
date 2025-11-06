@@ -1,6 +1,5 @@
 use crate::{
     ps::{
-        comparison::infer_comparison,
         LoopStatus::{Dead, Inifite, OneTurn},
         Powershell::{self, Loop, Raw},
         Value::{self, Bool},
@@ -33,15 +32,19 @@ impl IteratorVariable {
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::forward::Forward;
+/// use minusone::ps::bool::Comparison;
 /// use minusone::ps::integer::ParseInt;
 /// use minusone::ps::integer::AddInt;
+/// use minusone::ps::var::Var;
 /// use minusone::ps::loops::ForStatementCondition;
 ///
 /// let mut tree = build_powershell_tree("for ($i = 132 + 324 - 3; $i -lt 200 - 190; $i++) {echo $i}").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseInt::default(),
 ///     AddInt::default(),
+///     Comparison::default(),
 ///     Forward::default(),
+///     Var::default(),
 ///     ForStatementCondition::default(),
 /// )).unwrap();
 ///
@@ -71,48 +74,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
     ) -> crate::error::MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
-            "for_statement" => {
-                if let (Some(initialisation), Some(comparison)) = (
-                    view.named_child("for_initializer")
-                        .map(|n| n.smallest_child()),
-                    view.named_child("for_condition")
-                        .map(|n| n.smallest_child()),
-                ) {
-                    if comparison.kind() == "comparison_expression"
-                        && initialisation.kind() == "assignment_expression"
-                    {
-                        if let (
-                            Some(var_name),
-                            Some(value),
-                            Some(comp_left),
-                            Some(operator),
-                            Some(comp_right),
-                        ) = (
-                            initialisation
-                                .child(0)
-                                .and_then(|n| Some(n.text().ok()?.to_lowercase())),
-                            initialisation.child(2),
-                            comparison.child(0),
-                            comparison.child(1),
-                            comparison.child(2),
-                        ) {
-                            if let Some(false) =
-                                infer_comparison(&comp_left, &operator, &comp_right)
-                                    .or((comp_left.text().unwrap_or_default().to_lowercase()
-                                        == var_name)
-                                        .then_some(1)
-                                        .and(infer_comparison(&value, &operator, &comp_right)))
-                                    .or((comp_right.text().unwrap_or_default() == var_name)
-                                        .then_some(1)
-                                        .and(infer_comparison(&comp_left, &operator, &value)))
-                            {
-                                node.set(Loop(Dead));
-                            }
-                        }
-                    }
-                }
-            }
-            "while_condition" => {
+            "while_condition" | "for_condition" => {
                 if let Some(&Raw(Bool(false))) = view.data() {
                     node.set_by_node_id(view.parent().unwrap().id(), Loop(Dead));
                     node.apply_transaction();
@@ -255,10 +217,12 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::bool::Comparison;
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
     use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
+    use crate::ps::var::Var;
     use crate::ps::LoopStatus::{Dead, OneTurn};
     use crate::ps::Powershell::{Loop, Raw};
     use crate::ps::Value::Num;
@@ -267,8 +231,10 @@ mod test {
     fn test_dead_for_statement() {
         let mut tree = build_powershell_tree("for ($i = 0; $i -gt 1; $i++) {}").unwrap();
         tree.apply_mut(&mut (
-            ParseInt::default(),
             Forward::default(),
+            ParseInt::default(),
+            Comparison::default(),
+            Var::default(),
             ForStatementCondition::default(),
         ))
         .unwrap();
