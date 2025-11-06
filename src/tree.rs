@@ -201,9 +201,6 @@ impl<T> Storage for HashMapStorage<T> {
         Ok(())
     }
 
-    /// use to monitor if the storage was updated
-    /// between the start and the end function
-    ///
     /// # Example
     /// ```
     /// extern crate tree_sitter;
@@ -226,12 +223,6 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(root_id), Some(&42));
     /// storage.apply_transaction();
     /// assert_eq!(storage.get(root_id), Some(&42));
-    ///
-    /// storage.start_transaction();
-    /// storage.set(root_id, 0);
-    /// assert_eq!(storage.get(root_id), Some(&0));
-    /// storage.abort_transaction();
-    /// assert_eq!(storage.get(root_id), Some(&42));
     /// ```
     fn apply_transaction(&mut self) {
         let node_ids: Vec<usize> = self.pending.keys().cloned().collect();
@@ -244,8 +235,42 @@ impl<T> Storage for HashMapStorage<T> {
             });
         self.is_ongoing_transaction = false;
     }
+
+    /// Abort transaction by forget all the variables to update
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(&powershell_language.into()).unwrap();
+    ///
+    /// let ts_tree = parser.parse("4+5", None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    /// let root_id = ts_tree.root_node().id();
+    ///
+    /// storage.set(root_id, 42);
+    /// storage.start_transaction();
+    ///
+    /// storage.start_transaction();
+    /// storage.set(root_id, 0);
+    /// assert_eq!(storage.get(root_id), Some(&0));
+    /// storage.abort_transaction();
+    /// assert_eq!(storage.get(root_id), None);
+    /// ```
     fn abort_transaction(&mut self) {
-        self.pending.clear();
+        let keys: Vec<usize> = self.pending.keys().cloned().collect();
+        let keys_to_forget: Vec<usize> = keys
+            .iter()
+            .filter(|k| matches!(self.pending.remove(k), Some(PendingAction::Add(_))))
+            .cloned()
+            .collect();
+        keys_to_forget.iter().for_each(|k| _ = self.map.remove(k));
+
         self.is_ongoing_transaction = false;
     }
 }

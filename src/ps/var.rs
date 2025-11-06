@@ -236,7 +236,7 @@ impl<'a> RuleMut<'a> for Var {
                 }
             }
 
-            "while_statement" => {
+            "while_statement" | "for_statement" => {
                 node.start_transaction()?;
             }
 
@@ -281,21 +281,14 @@ impl<'a> RuleMut<'a> for Var {
                             if let (current_value, Some(new_value)) =
                                 (scope.get_var(&var_name), right.data())
                             {
-                                // disable anything from for_initializer
-                                if view.get_parent_of_types(vec!["for_initializer"]).is_some() {
-                                    scope.forget(&var_name);
-                                } else {
-                                    // only predictable assignment is handled of local var
-                                    let is_local = scope.is_local(&var_name).unwrap_or(true);
-                                    if flow == ControlFlow::Continue(BranchFlow::Predictable)
-                                        || is_local
-                                    {
-                                        match assign_handler(current_value, operator, new_value) {
-                                            Some(assign_value) => {
-                                                scope.assign(&var_name, assign_value)
-                                            }
-                                            _ => scope.forget(&var_name),
-                                        }
+                                // only predictable assignment is handled of local var
+                                let is_local = scope.is_local(&var_name).unwrap_or(true);
+                                if flow == ControlFlow::Continue(BranchFlow::Predictable)
+                                    || is_local
+                                {
+                                    match assign_handler(current_value, operator, new_value) {
+                                        Some(assign_value) => scope.assign(&var_name, assign_value),
+                                        _ => scope.forget(&var_name),
                                     }
                                 }
                             }

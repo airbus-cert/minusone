@@ -72,6 +72,7 @@ impl<'a> RuleMut<'a> for Forward {
             | "command_name_expr"
             | "expression_with_unary_operator"
             | "while_condition"
+            | "for_condition"
             | "member_name" => {
                 if view.child_count() == 1 {
                     if let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
