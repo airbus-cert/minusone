@@ -1,4 +1,4 @@
-use crate::error::MinusOneResult;
+use crate::error::{Error, MinusOneResult};
 use crate::rule::{Rule, RuleMut};
 use std::collections::HashMap;
 use std::ops;
@@ -30,6 +30,15 @@ pub trait Storage {
 
     /// Remove data from starage
     fn remove(&mut self, node: usize);
+
+    /// Start a transaction
+    fn start_transaction(&mut self) -> MinusOneResult<()>;
+
+    /// Apply and end a transcation
+    fn apply_transaction(&mut self);
+
+    /// Abort an ongoing transaction without applying it
+    fn abort_transaction(&mut self);
 }
 
 #[derive(Default)]
@@ -51,13 +60,28 @@ impl Storage for EmptyStorage {
     }
 
     fn remove(&mut self, _: usize) {}
+
+    fn start_transaction(&mut self) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn apply_transaction(&mut self) {}
+
+    fn abort_transaction(&mut self) {}
 }
 
 /// A possible implementation of storage that
 /// use Hash map as link between node id and data
 pub struct HashMapStorage<T> {
     map: HashMap<usize, T>,
+    pending: HashMap<usize, PendingAction<T>>,
     is_updated: bool,
+    is_ongoing_transaction: bool,
+}
+
+pub enum PendingAction<T> {
+    Add(T),
+    Remove,
 }
 
 /// Default trait is used for the tree implementation
@@ -65,7 +89,9 @@ impl<T> Default for HashMapStorage<T> {
     fn default() -> Self {
         Self {
             map: HashMap::new(),
+            pending: HashMap::new(),
             is_updated: false,
+            is_ongoing_transaction: false,
         }
     }
 }
@@ -93,10 +119,13 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(ts_tree.root_node().id()), None)
     /// ```
     fn get(&self, node_id: usize) -> Option<&Self::Component> {
-        if !self.map.contains_key(&node_id) {
-            return None;
-        }
-        Some(self.map.get(&node_id).unwrap())
+        self.pending
+            .get(&node_id)
+            .and_then(|action| match action {
+                PendingAction::Add(data) => Some(data),
+                _ => None,
+            })
+            .or(self.map.get(&node_id))
     }
 
     /// It will get a reference to the associated data of the node
@@ -120,7 +149,10 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(ts_tree.root_node().id()), Some(&42))
     /// ```
     fn set(&mut self, node_id: usize, data: Self::Component) {
-        self.map.insert(node_id, data);
+        match self.is_ongoing_transaction {
+            true => _ = self.pending.insert(node_id, PendingAction::Add(data)),
+            false => _ = self.map.insert(node_id, data),
+        };
         self.is_updated = true;
     }
 
@@ -154,7 +186,67 @@ impl<T> Storage for HashMapStorage<T> {
     }
 
     fn remove(&mut self, node_id: usize) {
-        self.map.remove(&node_id);
+        match self.is_ongoing_transaction {
+            true => _ = self.pending.insert(node_id, PendingAction::Remove),
+            false => _ = self.map.remove(&node_id),
+        };
+    }
+
+    fn start_transaction(&mut self) -> MinusOneResult<()> {
+        if self.is_ongoing_transaction {
+            return Err(Error::nested_transactions());
+        }
+
+        self.is_ongoing_transaction = true;
+        Ok(())
+    }
+
+    /// use to monitor if the storage was updated
+    /// between the start and the end function
+    ///
+    /// # Example
+    /// ```
+    /// extern crate tree_sitter;
+    /// extern crate tree_sitter_powershell;
+    /// use tree_sitter::{Parser, Language};
+    /// use tree_sitter_powershell::LANGUAGE as powershell_language;
+    /// use minusone::tree::{Storage, HashMapStorage};
+    ///
+    /// let mut parser = Parser::new();
+    /// parser.set_language(&powershell_language.into()).unwrap();
+    ///
+    /// let ts_tree = parser.parse("4+5", None).unwrap();
+    /// let mut storage = HashMapStorage::<u32>::default();
+    /// let root_id = ts_tree.root_node().id();
+    ///
+    /// storage.set(root_id, 0);
+    /// storage.start_transaction();
+    ///
+    /// storage.set(root_id, 42);
+    /// assert_eq!(storage.get(root_id), Some(&42));
+    /// storage.apply_transaction();
+    /// assert_eq!(storage.get(root_id), Some(&42));
+    ///
+    /// storage.start_transaction();
+    /// storage.set(root_id, 0);
+    /// assert_eq!(storage.get(root_id), Some(&0));
+    /// storage.abort_transaction();
+    /// assert_eq!(storage.get(root_id), Some(&42));
+    /// ```
+    fn apply_transaction(&mut self) {
+        let node_ids: Vec<usize> = self.pending.keys().cloned().collect();
+        node_ids
+            .into_iter()
+            .for_each(|id| match self.pending.remove(&id) {
+                Some(PendingAction::Add(data)) => _ = self.map.insert(id, data),
+                Some(PendingAction::Remove) => _ = self.map.remove(&id),
+                _ => (),
+            });
+        self.is_ongoing_transaction = false;
+    }
+    fn abort_transaction(&mut self) {
+        self.pending.clear();
+        self.is_ongoing_transaction = false;
     }
 }
 
@@ -597,6 +689,18 @@ impl<'a, T> NodeMut<'a, T> {
             }
         }
         Ok(())
+    }
+
+    pub fn start_transaction(&mut self) -> MinusOneResult<()> {
+        self.storage.start_transaction()
+    }
+
+    pub fn apply_transaction(&mut self) {
+        self.storage.apply_transaction()
+    }
+
+    pub fn abort_transaction(&mut self) {
+        self.storage.abort_transaction()
     }
 }
 
