@@ -5,6 +5,7 @@ use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
+use std::any::Any;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Add;
 
@@ -234,10 +235,6 @@ impl<'a> RuleMut<'a> for Var {
                 if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
                     self.forget_assigned_var(&view)?;
                 }
-            }
-
-            "while_statement" | "for_statement" => {
-                node.start_transaction()?;
             }
 
             // in the enter function because pre increment before assigned

@@ -54,16 +54,25 @@ impl IteratorVariable {
 /// assert_eq!(ps_litter_view.output, "");
 /// ```
 #[derive(Default)]
-pub struct ForStatementCondition;
+pub struct ForStatementCondition {
+    loop_id: Option<usize>,
+}
 
 impl<'a> RuleMut<'a> for ForStatementCondition {
     type Language = Powershell;
 
     fn enter(
         &mut self,
-        _node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        node: &mut crate::tree::NodeMut<'a, Self::Language>,
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
+        if matches!(node.view().kind(), "while_statement" | "for_statement") {
+            if node.start_transaction().is_ok() {
+                // Save the loop id to close the transaction
+                self.loop_id = Some(node.id());
+            }
+        }
+
         Ok(())
     }
 
@@ -73,17 +82,18 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
         let view = node.view();
-        match view.kind() {
-            "while_condition" | "for_condition" => {
-                if let Some(&Raw(Bool(false))) = view.data() {
-                    node.set_by_node_id(view.parent().unwrap().id(), Loop(Dead));
-                    node.apply_transaction();
-                } else {
-                    node.abort_transaction();
-                }
+        if matches!(view.kind(), "while_condition" | "for_condition")
+            && self.loop_id.is_some()
+            && self.loop_id == view.parent().map(|n| n.id())
+        {
+            if let Some(&Raw(Bool(false))) = view.data() {
+                node.set_by_node_id(self.loop_id.unwrap(), Loop(Dead));
+                node.apply_transaction();
+            } else {
+                node.abort_transaction();
             }
-            _ => (),
-        }
+            self.loop_id = None;
+        };
 
         Ok(())
     }
