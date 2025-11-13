@@ -11,6 +11,10 @@ pub struct PowershellStrategy;
 
 impl Strategy<Powershell> for PowershellStrategy {
     fn control(&self, node: Node<Powershell>) -> MinusOneResult<ControlFlow> {
+        if node.data() == Some(&Powershell::DeadCode) {
+            return Ok(Break);
+        }
+
         match node.kind() {
             "statement_block" => {
                 let parent = node.parent().unwrap();

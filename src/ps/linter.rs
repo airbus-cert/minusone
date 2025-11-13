@@ -226,10 +226,12 @@ impl<'a> Rule<'a> for Linter {
                         }
                         return Ok(false);
                     }
-                    Some(&Powershell::Loop(LoopStatus::OneTurn))
-                        if node.kind() != "statement_block" =>
-                    {
-                        return Ok(false);
+                    Some(&Powershell::Loop(LoopStatus::OneTurn)) => {
+                        if node.kind() == "statement_block" {
+                            self.statement_block_tab.pop();
+                        } else {
+                            return Ok(false);
+                        }
                     }
                     _ => (),
                 },
