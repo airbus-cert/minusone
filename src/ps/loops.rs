@@ -66,11 +66,11 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
-        if matches!(node.view().kind(), "while_statement" | "for_statement") {
-            if node.start_transaction().is_ok() {
-                // Save the loop id to close the transaction
-                self.loop_id = Some(node.id());
-            }
+        if matches!(node.view().kind(), "while_statement" | "for_statement")
+            && node.start_transaction().is_ok()
+        {
+            // Save the loop id to close the transaction
+            self.loop_id = Some(node.id());
         }
 
         Ok(())
@@ -161,7 +161,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .unwrap()
                     .iter()
                     .skip_while(|n| n.id() != view.id())
-                    .map(|n| n.id().clone())
+                    .map(|n| n.id())
                     .collect();
                 for id in following_children_ids {
                     node.set_by_node_id(id, Powershell::DeadCode);
@@ -184,7 +184,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                 if let Some(iterator_variable) = self
                     .iterators
                     .iter_mut()
-                    .find(|n| n.name == view.text().unwrap().to_string())
+                    .find(|n| n.name == view.text().unwrap())
                 {
                     iterator_variable.references.push(node.id());
                 }

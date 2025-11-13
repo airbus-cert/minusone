@@ -5,7 +5,6 @@ use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
-use std::any::Any;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Add;
 
