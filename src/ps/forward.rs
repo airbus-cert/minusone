@@ -1,6 +1,6 @@
 use crate::error::{Error, MinusOneResult};
 use crate::ps::Powershell;
-use crate::ps::Powershell::DeadCode;
+use crate::ps::Powershell::Null;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 
@@ -92,7 +92,7 @@ impl<'a> RuleMut<'a> for Forward {
                     }
                 } else {
                     // an empty subexpression is considering as null output
-                    node.reduce(DeadCode)
+                    node.reduce(Null)
                 }
             }
             "parenthesized_expression" => {
