@@ -1,5 +1,3 @@
-use std::process::id;
-
 use crate::{
     ps::{
         LoopStatus::{Dead, Inifite, OneTurn},
@@ -107,6 +105,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 /// # Example
 /// ```
 /// use minusone::tree::{HashMapStorage, Tree};
+/// use minusone::engine::CleanEngine;
 /// use minusone::ps::build_powershell_tree;
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::forward::Forward;
@@ -125,8 +124,9 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 ///
 /// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
+/// let clean = CleanEngine::from_powershell(&ps_litter_view.output).unwrap().clean().unwrap();
 ///
-/// assert_eq!(ps_litter_view.output, "42");
+/// assert_eq!(clean.trim(), "42");
 /// ```
 #[derive(Default)]
 pub struct ForStatementFlowControl {
@@ -144,7 +144,14 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
         if matches!(node.view().kind(), "while_statement" | "for_statement") {
-            self.loop_id = Some(node.id());
+            if self.loop_id.is_none() {
+                self.loop_id = Some(node.id());
+            } else {
+                // We don't support nested loops
+                self.loop_id = None;
+                self.iterators.clear();
+                self.statment_count = 0;
+            }
         }
 
         Ok(())
@@ -162,12 +169,14 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                 self.iterators.clear();
                 self.statment_count = 0;
             }
-            // Track control flow statments
             "flow_control_statement" => {
-                // TODO: Review control flow count if we are in imbricated loops
-                self.statment_count += 1;
+                // Update the statement count only if in followed loop
+                // Skip in nested loops
+                if self.loop_id.is_some() {
+                    self.statment_count += 1;
+                }
 
-                // Infer dead code afer flow control in a loop
+                // Infer dead code afer flow control in a loop, even in nested ones
                 let following_children_ids: Vec<usize> = view
                     .parent()
                     .unwrap()
@@ -180,7 +189,12 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                 }
             }
             "assignment_expression"
-                if view.get_parent_of_types(vec!["for_initializer"]).is_some() =>
+                if view.get_parent_of_types(vec!["for_initializer"]).is_some()
+                    && self.loop_id.is_some()
+                    && view
+                        .get_parent_of_types(vec!["for_statement"])
+                        .map(|n| n.id())
+                        == self.loop_id =>
             {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
                     if let Some(Powershell::Raw(value)) = right.data() {
@@ -203,6 +217,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
             "statement_block" => {
                 let parent = view.parent().unwrap();
                 if matches!(parent.kind(), "while_statement" | "for_statement")
+                    && self.loop_id == Some(parent.id())
                     && parent.data().is_none()
                     && self.statment_count == 1
                 {

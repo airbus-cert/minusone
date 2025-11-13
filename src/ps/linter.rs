@@ -229,7 +229,7 @@ impl<'a> Rule<'a> for Linter {
                     Some(&Powershell::Loop(LoopStatus::OneTurn)) => {
                         if node.kind() == "statement_block" {
                             self.statement_block_tab.pop();
-                        } else {
+                        } else if node.kind() != "for_initializer" {
                             return Ok(false);
                         }
                     }
