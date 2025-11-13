@@ -1,3 +1,5 @@
+use std::process::id;
+
 use crate::{
     ps::{
         LoopStatus::{Dead, Inifite, OneTurn},
@@ -128,8 +130,9 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 /// ```
 #[derive(Default)]
 pub struct ForStatementFlowControl {
-    statment_count: u32,
     iterators: Vec<IteratorVariable>,
+    loop_id: Option<usize>,
+    statment_count: u32,
 }
 
 impl<'a> RuleMut<'a> for ForStatementFlowControl {
@@ -137,9 +140,13 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
     fn enter(
         &mut self,
-        _node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        node: &mut crate::tree::NodeMut<'a, Self::Language>,
         _flow: crate::tree::ControlFlow,
     ) -> crate::error::MinusOneResult<()> {
+        if matches!(node.view().kind(), "while_statement" | "for_statement") {
+            self.loop_id = Some(node.id());
+        }
+
         Ok(())
     }
 
@@ -150,6 +157,11 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
     ) -> crate::error::MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
+            "for_statement" | "while_statement" if self.loop_id == Some(view.id()) => {
+                self.loop_id = None;
+                self.iterators.clear();
+                self.statment_count = 0;
+            }
             // Track control flow statments
             "flow_control_statement" => {
                 // TODO: Review control flow count if we are in imbricated loops
@@ -179,7 +191,6 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     }
                 }
             }
-
             "variable" => {
                 if let Some(iterator_variable) = self
                     .iterators
@@ -189,23 +200,21 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     iterator_variable.references.push(node.id());
                 }
             }
-            "for_statement" => {
-                if view.data().is_none() && self.statment_count == 1 {
-                    if let Some(statement_list) = view
-                        .child(8)
-                        .filter(|n| n.kind() == "statement_block")
-                        .and_then(|n| n.named_child("statement_list"))
-                    {
+            "statement_block" => {
+                let parent = view.parent().unwrap();
+                if matches!(parent.kind(), "while_statement" | "for_statement")
+                    && parent.data().is_none()
+                    && self.statment_count == 1
+                {
+                    if let Some(statement_list) = view.named_child("statement_list") {
                         let mut iter = statement_list
                             .iter()
                             .skip_while(|n| n.kind() != "flow_control_statement");
 
                         match iter.next().map(|n| n.smallest_child().kind()) {
                             Some("break" | "return" | "exit" | "throw") => {
-                                node.set(Loop(OneTurn));
+                                node.set_by_node_id(parent.id(), Loop(OneTurn));
 
-                                // TODO: What if we set the node but it was after the break and was Some(Null)
-                                // ex: for ($i = 0; $true;) {$i; break; $i} should give "0" but gives "0\n0" currently
                                 self.iterators.iter().for_each(|it| {
                                     it.references.iter().for_each(|&id| {
                                         node.set_by_node_id(id, Powershell::Raw(it.value.clone()))
