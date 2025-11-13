@@ -211,8 +211,8 @@ impl<'a> RuleMut<'a> for CastNull {
         if view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
                 match (operator.text()?.to_lowercase().as_str(), expression.data()) {
-                    ("+", Some(Powershell::DeadCode)) => node.set(Raw(Num(0))),
-                    ("-", Some(Powershell::DeadCode)) => node.set(Raw(Num(0))),
+                    ("+", Some(Powershell::Null)) => node.set(Raw(Num(0))),
+                    ("-", Some(Powershell::Null)) => node.set(Raw(Num(0))),
                     _ => (),
                 }
             }

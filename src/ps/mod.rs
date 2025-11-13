@@ -105,6 +105,7 @@ pub enum Powershell {
     Array(Vec<Value>),
     PSItem(Vec<Value>),
     DeadCode,
+    Null,
     HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type
