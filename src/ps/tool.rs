@@ -1,3 +1,5 @@
+use crate::{ps::Powershell, tree::Node};
+
 pub trait StringTool {
     fn remove_tilt(self) -> Self;
     fn remove_quote(self) -> Self;
@@ -30,5 +32,39 @@ impl StringTool for String {
 
     fn normalize(self) -> Self {
         self.to_lowercase().remove_tilt().remove_quote()
+    }
+}
+
+pub trait CommandTool<'a> {
+    fn is_command(&self) -> bool;
+    fn get_command_name(&self) -> String;
+    fn get_command_args(&self) -> Vec<Node<'a, Powershell>>;
+    fn get_command_params(&self) -> Vec<Node<'a, Powershell>>;
+}
+
+impl<'a> CommandTool<'a> for Node<'a, Powershell> {
+    fn is_command(&self) -> bool {
+        self.kind() == "command"
+    }
+
+    fn get_command_name(&self) -> String {
+        self.child(0).unwrap().text().unwrap().to_owned()
+    }
+
+    fn get_command_args(&self) -> Vec<Node<'a, Powershell>> {
+        self.child(1)
+            .unwrap()
+            .iter()
+            .filter(|n| n.kind() != "command_argument_sep" && n.kind() != "command_parameter")
+            .collect()
+    }
+
+    fn get_command_params(&self) -> Vec<Node<'a, Powershell>> {
+        self.child(1)
+            .unwrap()
+            .iter()
+            .skip(1)
+            .filter(|n| n.kind() == "command_parameter")
+            .collect()
     }
 }

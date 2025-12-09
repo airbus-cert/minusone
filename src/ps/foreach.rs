@@ -1,4 +1,5 @@
 use crate::error::{Error, MinusOneResult};
+use crate::ps::tool::CommandTool;
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, PSItem, Raw};
 use crate::rule::RuleMut;
@@ -84,20 +85,25 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
             if let Some(script_block_expression) =
                 view.get_parent_of_types(vec!["script_block_expression"])
             {
-                if let Some(foreach_command) =
-                    script_block_expression.get_parent_of_types(vec!["foreach_command"])
+                if let Some(command) = script_block_expression.get_parent_of_types(vec!["command"])
                 {
-                    if let Some(previous) = find_previous_expr(&foreach_command.parent().unwrap())?
-                    {
-                        // the previous in the pipeline
-                        match previous.data() {
-                            Some(Array(values)) => {
-                                node.set(PSItem(values.clone()));
+                    if let Some(command_name) = command.child(0) {
+                        if matches!(
+                            command_name.text().unwrap(),
+                            "foreach" | "%" | "foreach-object"
+                        ) {
+                            if let Some(previous) = find_previous_expr(&command)? {
+                                // the previous in the pipeline
+                                match previous.data() {
+                                    Some(Array(values)) => {
+                                        node.set(PSItem(values.clone()));
+                                    }
+                                    Some(Raw(value)) => {
+                                        node.set(PSItem(vec![value.clone()]));
+                                    }
+                                    _ => (),
+                                }
                             }
-                            Some(Raw(value)) => {
-                                node.set(PSItem(vec![value.clone()]));
-                            }
-                            _ => (),
                         }
                     }
                 }
@@ -163,60 +169,66 @@ impl<'a> RuleMut<'a> for ForEach {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "foreach_command"
-            && view.child_count() == 2
-            && view.child(1).unwrap().kind() == "script_block_expression"
-        {
-            let script_block_expression = view.child(1).unwrap();
-            if let Some(previous_command) = find_previous_expr(&view.parent().unwrap())? {
-                // if the previous pipeline was inferred as an array
-                let mut previous_values = Vec::new();
-                match previous_command.data() {
-                    Some(Array(values)) => previous_values.extend(values.clone()),
-                    // array of size 1
-                    Some(Raw(value)) => previous_values.push(value.clone()),
-                    _ => (),
-                }
-                let script_block_body = script_block_expression
-                    .child(1)
-                    .ok_or(Error::invalid_child())? // script_block node
-                    .named_child("script_block_body");
+        if view.is_command() {
+            let args = view.get_command_args();
+            if matches!(
+                view.get_command_name().as_str(),
+                "foreach" | "foreach-object" | "%"
+            ) && args.len() == 1
+            {
+                let script_block_expression = args[0].smallest_child();
+                if script_block_expression.kind() == "script_block_expression" {
+                    if let Some(previous_command) = find_previous_expr(&view)? {
+                        // if the previous pipeline was inferred as an array
+                        let mut previous_values = Vec::new();
+                        match previous_command.data() {
+                            Some(Array(values)) => previous_values.extend(values.clone()),
+                            // array of size 1
+                            Some(Raw(value)) => previous_values.push(value.clone()),
+                            _ => (),
+                        }
+                        let script_block_body = script_block_expression
+                            .child(1)
+                            .ok_or(Error::invalid_child())? // script_block node
+                            .named_child("script_block_body");
 
-                if let Some(script_block_body_node) = script_block_body {
-                    if let Some(statement_list) =
-                        script_block_body_node.named_child("statement_list")
-                    {
-                        // determine the number of loop
-                        // by looping over the size of the array
+                        if let Some(script_block_body_node) = script_block_body {
+                            if let Some(statement_list) =
+                                script_block_body_node.named_child("statement_list")
+                            {
+                                // determine the number of loop
+                                // by looping over the size of the array
 
-                        let mut result = Vec::new();
-                        for i in 0..previous_values.len() {
-                            for child_statement in statement_list.iter() {
-                                if child_statement.kind() == "empty_statement" {
-                                    continue;
-                                }
+                                let mut result = Vec::new();
+                                for i in 0..previous_values.len() {
+                                    for child_statement in statement_list.iter() {
+                                        if child_statement.kind() == "empty_statement" {
+                                            continue;
+                                        }
 
-                                match child_statement.data() {
-                                    Some(PSItem(values)) => {
-                                        result.push(values[i].clone());
-                                    }
-                                    Some(Raw(r)) => {
-                                        result.push(r.clone());
-                                    }
-                                    Some(Array(array_value)) => {
-                                        for v in array_value {
-                                            result.push(v.clone());
+                                        match child_statement.data() {
+                                            Some(PSItem(values)) => {
+                                                result.push(values[i].clone());
+                                            }
+                                            Some(Raw(r)) => {
+                                                result.push(r.clone());
+                                            }
+                                            Some(Array(array_value)) => {
+                                                for v in array_value {
+                                                    result.push(v.clone());
+                                                }
+                                            }
+                                            _ => {
+                                                // stop inferring we have not enough infos
+                                                return Ok(());
+                                            }
                                         }
                                     }
-                                    _ => {
-                                        // stop inferring we have not enough infos
-                                        return Ok(());
-                                    }
+                                }
+                                if !result.is_empty() {
+                                    node.set(Array(result));
                                 }
                             }
-                        }
-                        if !result.is_empty() {
-                            node.set(Array(result));
                         }
                     }
                 }

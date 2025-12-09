@@ -743,6 +743,8 @@ mod test {
                 .child(1)
                 .unwrap() // pipeline
                 .child(0)
+                .unwrap() // pipeline chain
+                .child(0)
                 .unwrap() //command
                 .child(1)
                 .unwrap() // command_elements
@@ -780,6 +782,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(1)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -848,6 +852,8 @@ mod test {
                 .child(2)
                 .unwrap() // pipeline
                 .child(0)
+                .unwrap() // pipeline chain
+                .child(0)
                 .unwrap() //command
                 .child(1)
                 .unwrap() // command_elements
@@ -892,6 +898,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -938,6 +946,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -987,6 +997,8 @@ mod test {
                 .child(2)
                 .unwrap() // pipeline
                 .child(0)
+                .unwrap() // pipeline chain
+                .child(0)
                 .unwrap() //command
                 .child(1)
                 .unwrap() // command_elements
@@ -1032,6 +1044,8 @@ mod test {
                 .child(2)
                 .unwrap() // pipeline
                 .child(0)
+                .unwrap() // pipeline chain
+                .child(0)
                 .unwrap() //command
                 .child(1)
                 .unwrap() // command_elements
@@ -1076,6 +1090,8 @@ mod test {
                 .child(2)
                 .unwrap() // pipeline
                 .child(0)
+                .unwrap() // pipeline chain
+                .child(0)
                 .unwrap() //command
                 .child(1)
                 .unwrap() // command_elements
@@ -1119,6 +1135,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -1167,6 +1185,8 @@ mod test {
                 .child(2)
                 .unwrap() // pipeline
                 .child(0)
+                .unwrap() // pipeline chain
+                .child(0)
                 .unwrap() //command
                 .child(1)
                 .unwrap() // command_elements
@@ -1213,6 +1233,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -2181,6 +2203,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(3)
                 .unwrap() // Write-Host pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() // Write-host command
                 .named_child("command_elements")

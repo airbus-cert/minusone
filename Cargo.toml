@@ -24,7 +24,7 @@ minusone-cli = ["clap"]
 
 [dependencies]
 tree-sitter = "0.25"
-tree-sitter-powershell = "0.25.9"
+tree-sitter-powershell = "0.25.10"
 clap = { version = "^2.33", optional = true }
 base64 = "0.21.5"
 num = "0.4.3"

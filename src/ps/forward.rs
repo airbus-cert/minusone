@@ -1,3 +1,5 @@
+use std::process::Child;
+
 use crate::error::{Error, MinusOneResult};
 use crate::ps::Powershell;
 use crate::ps::Powershell::Null;
@@ -103,23 +105,28 @@ impl<'a> RuleMut<'a> for Forward {
                 }
             }
 
-            // we infer pipeline type with the value of the last expression
-            "pipeline" => {
+            // we infer pipeline chain type with the value of the last expression
+            "pipeline_chain" => {
                 if let Some(expression) = view.child(view.child_count() - 1) {
                     if let Some(expression_data) = expression.data() {
                         node.set(expression_data.clone())
                     }
                 }
             }
-            "command" => {
-                if let Some(sub_command) = view.child(0) {
-                    if sub_command.kind() == "foreach_command" {
-                        if let Some(expression_data) = sub_command.data() {
-                            node.reduce(expression_data.clone())
+
+            // we infer pipeline only if there is one pipeline_chain child
+            "pipeline" => {
+                if view.child_count() == 1 {
+                    if let Some(child) = view.child(0) {
+                        if child.kind() == "pipeline_chain" {
+                            if let Some(expression_data) = child.data() {
+                                node.set(expression_data.clone())
+                            }
                         }
                     }
                 }
             }
+
             "type_literal" => {
                 if let Some(expression) = view.child(1) {
                     if let Some(expression_data) = expression.data() {
