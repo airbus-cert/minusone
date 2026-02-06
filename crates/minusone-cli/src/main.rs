@@ -23,6 +23,14 @@ fn main() {
                 .long("debug")
                 .help("Print the tree-sitter tree with inferred value on each node"),
         )
+        .arg(
+            Arg::with_name("ruleset")
+                .long("ruleset")
+                .short("r")
+                .multiple(true)
+                .takes_value(true)
+                .help("Custom comma separated list of rules to be applied for the deobfuscation"),
+        )
         .arg(Arg::with_name("time").long("time").help("Time computation"))
         .get_matches();
 
@@ -40,7 +48,19 @@ fn main() {
     match DeobfuscateEngine::remove_extra(&source) {
         Ok(remove_comment) => {
             let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).unwrap();
-            engine.deobfuscate().unwrap();
+
+            if matches.is_present("ruleset") {
+                let ruleset: Vec<String> = matches
+                    .values_of("ruleset")
+                    .unwrap()
+                    .map(str::to_lowercase)
+                    .collect();
+                engine
+                    .deobfuscate_with_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
+                    .unwrap();
+            } else {
+                engine.deobfuscate().unwrap();
+            }
 
             if matches.is_present("debug") {
                 engine.debug();
