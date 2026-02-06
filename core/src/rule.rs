@@ -25,6 +25,36 @@ pub trait Rule<'a> {
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()>;
 }
 
+pub struct RuleSet<'a, T> {
+    rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
+}
+
+impl<'a, T> RuleSet<'a, T> {
+    pub fn new(v: Vec<Box<dyn RuleMut<'a, Language = T>>>) -> Self {
+        Self { rules: v }
+    }
+}
+
+impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
+    type Language = T;
+
+    fn enter(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        self.rules.iter_mut().try_for_each(|r| r.enter(node, flow))
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        self.rules.iter_mut().try_for_each(|r| r.leave(node, flow))
+    }
+}
+
 macro_rules! impl_data {
     ( $($ty:ident),* ) => {
         impl<'a, Data, $($ty),*> RuleMut<'a> for ( $( $ty , )* )

@@ -1,9 +1,12 @@
+use tree_sitter::Language;
+
 use crate::debug::DebugView;
 use crate::error::MinusOneResult;
 use crate::init::Init;
-use crate::ps;
 use crate::ps::linter::RemoveUnusedVar;
+use crate::ps::{self, Powershell};
 use crate::ps::{build_powershell_tree_for_storage, remove_powershell_extra};
+use crate::rule::{RuleMut, RuleSet};
 use crate::tree::{EmptyStorage, HashMapStorage, Storage, Tree};
 
 pub struct Engine<'a, S: Storage> {
@@ -28,8 +31,18 @@ impl<'a> DeobfuscateEngine<'a> {
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
-        self.root
-            .apply_mut_with_strategy(&mut ps::RuleSet::init(), ps::strategy::PowershellStrategy)?;
+        self.root.apply_mut_with_strategy(
+            &mut ps::PowershellDefaultRuleSet::init(),
+            ps::strategy::PowershellStrategy,
+        )?;
+        Ok(())
+    }
+
+    pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
+        self.root.apply_mut_with_strategy(
+            &mut ps::PowershellRuleSet::from(ruleset),
+            ps::strategy::PowershellStrategy,
+        )?;
         Ok(())
     }
 
