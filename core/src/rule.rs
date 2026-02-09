@@ -35,6 +35,11 @@ impl<'a, T> RuleSet<'a, T> {
     }
 }
 
+pub enum RuleSetBuilderType<'a> {
+    WithRules(Vec<&'a str>),
+    WithoutRules(Vec<&'a str>),
+}
+
 impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
     type Language = T;
 

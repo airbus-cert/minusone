@@ -17,7 +17,7 @@ use crate::ps::string::{
 };
 use crate::ps::typing::ParseType;
 use crate::ps::var::{StaticVar, Var};
-use crate::rule::{RuleMut, RuleSet};
+use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -114,9 +114,52 @@ pub enum Powershell {
     Unknown,
 }
 
-/// This is the rule set use to perform
-/// inferred type in Powershell deobfuscation
-pub type PowershellDefaultRuleSet = (
+pub struct PowershellRuleSet<'a> {
+    ruleset: RuleSet<'a, Powershell>,
+}
+
+macro_rules! impl_get_ruleset {
+    ( $($ty:ident),* ) => {
+        /// This is the rule set use to perform
+        /// inferred type in Powershell deobfuscation
+        pub type PowershellDefaultRuleSet = ( $($ty,)* );
+
+        impl<'a> PowershellRuleSet<'a> {
+            pub fn new(ctx: RuleSetBuilderType) -> Self {
+                let full_ruleset: Vec<(&'a str, Box<dyn RuleMut<'a, Language = Powershell>>)> = vec![
+                    $(
+                        (stringify!($ty), Box::new($ty::default())),
+                    )*
+                ];
+
+                Self {
+                    ruleset : match ctx {
+                        RuleSetBuilderType::WithRules(r) => {
+                            RuleSet::new(
+                                full_ruleset
+                                    .into_iter()
+                                    .filter(|(name, _)| r.contains(name))
+                                    .map(|(_, rule)| rule)
+                                    .collect(),
+                            )
+                        },
+                        RuleSetBuilderType::WithoutRules(r) => {
+                            RuleSet::new(
+                                full_ruleset
+                                    .into_iter()
+                                    .filter(|(name, _)| !r.contains(name))
+                                    .map(|(_, rule)| rule)
+                                    .collect(),
+                            )
+                        },
+                    }
+                }
+            }
+        }
+    };
+}
+
+impl_get_ruleset!(
     Forward,      // Special rule that will forward inferred value in case the node is transparent
     ParseInt,     // Parse integer
     AddInt,       // +, - operations on integer
@@ -154,12 +197,8 @@ pub type PowershellDefaultRuleSet = (
     AccessArray,  // Handle static array element access
     AccessHashMap, // Handle hashmap access
     ForStatementCondition, // Infer for condition to remove fake loops
-    ForStatementFlowControl, // Simplify for statment based on flow control
+    ForStatementFlowControl  // Simplify for statment based on flow control
 );
-
-pub struct PowershellRuleSet<'a> {
-    ruleset: RuleSet<'a, Powershell>,
-}
 
 impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
     type Language = Powershell;
@@ -178,84 +217,6 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         flow: crate::tree::ControlFlow,
     ) -> MinusOneResult<()> {
         self.ruleset.leave(node, flow)
-    }
-}
-
-impl<'a> PowershellRuleSet<'a> {
-    fn get_available_rules() -> Vec<(&'a str, Box<dyn RuleMut<'a, Language = Powershell>>)> {
-        vec![
-            ("forward", Box::new(Forward::default())),
-            ("parseint", Box::new(ParseInt::default())),
-            ("addint", Box::new(AddInt::default())),
-            ("multint", Box::new(MultInt::default())),
-            ("parsestring", Box::new(ParseString::default())),
-            ("concatstring", Box::new(ConcatString::default())),
-            ("cast", Box::new(Cast::default())),
-            ("parsearrayliteral", Box::new(ParseArrayLiteral::default())),
-            ("parserange", Box::new(ParseRange::default())),
-            ("accessstring", Box::new(AccessString::default())),
-            ("joincomparison", Box::new(JoinComparison::default())),
-            ("joinstringmethod", Box::new(JoinStringMethod::default())),
-            ("joinoperator", Box::new(JoinOperator::default())),
-            ("psiteminferrator", Box::new(PSItemInferrator::default())),
-            ("foreach", Box::new(ForEach::default())),
-            (
-                "stringreplacemethod",
-                Box::new(StringReplaceMethod::default()),
-            ),
-            ("computearrayexpr", Box::new(ComputeArrayExpr::default())),
-            ("newobjectarray", Box::new(NewObjectArray::default())),
-            ("stringreplaceop", Box::new(StringReplaceOp::default())),
-            ("staticvar", Box::new(StaticVar::default())),
-            ("castnull", Box::new(CastNull::default())),
-            ("parsehash", Box::new(ParseHash::default())),
-            ("formatstring", Box::new(FormatString::default())),
-            ("parsebool", Box::new(ParseBool::default())),
-            ("comparison", Box::new(Comparison::default())),
-            ("not", Box::new(Not::default())),
-            ("parsetype", Box::new(ParseType::default())),
-            ("decodebase64", Box::new(DecodeBase64::default())),
-            ("fromutf", Box::new(FromUTF::default())),
-            ("length", Box::new(Length::default())),
-            ("boolalgebra", Box::new(BoolAlgebra::default())),
-            ("var", Box::new(Var::default())),
-            ("addarray", Box::new(AddArray::default())),
-            ("stringsplitmethod", Box::new(StringSplitMethod::default())),
-            ("accessarray", Box::new(AccessArray::default())),
-            ("accesshashmap", Box::new(AccessHashMap::default())),
-            (
-                "forstatementcondition",
-                Box::new(ForStatementCondition::default()),
-            ),
-            (
-                "forstatementflowcontrol",
-                Box::new(ForStatementFlowControl::default()),
-            ),
-        ]
-    }
-
-    pub fn from_ruleset(value: Vec<&str>) -> Self {
-        Self {
-            ruleset: RuleSet::new(
-                PowershellRuleSet::get_available_rules()
-                    .into_iter()
-                    .filter(|(name, _)| value.contains(name))
-                    .map(|(_, rule)| rule)
-                    .collect(),
-            ),
-        }
-    }
-
-    pub fn without_ruleset(value: Vec<&str>) -> Self {
-        Self {
-            ruleset: RuleSet::new(
-                PowershellRuleSet::get_available_rules()
-                    .into_iter()
-                    .filter(|(name, _)| !value.contains(name))
-                    .map(|(_, rule)| rule)
-                    .collect(),
-            ),
-        }
     }
 }
 
