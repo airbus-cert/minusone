@@ -21,7 +21,6 @@ use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
 use std::fmt::Display;
-use tree_sitter::Language;
 use tree_sitter_powershell::LANGUAGE as powershell_language;
 
 pub mod access;
