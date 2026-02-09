@@ -34,19 +34,33 @@ impl<'a, T> RuleSet<'a, T> {
         full_ruleset: Vec<(&'a str, Box<dyn RuleMut<'a, Language = T>>)>,
         ctx: RuleSetBuilderType,
     ) -> Self {
+        let (full_names, full_rules): (Vec<String>, Vec<Box<dyn RuleMut<'a, Language = T>>>) =
+            full_ruleset
+                .into_iter()
+                .map(|(n, r)| (n.to_lowercase(), r))
+                .unzip();
+
+        let low_input: Vec<String> = match &ctx {
+            RuleSetBuilderType::WithRules(r) | RuleSetBuilderType::WithoutRules(r) => {
+                r.iter().map(|s| s.to_lowercase()).collect()
+            }
+        };
+
+        if !low_input.iter().all(|s| full_names.contains(s)) {
+            // TODO: Do not panic + specify wrong rule
+            panic!("TODO: Unknown rule in {:?}", low_input);
+        }
+
         Self {
-            rules: match ctx {
-                RuleSetBuilderType::WithRules(r) => full_ruleset
-                    .into_iter()
-                    .filter(|(name, _)| r.contains(name))
-                    .map(|(_, rule)| rule)
-                    .collect(),
-                RuleSetBuilderType::WithoutRules(r) => full_ruleset
-                    .into_iter()
-                    .filter(|(name, _)| !r.contains(name))
-                    .map(|(_, rule)| rule)
-                    .collect(),
-            },
+            rules: full_names
+                .iter()
+                .zip(full_rules)
+                .filter(|(name, _)| match &ctx {
+                    RuleSetBuilderType::WithRules(_) => low_input.contains(name),
+                    RuleSetBuilderType::WithoutRules(_) => !low_input.contains(name),
+                })
+                .map(|(_, rule)| rule)
+                .collect(),
         }
     }
 }
