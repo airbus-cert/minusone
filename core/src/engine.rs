@@ -40,7 +40,15 @@ impl<'a> DeobfuscateEngine<'a> {
 
     pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
         self.root.apply_mut_with_strategy(
-            &mut ps::PowershellRuleSet::from(ruleset),
+            &mut ps::PowershellRuleSet::from_ruleset(ruleset),
+            ps::strategy::PowershellStrategy,
+        )?;
+        Ok(())
+    }
+
+    pub fn deobfuscate_without_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
+        self.root.apply_mut_with_strategy(
+            &mut ps::PowershellRuleSet::without_ruleset(ruleset),
             ps::strategy::PowershellStrategy,
         )?;
         Ok(())

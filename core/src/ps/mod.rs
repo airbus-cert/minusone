@@ -181,9 +181,9 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
     }
 }
 
-impl<'a> From<Vec<&str>> for PowershellRuleSet<'a> {
-    fn from(value: Vec<&str>) -> Self {
-        let available_rules: Vec<(&str, Box<dyn RuleMut<'a, Language = Powershell>>)> = vec![
+impl<'a> PowershellRuleSet<'a> {
+    fn get_available_rules() -> Vec<(&'a str, Box<dyn RuleMut<'a, Language = Powershell>>)> {
+        vec![
             ("forward", Box::new(Forward::default())),
             ("parseint", Box::new(ParseInt::default())),
             ("addint", Box::new(AddInt::default())),
@@ -231,13 +231,27 @@ impl<'a> From<Vec<&str>> for PowershellRuleSet<'a> {
                 "forstatementflowcontrol",
                 Box::new(ForStatementFlowControl::default()),
             ),
-        ];
+        ]
+    }
 
+    pub fn from_ruleset(value: Vec<&str>) -> Self {
         Self {
             ruleset: RuleSet::new(
-                available_rules
+                PowershellRuleSet::get_available_rules()
                     .into_iter()
                     .filter(|(name, _)| value.contains(name))
+                    .map(|(_, rule)| rule)
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn without_ruleset(value: Vec<&str>) -> Self {
+        Self {
+            ruleset: RuleSet::new(
+                PowershellRuleSet::get_available_rules()
+                    .into_iter()
+                    .filter(|(name, _)| !value.contains(name))
                     .map(|(_, rule)| rule)
                     .collect(),
             ),

@@ -24,12 +24,20 @@ fn main() {
                 .help("Print the tree-sitter tree with inferred value on each node"),
         )
         .arg(
-            Arg::with_name("ruleset")
-                .long("ruleset")
+            Arg::with_name("rules")
+                .long("rules")
                 .short("r")
                 .multiple(true)
                 .takes_value(true)
-                .help("Custom comma separated list of rules to be applied for the deobfuscation"),
+                .help("Custom comma separated list of rules to apply for the deobfuscation"),
+        )
+        .arg(
+            Arg::with_name("skip-rules")
+                .long("skip-rules")
+                .short("R")
+                .multiple(true)
+                .takes_value(true)
+                .help("Custom comma separated list of rules to skip for the deobfuscation"),
         )
         .arg(Arg::with_name("time").long("time").help("Time computation"))
         .get_matches();
@@ -49,14 +57,27 @@ fn main() {
         Ok(remove_comment) => {
             let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).unwrap();
 
-            if matches.is_present("ruleset") {
+            if matches.is_present("rules") {
+                // TODO: What if -r and -R specified
                 let ruleset: Vec<String> = matches
-                    .values_of("ruleset")
+                    .values_of("rules")
                     .unwrap()
                     .map(str::to_lowercase)
                     .collect();
                 engine
                     .deobfuscate_with_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
+                    .unwrap();
+            }
+            if matches.is_present("skip-rules") {
+                let skiped_rules: Vec<String> = matches
+                    .values_of("skip-rules")
+                    .unwrap()
+                    .map(str::to_lowercase)
+                    .collect();
+                engine
+                    .deobfuscate_without_custom_ruleset(
+                        skiped_rules.iter().map(AsRef::as_ref).collect(),
+                    )
                     .unwrap();
             } else {
                 engine.deobfuscate().unwrap();
