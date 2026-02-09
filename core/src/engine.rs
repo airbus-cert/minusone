@@ -1,12 +1,10 @@
-use tree_sitter::Language;
-
 use crate::debug::DebugView;
 use crate::error::MinusOneResult;
 use crate::init::Init;
+use crate::ps;
 use crate::ps::linter::RemoveUnusedVar;
-use crate::ps::{self, Powershell};
 use crate::ps::{build_powershell_tree_for_storage, remove_powershell_extra};
-use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
+use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Storage, Tree};
 
 pub struct Engine<'a, S: Storage> {
