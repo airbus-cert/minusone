@@ -117,7 +117,7 @@ pub struct PowershellRuleSet<'a> {
     ruleset: RuleSet<'a, Powershell>,
 }
 
-macro_rules! impl_get_ruleset {
+macro_rules! impl_powershell_ruleset {
     ( $($ty:ident),* ) => {
         /// This is the rule set use to perform
         /// inferred type in Powershell deobfuscation
@@ -138,7 +138,7 @@ macro_rules! impl_get_ruleset {
     };
 }
 
-impl_get_ruleset!(
+impl_powershell_ruleset!(
     Forward,      // Special rule that will forward inferred value in case the node is transparent
     ParseInt,     // Parse integer
     AddInt,       // +, - operations on integer

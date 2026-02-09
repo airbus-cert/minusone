@@ -191,51 +191,62 @@ ps_linter_view.print(&tree.root().unwrap()).unwrap();
 ```
 
 ## Rules for Powershell
+### Static ruleset
 
 When using the `Engine` object, you will automatically use predefined rules designed for Powershell. These can be found in [src/ps/mod.rs](src/ps/mod.rs) :
 
 ```rust
-pub type RuleSet = (
-    Forward,                    // Special rule that will forward inferred value in case the node is transparent
-    ParseInt,                   // Parse integer
-    AddInt,                     // +, - operations on integer
-    MultInt,                    // *, / operations on integer
-    ParseString,                // Parse string token, including multiline strings
-    ConcatString,               // String concatenation operation
-    Cast,                       // cast operation, like [char]0x65
-    ParseArrayLiteral,          // It will parse array declared using separate value (integer or string) by a comma
-    ParseRange,                 // It will parse .. operator and generate an array
-    AccessString,               // The access operator [] apply to a string : "foo"[0] => "f"
-    JoinComparison,             // It will infer join string operation using the -join operator : @('a', 'b', 'c') -join '' => "abc"
-    JoinStringMethod,           // It will infer join string operation using the [string]::join method : [string]::join('', @('a', 'b', 'c'))
-    JoinOperator,               // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
-    PSItemInferrator,           // PsItem is used to inferred commandlet pattern like % { [char] $_ }
-    ForEach,                    // It will used PSItem rules to inferred foreach-object command
-    StringReplaceMethod,        // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
-    ComputeArrayExpr,           // It will infer array that start with @
-    NewObjectArray              // It will infer arrays created via New-Object
-    StringReplaceOp,            // It will infer replace method apply to a string by using the -replace operator
-    StaticVar,                  // It will infer value of known variable : $pshome, $shellid
-    CastNull,                   // It will infer value of +$() or -$() which will produce 0
-    ParseHash,                  // Parse hashtable
-    FormatString,               // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
-    ParseBool,                  // It will infer boolean operator
-    Comparison,                 // It will infer comparison when it's possible
-    Not,                        // It will infer the ! operator
-    ParseType,                  // Parse type
-    DecodeBase64,               // Decode calls to FromBase64
-    FromUTF,                    // Decode calls to FromUTF{8,16}.GetText
-    Length,                     // Decode attribute length of string and array
-    BoolAlgebra,                // Add support to boolean algebra (or and)
-    Var,                        // Variable replacement in case of predictable flow
-    AddArray,                   // Array concat using +, operator
-    StringSplitMethod,          // Handle split method
-    AccessArray,                // Handle static array element access
-    AccessHashMap,              // Handle hashmap access
-    ForStatementCondition,      // Infer for condition to remove fake loops
-    ForStatementFlowControl,    // Simplify for statment based on flow control        // Variable replacement in case of predictable flow
+impl_powershell_ruleset!(
+    Forward,      // Special rule that will forward inferred value in case the node is transparent
+    ParseInt,     // Parse integer
+    AddInt,       // +, - operations on integer
+    MultInt,      // *, / operations on integer
+    ParseString,  // Parse string token, including multiline strings
+    ConcatString, // String concatenation operation
+    Cast,         // cast operation, like [char]0x65
+    ParseArrayLiteral, // It will parse array declared using separate value (integer or string) by a comma
+    ParseRange,        // It will parse .. operator and generate an array
+    AccessString,      // The access operator [] apply to a string : "foo"[0] => "f"
+    JoinComparison, // It will infer join string operation using the -join operator : @('a', 'b', 'c') -join '' => "abc"
+    JoinStringMethod, // It will infer join string operation using the [string]::join method : [string]::join('', @('a', 'b', 'c'))
+    JoinOperator, // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
+    PSItemInferrator, // PsItem is used to inferred commandlet pattern like % { [char] $_ }
+    ForEach,      // It will used PSItem rules to inferred foreach-object command
+    StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
+    ComputeArrayExpr,    // It will infer array that start with @
+    NewObjectArray,      // Infers arrays constructed via New-Object cmdlet
+    StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
+    StaticVar,       // It will infer value of known variable : $pshome, $shellid
+    CastNull,        // It will infer value of +$() or -$() which will produce 0
+    ParseHash,       // Parse hashtable
+    FormatString, // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
+    ParseBool,    // It will infer boolean operator
+    Comparison,   // It will infer comparison when it's possible
+    Not,          // It will infer the ! operator
+    ParseType,    // Parse type
+    DecodeBase64, // Decode calls to FromBase64
+    FromUTF,      // Decode calls to FromUTF{8,16}.GetText
+    Length,       // Decode attribute length of string and array
+    BoolAlgebra,  // Add support to boolean algebra (or and)
+    Var,          // Variable replacement in case of predictable flow
+    AddArray,     // Array concat using +, operator
+    StringSplitMethod, // Handle split method
+    AccessArray,  // Handle static array element access
+    AccessHashMap, // Handle hashmap access
+    ForStatementCondition, // Infer for condition to remove fake loops
+    ForStatementFlowControl  // Simplify for statment based on flow control
 );
 ```
+
+By default, if you choose to use the full deobfuscation ruleset of a language, `minusone` will use a static implementation.
+It allows to declare the `PowershellDefaultRuleSet` type as a tuple of types implementing `RuleMut`.
+Thanks to the `impl_data` macro, this type will also implement `RuleMut`, allowing to pass it to the deobfuscation engine.
+
+### Dynamic ruleset
+
+`minusone` provides the ability to select dynamically which rules to use at execution time by using the `-r` and `-R` flags to respectively include or exclude a rule.
+The rule names or case insensitive.
+Under the hood, the engine will create a ruleset with a vector of all available rules, and then filter out those that will not be used.
 
 ## Roadmap
 
