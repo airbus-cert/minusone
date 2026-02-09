@@ -30,8 +30,24 @@ pub struct RuleSet<'a, T> {
 }
 
 impl<'a, T> RuleSet<'a, T> {
-    pub fn new(v: Vec<Box<dyn RuleMut<'a, Language = T>>>) -> Self {
-        Self { rules: v }
+    pub fn new(
+        full_ruleset: Vec<(&'a str, Box<dyn RuleMut<'a, Language = T>>)>,
+        ctx: RuleSetBuilderType,
+    ) -> Self {
+        Self {
+            rules: match ctx {
+                RuleSetBuilderType::WithRules(r) => full_ruleset
+                    .into_iter()
+                    .filter(|(name, _)| r.contains(name))
+                    .map(|(_, rule)| rule)
+                    .collect(),
+                RuleSetBuilderType::WithoutRules(r) => full_ruleset
+                    .into_iter()
+                    .filter(|(name, _)| !r.contains(name))
+                    .map(|(_, rule)| rule)
+                    .collect(),
+            },
+        }
     }
 }
 

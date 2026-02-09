@@ -126,33 +126,13 @@ macro_rules! impl_get_ruleset {
 
         impl<'a> PowershellRuleSet<'a> {
             pub fn new(ctx: RuleSetBuilderType) -> Self {
-                let full_ruleset: Vec<(&'a str, Box<dyn RuleMut<'a, Language = Powershell>>)> = vec![
-                    $(
-                        (stringify!($ty), Box::new($ty::default())),
-                    )*
-                ];
-
                 Self {
-                    ruleset : match ctx {
-                        RuleSetBuilderType::WithRules(r) => {
-                            RuleSet::new(
-                                full_ruleset
-                                    .into_iter()
-                                    .filter(|(name, _)| r.contains(name))
-                                    .map(|(_, rule)| rule)
-                                    .collect(),
-                            )
-                        },
-                        RuleSetBuilderType::WithoutRules(r) => {
-                            RuleSet::new(
-                                full_ruleset
-                                    .into_iter()
-                                    .filter(|(name, _)| !r.contains(name))
-                                    .map(|(_, rule)| rule)
-                                    .collect(),
-                            )
-                        },
-                    }
+                    ruleset: RuleSet::new(
+                        vec![
+                            $( (stringify!($ty), Box::new($ty::default())), )*
+                        ],
+                        ctx
+                    )
                 }
             }
         }
