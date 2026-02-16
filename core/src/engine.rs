@@ -52,6 +52,10 @@ impl<'a> DeobfuscateEngine<'a> {
         Ok(())
     }
 
+    pub fn language_rules() -> Vec<&'a str> {
+        ps::PowershellRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])).names()
+    }
+
     pub fn lint(&mut self) -> MinusOneResult<String> {
         let mut ps_litter_view = ps::linter::Linter::default();
         self.root.apply(&mut ps_litter_view)?;

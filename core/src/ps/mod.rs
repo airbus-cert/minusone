@@ -134,6 +134,11 @@ macro_rules! impl_powershell_ruleset {
                     )
                 }
             }
+
+            pub fn names(self) -> Vec<&'a str> {
+                vec![ $( stringify!($ty), )* ]
+            }
+
         }
     };
 }
