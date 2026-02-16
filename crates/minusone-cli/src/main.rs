@@ -24,6 +24,12 @@ fn main() {
                 .help("Print the tree-sitter tree with inferred value on each node"),
         )
         .arg(
+            Arg::with_name("list")
+                .long("list")
+                .short("l")
+                .help("List rules available for a language"),
+        )
+        .arg(
             Arg::with_name("rules")
                 .long("rules")
                 .short("r")
@@ -44,6 +50,18 @@ fn main() {
 
     use std::time::Instant;
     let now = Instant::now();
+
+    if matches.is_present("list") {
+        println!(
+            "Available rules:\n{}",
+            DeobfuscateEngine::language_rules()
+                .into_iter()
+                .map(|s| format!("- {}", s))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        process::exit(0);
+    }
 
     let source = fs::read_to_string(
         matches
