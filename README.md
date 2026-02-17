@@ -9,8 +9,12 @@ Reverse operation of script obfuscation
 ## Usage
 
 MinusOne is written in Rust and can be built, deployed or executed through the Cargo package manager:
-```
-cargo run -- --path test.ps1
+```bash
+cargo run -- --path test.ps1                    # Run default ruleset
+cargo run -- --path test.ps1 --debug            # Run debug mode to print the inferred tree
+cargo run -- --list                             # List available rule
+cargo run -- --path test.ps1 -r forward,addint  # Only use Forward and AddInt
+cargo run -- --path test.ps1 -R foreach         # Do not use foreach rule
 ```
 
 By default, cargo will build the minusone library and run the minusone-cli binary.
