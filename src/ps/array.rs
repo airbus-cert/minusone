@@ -661,6 +661,8 @@ mod test {
                 .unwrap()
                 .child(0)
                 .unwrap()
+                .child(0)
+                .unwrap()
                 .data()
                 .expect("Inferred data"),
             Array(vec![Num(0); 16]),

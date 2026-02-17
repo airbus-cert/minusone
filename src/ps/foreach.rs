@@ -7,10 +7,10 @@ use crate::tree::{ControlFlow, Node, NodeMut};
 fn find_previous_expr<'a>(
     command: &Node<'a, Powershell>,
 ) -> MinusOneResult<Option<Node<'a, Powershell>>> {
-    let pipeline = command.parent().ok_or(Error::invalid_child())?;
+    let pipeline_chain = command.parent().ok_or(Error::invalid_child())?;
     // find in the pipeline at which index i am
     let mut index = 0;
-    for pipeline_element in pipeline.range(Some(0), None, Some(2)) {
+    for pipeline_element in pipeline_chain.range(Some(0), None, Some(2)) {
         if &pipeline_element == command {
             break;
         }
@@ -20,8 +20,16 @@ fn find_previous_expr<'a>(
     if index < 2 {
         Ok(None)
     } else {
-        Ok(pipeline.child(index - 2))
+        Ok(pipeline_chain.child(index - 2))
     }
+}
+
+fn is_foreach_command<'a>(command: &Node<'a, Powershell>) -> bool {
+    command.kind() == "command"
+        && match command.named_child("command_name") {
+            Some(n) => matches!(n.text().unwrap(), "foreach-object" | "foreach" | "%"),
+            _ => false,
+        }
 }
 
 /// This rule will stop on the special var $_
@@ -85,19 +93,20 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
                 view.get_parent_of_types(vec!["script_block_expression"])
             {
                 if let Some(foreach_command) =
-                    script_block_expression.get_parent_of_types(vec!["foreach_command"])
+                    script_block_expression.get_parent_of_types(vec!["command"])
                 {
-                    if let Some(previous) = find_previous_expr(&foreach_command.parent().unwrap())?
-                    {
-                        // the previous in the pipeline
-                        match previous.data() {
-                            Some(Array(values)) => {
-                                node.set(PSItem(values.clone()));
+                    if is_foreach_command(&foreach_command) {
+                        if let Some(previous) = find_previous_expr(&foreach_command)? {
+                            // the previous in the pipeline
+                            match previous.data() {
+                                Some(Array(values)) => {
+                                    node.set(PSItem(values.clone()));
+                                }
+                                Some(Raw(value)) => {
+                                    node.set(PSItem(vec![value.clone()]));
+                                }
+                                _ => (),
                             }
-                            Some(Raw(value)) => {
-                                node.set(PSItem(vec![value.clone()]));
-                            }
-                            _ => (),
                         }
                     }
                 }
@@ -108,7 +117,7 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
     }
 }
 
-/// This rule will infer the foreach command by it self
+/// This rule will infer the foreach command by itself
 ///
 /// # Example
 /// ```
@@ -163,60 +172,64 @@ impl<'a> RuleMut<'a> for ForEach {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "foreach_command"
-            && view.child_count() == 2
-            && view.child(1).unwrap().kind() == "script_block_expression"
-        {
-            let script_block_expression = view.child(1).unwrap();
-            if let Some(previous_command) = find_previous_expr(&view.parent().unwrap())? {
-                // if the previous pipeline was inferred as an array
-                let mut previous_values = Vec::new();
-                match previous_command.data() {
-                    Some(Array(values)) => previous_values.extend(values.clone()),
-                    // array of size 1
-                    Some(Raw(value)) => previous_values.push(value.clone()),
-                    _ => (),
-                }
-                let script_block_body = script_block_expression
-                    .child(1)
-                    .ok_or(Error::invalid_child())? // script_block node
-                    .named_child("script_block_body");
+        if is_foreach_command(&view) {
+            if let Some(script_block_expression) = view
+                .named_child("command_elements")
+                .and_then(|n| n.child(1))
+                .map(|n| n.smallest_child())
+            {
+                if script_block_expression.kind() == "script_block_expression" {
+                    if let Some(previous_command) = find_previous_expr(&view)? {
+                        // if the previous pipeline was inferred as an array
+                        let mut previous_values = Vec::new();
+                        match previous_command.data() {
+                            Some(Array(values)) => previous_values.extend(values.clone()),
+                            // array of size 1
+                            Some(Raw(value)) => previous_values.push(value.clone()),
+                            _ => (),
+                        }
+                        let script_block_body = script_block_expression
+                            .child(1)
+                            .ok_or(Error::invalid_child())? // script_block node
+                            .named_child("script_block_body");
 
-                if let Some(script_block_body_node) = script_block_body {
-                    if let Some(statement_list) =
-                        script_block_body_node.named_child("statement_list")
-                    {
-                        // determine the number of loop
-                        // by looping over the size of the array
+                        if let Some(script_block_body_node) = script_block_body {
+                            if let Some(statement_list) =
+                                script_block_body_node.named_child("statement_list")
+                            {
+                                // determine the number of loop
+                                // by looping over the size of the array
 
-                        let mut result = Vec::new();
-                        for i in 0..previous_values.len() {
-                            for child_statement in statement_list.iter() {
-                                if child_statement.kind() == "empty_statement" {
-                                    continue;
-                                }
+                                let mut result = Vec::new();
+                                for i in 0..previous_values.len() {
+                                    for child_statement in statement_list.iter() {
+                                        if child_statement.kind() == "empty_statement" {
+                                            continue;
+                                        }
 
-                                match child_statement.data() {
-                                    Some(PSItem(values)) => {
-                                        result.push(values[i].clone());
-                                    }
-                                    Some(Raw(r)) => {
-                                        result.push(r.clone());
-                                    }
-                                    Some(Array(array_value)) => {
-                                        for v in array_value {
-                                            result.push(v.clone());
+                                        match child_statement.data() {
+                                            Some(PSItem(values)) => {
+                                                result.push(values[i].clone());
+                                            }
+                                            Some(Raw(r)) => {
+                                                result.push(r.clone());
+                                            }
+                                            Some(Array(array_value)) => {
+                                                for v in array_value {
+                                                    result.push(v.clone());
+                                                }
+                                            }
+                                            _ => {
+                                                // stop inferring we have not enough infos
+                                                return Ok(());
+                                            }
                                         }
                                     }
-                                    _ => {
-                                        // stop inferring we have not enough infos
-                                        return Ok(());
-                                    }
+                                }
+                                if !result.is_empty() {
+                                    node.set(Array(result));
                                 }
                             }
-                        }
-                        if !result.is_empty() {
-                            node.set(Array(result));
                         }
                     }
                 }
