@@ -63,6 +63,11 @@ fn main() {
         process::exit(0);
     }
 
+    if matches.is_present("rules") && matches.is_present("skip-rules") {
+        eprintln!("ERROR: Cannot use --rules and --skip-rules at the same time");
+        process::exit(1);
+    }
+
     let source = fs::read_to_string(
         matches
             .value_of("path")
