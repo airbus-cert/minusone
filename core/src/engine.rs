@@ -17,6 +17,7 @@ impl<'a> DeobfuscateEngine<'a> {
     pub fn remove_extra(src: &'a str) -> MinusOneResult<String> {
         remove_powershell_extra(src)
     }
+
     pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
         Ok(Self {
             root: build_powershell_tree_for_storage(src)?,
