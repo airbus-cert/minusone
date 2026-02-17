@@ -729,11 +729,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_param_sep)
-        //      (variable inferred_type: Some(Number(4)))))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_param_sep)
+        //       (variable inferred_type: Some(Number(4)))))))))
         assert_eq!(
             *tree
                 .root()
@@ -742,6 +743,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(1)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -769,10 +772,11 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (variable inferred_type: Some(Number(4)))))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (variable inferred_type: Some(Number(4)))))))))
         assert_eq!(
             tree.root()
                 .unwrap()
@@ -780,6 +784,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(1)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -835,11 +841,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: None)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: None)))))))
         assert_eq!(
             tree.root()
                 .unwrap()
@@ -847,6 +854,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -879,11 +888,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(5)))))))
         assert_eq!(
             *tree
                 .root()
@@ -892,6 +902,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -925,11 +937,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(0)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(0)))))))
         assert_eq!(
             *tree
                 .root()
@@ -938,6 +951,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -973,11 +988,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(8)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(8)))))))
         assert_eq!(
             *tree
                 .root()
@@ -986,6 +1002,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -1018,11 +1036,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(6)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(6)))))))
         assert_eq!(
             *tree
                 .root()
@@ -1031,6 +1050,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -1063,11 +1084,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(5)))))))
         assert_eq!(
             tree.root()
                 .unwrap()
@@ -1075,6 +1097,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -1106,11 +1130,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(7)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(7)))))))
         assert_eq!(
             *tree
                 .root()
@@ -1119,6 +1144,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -1154,11 +1181,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(5)))))))
         assert_eq!(
             tree.root()
                 .unwrap()
@@ -1166,6 +1194,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -1200,11 +1230,12 @@ mod test {
         // (program
         //  (statement_list inferred_type: None)
         //   (pipeline inferred_type: None
-        //    (command inferred_type: None
-        //     (command_name inferred_type: None)
-        //     (command_elements inferred_type: None)
-        //      (command_argument_sep)
-        //      (variable inferred_type: Some(Num(5)))))))
+        //    (pipeline_chain inferred_type: None
+        //     (command inferred_type: None
+        //      (command_name inferred_type: None)
+        //      (command_elements inferred_type: None)
+        //       (command_argument_sep)
+        //       (variable inferred_type: Some(Num(5)))))))
         assert_eq!(
             *tree
                 .root()
@@ -1213,6 +1244,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(2)
                 .unwrap() // pipeline
+                .child(0)
+                .unwrap() // pipeline_chain
                 .child(0)
                 .unwrap() //command
                 .child(1)
@@ -2181,6 +2214,8 @@ mod test {
                 .unwrap() // statement_list
                 .child(3)
                 .unwrap() // Write-Host pipeline
+                .child(0)
+                .unwrap() // Write-Host pipeline_chain
                 .child(0)
                 .unwrap() // Write-host command
                 .named_child("command_elements")
