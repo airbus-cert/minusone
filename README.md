@@ -6,6 +6,37 @@ Reverse operation of script obfuscation
 
 🌐 An online version is available: https://minusone.skyblue.team/ 🌐
 
+## Usage
+
+MinusOne is written in Rust and can be built, deployed or executed through the Cargo package manager:
+```
+cargo run -- --path test.ps1
+```
+
+By default, cargo will build the minusone library and run the minusone-cli binary.
+
+## Bindings
+
+The following bindings are available:
+- Python, allowing MinusOne to be easily integrated into Jupyter notebooks
+- JS (WASM), allowing to embeed minusone in web apps like https://minusone.skyblue.team/
+
+To build and publish these packages, use the `justfile` modules:
+```
+just py build  # Build the python wheel
+
+just js build  # Build the WASM module and serve it on localhost to test it
+just js serve  # Build the WASM module and serve it on localhost to test it
+```
+
+## Project structure
+
+- `core`: minusone core library
+  - `src/ps`: minusone powershell specific rules
+- `crates`
+  - `minusone-cli`: Simple CLI to use minusone from your terminal
+  - `pyminusone`: Python bindings for minusone
+  - `minusone-cli`: JS bindings for minusone, built with WASM
 
 ## Description
 
@@ -25,16 +56,6 @@ It will produce the following output :
 ```powershell
 Write-Host "MinusOne is the best script linter"
 ```
-
-## Usage
-
-MinusOne is written in Rust and can be built, deployed or executed through the Cargo package manager:
-
-```
-cargo run --features="minusone-cli" -- --path test.ps1
-```
-
-Python bindings are also available, allowing MinusOne to be easily integrated into Jupyter notebooks for example.
 
 ## What is a Rule?
 

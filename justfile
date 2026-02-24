@@ -1,2 +1,2 @@
-mod python 'crates/pyminusone'
+mod py 'crates/pyminusone'
 mod js 'crates/minusonejs'
