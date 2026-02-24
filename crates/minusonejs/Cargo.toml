@@ -6,7 +6,6 @@ edition = "2021"
 [package.metadata.component]
 package = "airbus-cert:minusone"
 
-
 [profile.release]
 lto = false
 panic = "abort"
@@ -15,5 +14,5 @@ panic = "abort"
 crate-type = ["cdylib"]
 
 [dependencies]
-minusone = { path = ".." }
+minusone = { path = "../../core" }
 wit-bindgen = "0.45.0"

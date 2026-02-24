@@ -1,0 +1,25 @@
+[package]
+name = "minusone"
+version = "0.5.0"
+authors = ["Airbus CERT <cert@airbus.com>"]
+description = "A script deobfuscator"
+repository = "https://github.com/airbus-cert/minusone"
+readme = "README.md"
+license = "MIT"
+
+[lib]
+name = "minusone"
+path = "src/lib.rs"
+
+[features]
+# The reason we do this is because doctests don't get cfg(test)
+# See: https://github.com/rust-lang/cargo/issues/4669
+integration = []
+
+[dependencies]
+tree-sitter = "0.25"
+tree-sitter-powershell = "0.25.9"
+base64 = "0.21.5"
+num = "0.4.3"
+tree-sitter-traversal2 = "0.2.1"
+regex = "1.11.1"
