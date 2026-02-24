@@ -9,8 +9,8 @@ name = "pyminusone"
 crate-type = ["cdylib"]
 
 [dependencies]
-minusone = { path = ".." }
-tree-sitter-powershell = "0.25.2"
+minusone = { path = "../../core"}
+tree-sitter-powershell = "^0.26"
 tree-sitter-highlight = "^0.25"
 
 [dependencies.pyo3]
