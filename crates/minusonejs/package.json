@@ -5,7 +5,7 @@
   "license": "ISC",
   "author": "airbus-cert",
   "type": "module",
-  "main": "minusone.js",
+  "main": "minusonejs.js",
   "devDependencies": {
     "@bytecodealliance/jco": "^1.14.0"
   },

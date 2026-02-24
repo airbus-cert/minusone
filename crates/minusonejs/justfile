@@ -1,6 +1,6 @@
 root_dir := justfile_directory()
 js_dir := source_dir()
-pkg_name := "minusone"
+pkg_name := "minusonejs"
 sdk_url := "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz"
 sdk_path := root_dir / "target/wasi-sdk-27.0-x86_64-linux"
 target_build_dir := root_dir / "target/wasm32-wasip2/release"
