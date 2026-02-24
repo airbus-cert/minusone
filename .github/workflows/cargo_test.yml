@@ -1,4 +1,4 @@
-name: Unit Test
+name: Cargo unit test in devenv
 
 on:
   push:
@@ -18,4 +18,4 @@ jobs:
         run: nix profile install nixpkgs#devenv
 
       - name: Test minusone build
-        run: devenv shell cargo test
+        run: devenv test
