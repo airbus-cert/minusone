@@ -19,17 +19,36 @@ impl From<PyMinusOneError> for PyErr {
     }
 }
 
-#[pyfunction]
-fn deobfuscate_powershell(src: String) -> PyResult<String> {
+fn deobfuscate_powershell_ex(
+    src: String,
+    ruleset: Vec<String>,
+    with: bool,
+    format_lint: bool,
+) -> PyResult<String> {
+    let ruleset: Vec<String> = ruleset.iter().map(|s| s.to_lowercase()).collect();
     let remove_comment = DeobfuscateEngine::remove_extra(&src).map_err(PyMinusOneError)?;
     let mut engine =
         DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
-    engine.deobfuscate().map_err(PyMinusOneError)?;
-    Ok(engine.lint().map_err(PyMinusOneError)?)
+
+    match (ruleset.len(), with) {
+        (0, _) => engine.deobfuscate(),
+        (_, true) => {
+            engine.deobfuscate_with_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
+        }
+        (_, false) => {
+            engine.deobfuscate_without_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
+        }
+    }
+    .map_err(PyMinusOneError)?;
+
+    Ok(match format_lint {
+        true => engine.lint_format("\t"),
+        false => engine.lint(),
+    }
+    .map_err(PyMinusOneError)?)
 }
 
-#[pyfunction]
-fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
+fn deobfuscate_powershell_html_ex(deobfuscate_ps: String) -> PyResult<String> {
     let highlight_names = [
         "attribute",
         "constant",
@@ -54,14 +73,7 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
         "assignvalue",
     ];
 
-    let remove_comment = DeobfuscateEngine::remove_extra(&src).map_err(PyMinusOneError)?;
-
-    let mut engine =
-        DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
-    engine.deobfuscate().map_err(PyMinusOneError)?;
-
     let mut highlighter = Highlighter::new();
-
     let mut psconfig = HighlightConfiguration::new(
         tree_sitter_powershell::LANGUAGE.into(),
         "powershell",
@@ -72,8 +84,6 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
     .unwrap();
 
     psconfig.configure(&highlight_names);
-
-    let deobfuscate_ps = engine.lint_format("\t").map_err(PyMinusOneError)?;
 
     let highlights = highlighter
         .highlight(&psconfig, deobfuscate_ps.as_bytes(), None, |_| None)
@@ -96,9 +106,43 @@ fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
     Ok(unsafe { String::from_utf8_unchecked(renderer.html) })
 }
 
+#[pyfunction]
+fn deobfuscate_powershell(src: String) -> PyResult<String> {
+    deobfuscate_powershell_ex(src, vec![], false, false)
+}
+
+#[pyfunction]
+fn deobfuscate_powershell_with(src: String, ruleset: Vec<String>) -> PyResult<String> {
+    deobfuscate_powershell_ex(src, ruleset, true, false)
+}
+
+#[pyfunction]
+fn deobfuscate_powershell_without(src: String, ruleset: Vec<String>) -> PyResult<String> {
+    deobfuscate_powershell_ex(src, ruleset, false, false)
+}
+
+#[pyfunction]
+fn deobfuscate_powershell_html(src: String) -> PyResult<String> {
+    deobfuscate_powershell_html_ex(deobfuscate_powershell_ex(src, vec![], false, true)?)
+}
+
+#[pyfunction]
+fn deobfuscate_powershell_html_with(src: String, ruleset: Vec<String>) -> PyResult<String> {
+    deobfuscate_powershell_html_ex(deobfuscate_powershell_ex(src, ruleset, true, true)?)
+}
+
+#[pyfunction]
+fn deobfuscate_powershell_html_without(src: String, ruleset: Vec<String>) -> PyResult<String> {
+    deobfuscate_powershell_html_ex(deobfuscate_powershell_ex(src, ruleset, false, true)?)
+}
+
 #[pymodule]
 fn pyminusone(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deobfuscate_powershell, m)?)?;
+    m.add_function(wrap_pyfunction!(deobfuscate_powershell_with, m)?)?;
+    m.add_function(wrap_pyfunction!(deobfuscate_powershell_without, m)?)?;
     m.add_function(wrap_pyfunction!(deobfuscate_powershell_html, m)?)?;
+    m.add_function(wrap_pyfunction!(deobfuscate_powershell_html_with, m)?)?;
+    m.add_function(wrap_pyfunction!(deobfuscate_powershell_html_without, m)?)?;
     Ok(())
 }
