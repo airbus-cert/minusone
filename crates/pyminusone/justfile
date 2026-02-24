@@ -1,0 +1,5 @@
+build:
+    maturin build
+
+publish:
+    @echo TODO
