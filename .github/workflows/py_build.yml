@@ -1,11 +1,11 @@
-name: Minusonejs build test
+name: pyminusone build test
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  tests:
+  test:
     runs-on: ["ubuntu-latest"]
 
     steps:
@@ -17,6 +17,6 @@ jobs:
       - name: Install devenv.sh
         run: nix profile install nixpkgs#devenv
 
-      - name: Test minusonejs build
+      - name: Test pyminusone build
         shell: devenv shell bash -- -e {0}
-        run: cd minusonejs && just build
+        run: just py build
