@@ -18,7 +18,7 @@ integration = []
 
 [dependencies]
 tree-sitter = "0.25"
-tree-sitter-powershell = "0.25.9"
+tree-sitter-powershell = "^0.26"
 base64 = "0.21.5"
 num = "0.4.3"
 tree-sitter-traversal2 = "0.2.1"
