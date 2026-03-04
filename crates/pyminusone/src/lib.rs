@@ -1,9 +1,9 @@
 use minusone::engine::DeobfuscateEngine;
+use minusone::ps::backend::PowershellBackend;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use tree_sitter_highlight::{HighlightConfiguration, Highlighter, HtmlRenderer};
 use tree_sitter_powershell;
-use minusone::ps::backend::PowershellBackend;
 
 struct PyMinusOneError(minusone::error::Error);
 
@@ -27,7 +27,8 @@ fn deobfuscate_powershell_ex(
     format_lint: bool,
 ) -> PyResult<String> {
     let ruleset: Vec<String> = ruleset.iter().map(|s| s.to_lowercase()).collect();
-    let remove_comment = DeobfuscateEngine::<PowershellBackend>::remove_extra(&src).map_err(PyMinusOneError)?;
+    let remove_comment =
+        DeobfuscateEngine::<PowershellBackend>::remove_extra(&src).map_err(PyMinusOneError)?;
     let mut engine =
         DeobfuscateEngine::from_powershell(&remove_comment).map_err(PyMinusOneError)?;
 

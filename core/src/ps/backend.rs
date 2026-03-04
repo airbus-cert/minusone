@@ -1,9 +1,9 @@
-use ps;
-use ps::linter::RemoveUnusedVar;
-use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
 use engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use error::MinusOneResult;
 use init::Init;
+use ps;
+use ps::linter::RemoveUnusedVar;
+use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
 use rule::RuleSetBuilderType;
 use tree::{EmptyStorage, HashMapStorage, Tree};
 
@@ -30,7 +30,10 @@ impl DeobfuscationBackend for PowershellBackend {
         Ok(())
     }
 
-    fn deobfuscate_tree_with_custom_ruleset(root: &mut Tree<HashMapStorage<Self::Language>>, ruleset: Vec<&str>) -> MinusOneResult<()> {
+    fn deobfuscate_tree_with_custom_ruleset(
+        root: &mut Tree<HashMapStorage<Self::Language>>,
+        ruleset: Vec<&str>,
+    ) -> MinusOneResult<()> {
         root.apply_mut_with_strategy(
             &mut ps::PowershellRuleSet::new(RuleSetBuilderType::WithRules(ruleset)),
             ps::strategy::PowershellStrategy,
@@ -38,7 +41,10 @@ impl DeobfuscationBackend for PowershellBackend {
         Ok(())
     }
 
-    fn deobfuscate_tree_without_custom_ruleset(root: &mut Tree<HashMapStorage<Self::Language>>, ruleset: Vec<&str>) -> MinusOneResult<()> {
+    fn deobfuscate_tree_without_custom_ruleset(
+        root: &mut Tree<HashMapStorage<Self::Language>>,
+        ruleset: Vec<&str>,
+    ) -> MinusOneResult<()> {
         root.apply_mut_with_strategy(
             &mut ps::PowershellRuleSet::new(RuleSetBuilderType::WithoutRules(ruleset)),
             ps::strategy::PowershellStrategy,

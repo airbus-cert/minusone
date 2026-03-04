@@ -25,6 +25,7 @@ use tree_sitter_powershell::LANGUAGE as powershell_language;
 
 pub mod access;
 pub mod array;
+pub mod backend;
 pub mod bool;
 pub mod cast;
 pub mod comparison;
@@ -41,7 +42,6 @@ pub mod string;
 mod tool;
 pub mod typing;
 pub mod var;
-pub mod backend;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
