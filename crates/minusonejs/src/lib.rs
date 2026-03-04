@@ -1,5 +1,6 @@
 extern crate minusone;
 use minusone::{engine::DeobfuscateEngine, error::Error as MinusoneError};
+use minusone::ps::backend::PowershellBackend;
 
 enum MinusonejsError {
     MinusoneError(MinusoneError),
@@ -50,7 +51,7 @@ fn deobfuscate_powershell(
     ruleset: Vec<String>,
     with: bool,
 ) -> Result<String, MinusoneError> {
-    let without_comments = DeobfuscateEngine::remove_extra(&source)?;
+    let without_comments = DeobfuscateEngine::<PowershellBackend>::remove_extra(&source)?;
     let mut engine = DeobfuscateEngine::from_powershell(&without_comments)?;
 
     match (ruleset.len(), with) {
