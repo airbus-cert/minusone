@@ -1,5 +1,7 @@
+use cli::Language;
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
+use minusone::ps::backend::PowershellBackend;
 use std::fmt::Debug;
 
 pub(crate) fn run_deobf<B: DeobfuscationBackend>(
@@ -30,4 +32,12 @@ where
         println!("{}", engine.lint()?);
     }
     Ok(())
+}
+
+pub(crate) fn get_available_rules(language: Language) -> Vec<String> {
+    let rules = match language {
+        Language::Powershell => DeobfuscateEngine::<PowershellBackend>::language_rules(),
+    };
+
+    rules.into_iter().map(String::from).collect()
 }
