@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 use std::fmt::Display;
 
-const APPLICATION_NAME: &str = env!("CARGO_PKG_NAME");
+pub const APPLICATION_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Debug, Clone, ValueEnum, Copy)]
 pub enum Language {
@@ -44,7 +44,7 @@ pub struct Cli {
     pub lang: Option<Language>,
 
     /// List rules available for a language
-    #[arg(long, short = 'L')]
+    #[arg(long, short = 'L', alias = "ls")]
     pub list: bool,
 
     /// Custom comma separated list of rules to apply for the deobfuscation (optional)
@@ -58,6 +58,10 @@ pub struct Cli {
     /// Show computation time for the deobfuscation process
     #[arg(long, short)]
     pub time: bool,
+
+    /// Log level for the deobfuscation process
+    #[arg(long, short, value_enum, default_value_t = LogLevel::Info)]
+    pub log_level: LogLevel,
 }
 
 impl Display for Language {
@@ -69,5 +73,28 @@ impl Display for Language {
                 Language::Powershell => "powershell".to_string(),
             }
         )
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum LogLevel {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl From<LogLevel> for log::LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Off => log::LevelFilter::Off,
+            LogLevel::Error => log::LevelFilter::Error,
+            LogLevel::Warn => log::LevelFilter::Warn,
+            LogLevel::Info => log::LevelFilter::Info,
+            LogLevel::Debug => log::LevelFilter::Debug,
+            LogLevel::Trace => log::LevelFilter::Trace,
+        }
     }
 }
