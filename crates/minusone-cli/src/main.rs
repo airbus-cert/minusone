@@ -2,11 +2,46 @@ extern crate clap;
 extern crate minusone;
 
 use clap::{App, Arg};
-use minusone::engine::DeobfuscateEngine;
-use std::{fs, process};
+use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
+use minusone::error::MinusOneResult;
 use minusone::ps::backend::PowershellBackend;
+use std::fmt::Debug;
+use std::{fs, process};
 
 const APPLICATION_NAME: &str = "minusone-cli";
+
+fn run_deobf<B: DeobfuscationBackend>(
+    source: &str,
+    debug: bool,
+    rule_set: Option<Vec<String>>,
+    skip_rule_set: Option<Vec<String>>,
+) -> MinusOneResult<()>
+where
+    <B as DeobfuscationBackend>::Language: Debug,
+{
+    let cleaned = DeobfuscateEngine::<B>::remove_extra(source)?;
+
+    /*let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)?;
+    engine.deobfuscate()?;*/
+
+    let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)?;
+
+    if let Some(rules) = rule_set {
+        engine.deobfuscate_with_custom_ruleset(rules.iter().map(AsRef::as_ref).collect())?;
+    } else if let Some(skip_rules) = skip_rule_set {
+        engine
+            .deobfuscate_without_custom_ruleset(skip_rules.iter().map(AsRef::as_ref).collect())?;
+    } else {
+        engine.deobfuscate()?;
+    }
+
+    if debug {
+        engine.debug();
+    } else {
+        println!("{}", engine.lint()?);
+    }
+    Ok(())
+}
 
 fn main() {
     let matches = App::new(APPLICATION_NAME)
@@ -18,6 +53,12 @@ fn main() {
                 .long("path")
                 .takes_value(true)
                 .help("Path to the script file"),
+        )
+        .arg(
+            Arg::with_name("lang")
+                .long("lang")
+                .takes_value(true)
+                .help("The language of the script (default: powershell)"),
         )
         .arg(
             Arg::with_name("debug")
@@ -49,9 +90,6 @@ fn main() {
         .arg(Arg::with_name("time").long("time").help("Time computation"))
         .get_matches();
 
-    use std::time::Instant;
-    let now = Instant::now();
-
     if matches.is_present("list") {
         println!(
             "Available rules:\n{}",
@@ -76,51 +114,35 @@ fn main() {
     )
     .unwrap();
 
-    // Always remove extra rule (comments) to get an accurate version of the deobfuscated scripts
-    match DeobfuscateEngine::<PowershellBackend>::remove_extra(&source) {
-        Ok(remove_comment) => {
-            let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).unwrap();
+    let debug = matches.is_present("debug");
 
-            if matches.is_present("rules") {
-                // TODO: What if -r and -R specified
-                let ruleset: Vec<String> = matches
-                    .values_of("rules")
-                    .unwrap()
-                    .map(str::to_lowercase)
-                    .collect();
-                engine
-                    .deobfuscate_with_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
-                    .unwrap();
-            }
-            if matches.is_present("skip-rules") {
-                let skiped_rules: Vec<String> = matches
-                    .values_of("skip-rules")
-                    .unwrap()
-                    .map(str::to_lowercase)
-                    .collect();
-                engine
-                    .deobfuscate_without_custom_ruleset(
-                        skiped_rules.iter().map(AsRef::as_ref).collect(),
-                    )
-                    .unwrap();
-            } else {
-                engine.deobfuscate().unwrap();
-            }
+    let rule_set = matches
+        .values_of("rules")
+        .map(|vals| vals.map(str::to_lowercase).collect());
+    let skip_rule_set = matches
+        .values_of("skip-rules")
+        .map(|vals| vals.map(str::to_lowercase).collect());
 
-            if matches.is_present("debug") {
-                engine.debug();
-            } else {
-                println!("{}", engine.lint().unwrap());
-            }
+    let now = std::time::Instant::now();
 
-            if matches.is_present("time") {
-                let elapsed = now.elapsed();
-                println!("\n\nElapsed: {:.2?}", elapsed);
+    let result = match matches.value_of("lang") {
+        Some(lang) => match lang.to_lowercase().as_str() {
+            "powershell" => run_deobf::<PowershellBackend>(&source, debug, rule_set, skip_rule_set),
+            _ => {
+                eprintln!("[x] ERROR: Language {} not implemented", lang);
+                process::exit(1);
             }
-        }
-        Err(e) => {
-            eprintln!("[x] ERROR: Cannot clean the source\n--> {:?}", e);
-            process::exit(1);
-        }
+        },
+        None => run_deobf::<PowershellBackend>(&source, debug, rule_set, skip_rule_set),
+    };
+
+    if matches.is_present("time") {
+        let elapsed = now.elapsed();
+        println!("\n\nElapsed: {:.2?}", elapsed);
+    }
+
+    if let Err(e) = result {
+        eprintln!("[x] ERROR: {:?}", e);
+        process::exit(1);
     }
 }

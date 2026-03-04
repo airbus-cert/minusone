@@ -1,6 +1,6 @@
 extern crate minusone;
-use minusone::{engine::DeobfuscateEngine, error::Error as MinusoneError};
 use minusone::ps::backend::PowershellBackend;
+use minusone::{engine::DeobfuscateEngine, error::Error as MinusoneError};
 
 enum MinusonejsError {
     MinusoneError(MinusoneError),
