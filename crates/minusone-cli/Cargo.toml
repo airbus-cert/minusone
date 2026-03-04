@@ -8,5 +8,6 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-clap = { version = "^2.33"}
+clap = "4.5.60"
+clap-help = "1.4.0"
 minusone = { path = "../../core"}
