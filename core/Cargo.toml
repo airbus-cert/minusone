@@ -22,4 +22,5 @@ tree-sitter-powershell = "^0.26"
 base64 = "0.21.5"
 num = "0.4.3"
 tree-sitter-traversal2 = "0.2.1"
+log = { workspace = true }
 regex = "1.11.1"

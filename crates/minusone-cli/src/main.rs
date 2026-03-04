@@ -5,9 +5,11 @@ extern crate minusone;
 mod cli;
 mod utils;
 
+use crate::cli::APPLICATION_NAME;
 use clap::{CommandFactory, Parser, ValueEnum};
 use clap_help::Printer;
-use cli::{Cli, Language, INTRO};
+use cli::{Cli, INTRO, Language};
+use log::{LevelFilter, error};
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
 use utils::{get_available_rules, run_deobf};
@@ -25,14 +27,20 @@ fn main() {
     let lang = match cli.lang {
         Some(l) => l,
         None => {
-            eprintln!("[x] ERROR: No language specified. Use --lang to specify the language.");
-            eprintln!("Available languages:");
+            error!("[x] ERROR: No language specified. Use --lang to specify the language.");
+            error!("Available languages:");
             for l in Language::value_variants() {
-                println!("- {}", l.to_string());
+                error!("- {}", l.to_string());
             }
             process::exit(1);
         }
     };
+
+    pretty_env_logger::formatted_builder()
+        .filter(None, LevelFilter::Off)
+        .filter_module("minusone", LevelFilter::from(cli.log_level))
+        .filter_module(APPLICATION_NAME, LevelFilter::Error)
+        .init();
 
     if cli.list {
         let rules = get_available_rules(lang);
@@ -45,20 +53,20 @@ fn main() {
     }
 
     if cli.rules.is_some() && cli.skip_rules.is_some() {
-        eprintln!("[x] ERROR: Cannot use --rules and --skip-rules at the same time");
+        error!("Cannot use --rules and --skip-rules at the same time");
         process::exit(1);
     }
 
     let path = match cli.path {
         Some(p) => p,
         None => {
-            eprintln!("[x] ERROR: No file path provided. Use --path to specify the script file.");
+            error!("No file path provided. Use --path to specify the script file.");
             process::exit(1);
         }
     };
 
     let source = fs::read_to_string(&path).unwrap_or_else(|e| {
-        eprintln!("[x] ERROR: Failed to read file {}: {}", path, e);
+        error!("Failed to read file {}: {}", path, e);
         process::exit(1);
     });
 
@@ -85,7 +93,7 @@ fn main() {
     }
 
     if let Err(e) = result {
-        eprintln!("[x] ERROR: {:?}", e);
+        error!("{:?}", e);
         process::exit(1);
     }
 }

@@ -1,4 +1,4 @@
-use cli::Language;
+use crate::cli::Language;
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
 use minusone::ps::backend::PowershellBackend;
