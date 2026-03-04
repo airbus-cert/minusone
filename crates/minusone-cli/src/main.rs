@@ -4,6 +4,7 @@ extern crate minusone;
 use clap::{App, Arg};
 use minusone::engine::DeobfuscateEngine;
 use std::{fs, process};
+use minusone::ps::backend::PowershellBackend;
 
 const APPLICATION_NAME: &str = "minusone-cli";
 
@@ -54,7 +55,7 @@ fn main() {
     if matches.is_present("list") {
         println!(
             "Available rules:\n{}",
-            DeobfuscateEngine::language_rules()
+            DeobfuscateEngine::<PowershellBackend>::language_rules()
                 .into_iter()
                 .map(|s| format!("- {}", s))
                 .collect::<Vec<_>>()
@@ -76,7 +77,7 @@ fn main() {
     .unwrap();
 
     // Always remove extra rule (comments) to get an accurate version of the deobfuscated scripts
-    match DeobfuscateEngine::remove_extra(&source) {
+    match DeobfuscateEngine::<PowershellBackend>::remove_extra(&source) {
         Ok(remove_comment) => {
             let mut engine = DeobfuscateEngine::from_powershell(&remove_comment).unwrap();
 

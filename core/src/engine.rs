@@ -1,90 +1,105 @@
 use crate::debug::DebugView;
 use crate::error::MinusOneResult;
-use crate::init::Init;
-use crate::ps;
-use crate::ps::linter::RemoveUnusedVar;
-use crate::ps::{build_powershell_tree_for_storage, remove_powershell_extra};
-use crate::rule::RuleSetBuilderType;
-use crate::tree::{EmptyStorage, HashMapStorage, Storage, Tree};
+use crate::tree::{EmptyStorage, HashMapStorage, Tree};
+use ps::backend::PowershellBackend;
+use std::fmt::Debug;
+use std::marker::PhantomData;
 
-pub struct Engine<'a, S: Storage> {
-    root: Tree<'a, S>,
+pub trait DeobfuscationBackend {
+    type Language;
+
+    fn remove_extra(src: &str) -> MinusOneResult<String>;
+    fn build_deob_tree<'a>(
+        src: &'a str,
+    ) -> MinusOneResult<Tree<'a, HashMapStorage<Self::Language>>>;
+    fn deobfuscate_tree(root: &mut Tree<HashMapStorage<Self::Language>>) -> MinusOneResult<()>;
+
+    fn deobfuscate_tree_with_custom_ruleset(
+        root: &mut Tree<HashMapStorage<Self::Language>>,
+        ruleset: Vec<&str>,
+    ) -> MinusOneResult<()>;
+
+    fn deobfuscate_tree_without_custom_ruleset(
+        root: &mut Tree<HashMapStorage<Self::Language>>,
+        ruleset: Vec<&str>,
+    ) -> MinusOneResult<()>;
+    fn lint_tree<'a>(
+        root: &Tree<'a, HashMapStorage<Self::Language>>,
+        tab_chr: &str,
+    ) -> MinusOneResult<String>;
+
+    fn language_rules<'a>() -> Vec<&'a str>;
 }
 
-pub type DeobfuscateEngine<'a> = Engine<'a, HashMapStorage<ps::Powershell>>;
+pub struct DeobfuscateEngine<'a, B: DeobfuscationBackend = PowershellBackend> {
+    root: Tree<'a, HashMapStorage<B::Language>>,
+    backend: PhantomData<B>,
+}
 
-impl<'a> DeobfuscateEngine<'a> {
-    pub fn remove_extra(src: &'a str) -> MinusOneResult<String> {
-        remove_powershell_extra(src)
+impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
+    pub fn remove_extra(src: &str) -> MinusOneResult<String> {
+        B::remove_extra(src)
     }
 
-    pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
+    pub fn from_source(src: &'a str) -> MinusOneResult<Self> {
         Ok(Self {
-            root: build_powershell_tree_for_storage(src)?,
+            root: B::build_deob_tree(src)?,
+            backend: PhantomData,
         })
     }
 
-    pub fn debug(&self) {
-        let mut debub_view = DebugView::default();
-        self.root.apply(&mut debub_view).unwrap();
+    pub fn debug(&self)
+    where
+        B::Language: Debug,
+    {
+        let mut debug_view = DebugView::default();
+        self.root.apply(&mut debug_view).unwrap();
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
-        self.root.apply_mut_with_strategy(
-            &mut ps::PowershellDefaultRuleSet::init(),
-            ps::strategy::PowershellStrategy,
-        )?;
-        Ok(())
-    }
-
-    pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
-        self.root.apply_mut_with_strategy(
-            &mut ps::PowershellRuleSet::new(RuleSetBuilderType::WithRules(ruleset)),
-            ps::strategy::PowershellStrategy,
-        )?;
-        Ok(())
-    }
-
-    pub fn deobfuscate_without_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
-        self.root.apply_mut_with_strategy(
-            &mut ps::PowershellRuleSet::new(RuleSetBuilderType::WithoutRules(ruleset)),
-            ps::strategy::PowershellStrategy,
-        )?;
-        Ok(())
-    }
-
-    pub fn language_rules() -> Vec<&'a str> {
-        ps::PowershellRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])).names()
+        B::deobfuscate_tree(&mut self.root)
     }
 
     pub fn lint(&mut self) -> MinusOneResult<String> {
-        let mut ps_litter_view = ps::linter::Linter::default();
-        self.root.apply(&mut ps_litter_view)?;
-        CleanEngine::from_powershell(&ps_litter_view.output)?.clean()
+        B::lint_tree(&self.root, "    ")
     }
 
     pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
-        let mut ps_litter_view = ps::linter::Linter::default().set_tab(tab_chr);
-        self.root.apply(&mut ps_litter_view)?;
+        B::lint_tree(&self.root, tab_chr)
+    }
 
-        CleanEngine::from_powershell(&ps_litter_view.output)?.clean()
+    pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
+        B::deobfuscate_tree_with_custom_ruleset(&mut self.root, ruleset)
+    }
+
+    pub fn deobfuscate_without_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
+        B::deobfuscate_tree_without_custom_ruleset(&mut self.root, ruleset)
+    }
+
+    pub fn language_rules() -> Vec<&'a str> {
+        B::language_rules()
     }
 }
 
-pub type CleanEngine<'a> = Engine<'a, EmptyStorage>;
+pub trait CleanBackend {
+    fn build_clean_tree<'a>(src: &'a str) -> MinusOneResult<Tree<'a, EmptyStorage>>;
+    fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String>;
+}
 
-impl<'a> CleanEngine<'a> {
-    pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
+pub struct CleanEngine<'a, B: CleanBackend = PowershellBackend> {
+    root: Tree<'a, EmptyStorage>,
+    backend: PhantomData<B>,
+}
+
+impl<'a, B: CleanBackend> CleanEngine<'a, B> {
+    pub fn from_source(src: &'a str) -> MinusOneResult<Self> {
         Ok(Self {
-            root: build_powershell_tree_for_storage(src)?,
+            root: B::build_clean_tree(src)?,
+            backend: PhantomData,
         })
     }
 
     pub fn clean(&mut self) -> MinusOneResult<String> {
-        let mut rule = ps::var::UnusedVar::default();
-        self.root.apply(&mut rule)?;
-        let mut clean_view = RemoveUnusedVar::new(rule);
-        self.root.apply(&mut clean_view)?;
-        clean_view.clear()
+        B::clean_tree(&self.root)
     }
 }
