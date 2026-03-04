@@ -1,40 +1,52 @@
 extern crate clap;
+extern crate clap_help;
 extern crate minusone;
+
 mod cli;
 mod utils;
 
-use clap::Parser;
-use cli::{Cli, Language};
-use minusone::engine::DeobfuscateEngine;
+use clap::{CommandFactory, Parser};
+use clap_help::Printer;
+use cli::{Cli, Language, INTRO};
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
-use utils::run_deobf;
+use utils::{get_available_rules, run_deobf};
 
 fn main() {
     let cli = Cli::parse();
     if cli.help {
-        todo!("Implement clap-help functionality");
+        Printer::new(Cli::command())
+            .with("introduction", INTRO)
+            .print_help();
+
+        return;
     }
 
     if cli.list {
-        println!(
-            "Available rules:\n{}",
-            DeobfuscateEngine::<PowershellBackend>::language_rules()
-                .into_iter()
-                .map(|s| format!("- {}", s))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        process::exit(0);
+        let rules = get_available_rules(cli.lang);
+        println!("Available rules for {}:", cli.lang);
+        for rule in rules {
+            println!("- {}", rule);
+        }
+
+        return;
     }
 
     if cli.rules.is_some() && cli.skip_rules.is_some() {
-        eprintln!("ERROR: Cannot use --rules and --skip-rules at the same time");
+        eprintln!("[x] ERROR: Cannot use --rules and --skip-rules at the same time");
         process::exit(1);
     }
 
-    let source = fs::read_to_string(&cli.path).unwrap_or_else(|e| {
-        eprintln!("[x] ERROR: Failed to read file {}: {}", cli.path, e);
+    let path = match cli.path {
+        Some(p) => p,
+        None => {
+            eprintln!("[x] ERROR: No file path provided. Use --path to specify the script file.");
+            process::exit(1);
+        }
+    };
+
+    let source = fs::read_to_string(&path).unwrap_or_else(|e| {
+        eprintln!("[x] ERROR: Failed to read file {}: {}", path, e);
         process::exit(1);
     });
 
@@ -57,7 +69,7 @@ fn main() {
 
     if cli.time {
         let elapsed = now.elapsed();
-        println!("\n\nElapsed: {:.2?}", elapsed);
+        println!("\n\nDeobfuscation time: {:.2?}", elapsed);
     }
 
     if let Err(e) = result {
