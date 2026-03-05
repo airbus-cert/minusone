@@ -4,6 +4,7 @@ use crate::ps::Value::Str;
 use crate::ps::{Powershell, Value};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::trace;
 
 /// This function get char at index position
 /// even if the index is negative
@@ -99,6 +100,7 @@ impl<'a> RuleMut<'a> for AccessString {
                                 }
                             }
                         }
+                        trace!("AccessString (L): Setting node with string array result: {:?}", result);
                         node.set(Array(result));
                     }
                     // "foo"[0]
@@ -107,6 +109,7 @@ impl<'a> RuleMut<'a> for AccessString {
                             if let Some(string_result) =
                                 get_at_index(string_element, parsed_index_value)
                             {
+                                trace!("AccessString (L): Setting node with string result: {:?}", string_result);
                                 node.set(Raw(Str(string_result)));
                             }
                         }
@@ -153,6 +156,7 @@ impl<'a> RuleMut<'a> for AccessArray {
                                 }
                             }
                         }
+                        trace!("AccessArray (L): Setting node with array result: {:?}", result);
                         node.set(Array(result));
                     }
                     // "foo"[0]
@@ -161,6 +165,7 @@ impl<'a> RuleMut<'a> for AccessArray {
                             if let Some(value) =
                                 get_array_at_index(array_element, parsed_index_value)
                             {
+                                trace!("AccessArray (L): Setting node with value: {:?}", value);
                                 node.set(Raw(value.clone()));
                             }
                         }
@@ -240,6 +245,7 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                     {
                         let value_n = &value.normalize();
                         if map.contains_key(value_n) {
+                            trace!("AccessHashMap (L): Setting node with value from element_access: {:?}", map[value_n]);
                             node.set(Raw(map[value_n].clone()))
                         }
                     }
@@ -251,12 +257,14 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                         if let Some(Raw(value)) = expression.data() {
                             let value_n = &value.normalize();
                             if map.contains_key(value_n) {
+                                trace!("AccessHashMap (L): Setting node with value from member_access (raw): {:?}", map[value_n]);
                                 node.set(Raw(map[value_n].clone()))
                             }
                         } else if let Some(child) = expression.child(0) {
                             if child.kind() == "simple_name" {
                                 let value = Str(expression.text()?.to_lowercase());
                                 if map.contains_key(&value) {
+                                    trace!("AccessHashMap (L): Setting node with value from member_access (simple_name): {:?}", map[&value]);
                                     node.set(Raw(map[&value].clone()))
                                 }
                             }

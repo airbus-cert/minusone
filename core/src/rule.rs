@@ -1,3 +1,4 @@
+use log::warn;
 use crate::error::MinusOneResult;
 use crate::tree::{ControlFlow, Node, NodeMut};
 
@@ -46,10 +47,14 @@ impl<'a, T> RuleSet<'a, T> {
             }
         };
 
-        if !low_input.iter().all(|s| full_names.contains(s)) {
-            // TODO: Do not panic + specify wrong rule
-            panic!("TODO: Unknown rule in {:?}", low_input);
+        for rule in &low_input {
+            if !full_names.contains(rule) {
+                warn!("Unknown rule: '{}', skipping", rule);
+            }
         }
+
+        // delete unknown rules
+        let low_input: Vec<String> = low_input.into_iter().filter(|s| full_names.contains(s)).collect();
 
         Self {
             rules: full_names

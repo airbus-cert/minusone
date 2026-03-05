@@ -1,3 +1,4 @@
+use log::trace;
 use crate::rule::RuleMut;
 use crate::tree::{NodeMut, ControlFlow};
 use crate::error::{MinusOneResult, Error};
@@ -39,7 +40,10 @@ impl<'a> RuleMut<'a> for Static {
     fn leave(&mut self, node: &mut NodeMut<'a, Self::Language>, _flow: ControlFlow) -> MinusOneResult<()>{
         let view = node.view();
         match view.kind() {
-            "decimal_integer_literal" | "hexadecimal_integer_literal" => node.set(PowershellDetect::Static(true)),
+            "decimal_integer_literal" | "hexadecimal_integer_literal" => {
+                trace!("Static (L): Setting node with static: true");
+                node.set(PowershellDetect::Static(true))
+            },
             // Forward static on simple node
             "unary_expression" | "range_expression" |
             "format_expression" | "comparison_expression" |
@@ -52,6 +56,7 @@ impl<'a> RuleMut<'a> for Static {
             "statement_list" | "expression_with_unary_operator" => {
                 if view.child_count() == 1 {
                     if let Some(PowershellDetect::Static(data)) = view.child(0).ok_or(Error::invalid_child())?.data() {
+                        trace!("Static (L): Setting node with static: {}", data);
                         node.set(PowershellDetect::Static(data.clone()))
                     }
                 }
@@ -60,6 +65,7 @@ impl<'a> RuleMut<'a> for Static {
             "parenthesized_expression" | "sub_expression" => {
                 if view.child_count() == 3 {
                     if let Some(PowershellDetect::Static(data)) = view.child(1).ok_or(Error::invalid_child())?.data() {
+                        trace!("Static (L): Setting node with static: {}", data);
                         node.set(PowershellDetect::Static(data.clone()))
                     }
                 }
@@ -70,6 +76,7 @@ impl<'a> RuleMut<'a> for Static {
                 match view.child_count() {
                     1 => {
                         if let Some(PowershellDetect::Static(data)) = view.child(0).ok_or(Error::invalid_child())?.data() {
+                                trace!("Static (L): Setting node with static: {}", data);
                             node.set(PowershellDetect::Static(data.clone()))
                         }
                     },
@@ -79,6 +86,7 @@ impl<'a> RuleMut<'a> for Static {
                                 view.child(0).ok_or(Error::invalid_child())?.data(),
                                 view.child(2).ok_or(Error::invalid_child())?.data()
                             ) {
+                                trace!("Static (L): Setting node with static: {} && {}", left, right);
                             node.set(PowershellDetect::Static(*left && *right))
                         }
                     },
@@ -87,12 +95,14 @@ impl<'a> RuleMut<'a> for Static {
             },
             "expandable_string_literal" => {
                 if view.child_count() == 0 {
+                    trace!("Static (L): Setting node with static: true");
                     node.set(PowershellDetect::Static(true))
                 }
             },
             "cast_expression" => {
                 if let (Some(_type_literal), Some(unary_expression)) = (view.child(0), view.child(1)) {
                     if unary_expression.data() == Some(&PowershellDetect::Static(true)) {
+                        trace!("Static (L): Setting node with static: true");
                         node.set(PowershellDetect::Static(true))
                     }
                 }

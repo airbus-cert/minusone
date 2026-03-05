@@ -5,6 +5,7 @@ use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
+use log::trace;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Add;
 
@@ -312,6 +313,7 @@ impl<'a> RuleMut<'a> for Var {
                     {
                         // Try to assign variable member
                         if let Some(data) = self.scope_manager.current_mut().get_var(&var_name) {
+                            trace!("Var (L): Setting node with variable value: {:?}", data);
                             node.set(data.clone());
                         } else {
                             self.scope_manager.current_mut().in_use(&var_name);
@@ -323,6 +325,7 @@ impl<'a> RuleMut<'a> for Var {
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(expression) = view.child(1) {
                     if let Some(expression_data) = expression.data() {
+                        trace!("Var (L): Setting node with pre-increment/decrement value: {:?}", expression_data);
                         node.set(expression_data.clone())
                     }
                 }
@@ -338,6 +341,7 @@ impl<'a> RuleMut<'a> for Var {
                         {
                             // we set the variable before ...
                             if let Some(variable_data) = variable.data() {
+                                trace!("Var (L): Setting node with post-increment/decrement value: {:?}", variable_data);
                                 node.set(variable_data.clone())
                             }
                             // ... assign it
@@ -412,6 +416,7 @@ impl<'a> RuleMut<'a> for Var {
                                         if let Some(Raw(data)) =
                                             self.scope_manager.current().get_var(&variable_name)
                                         {
+                                            trace!("Var (L): Setting node with variable hashmap: {:?}", Var::hashmap(variable_name.clone(), &data));
                                             node.set(Var::hashmap(variable_name, data));
                                         } else {
                                             self.scope_manager.current_mut().in_use(&variable_name);
@@ -443,8 +448,10 @@ impl<'a> RuleMut<'a> for Var {
                                                 });
 
                                             if value_param {
+                                                trace!("Var (L): Setting node with raw variable value: {:?}", data);
                                                 node.set(Raw(data.clone()));
                                             } else {
+                                                trace!("Var (L): Setting node with variable hashmap: {:?}", Var::hashmap(variable_name.clone(), &data));
                                                 node.set(Var::hashmap(variable_name, data));
                                             }
                                         }
@@ -493,11 +500,12 @@ impl<'a> RuleMut<'a> for Var {
                                         if let Some(variable_name) = self
                                             .resolve_wildcarded(variable_name.as_str().to_string())
                                         {
-                                            if let Some(Raw(data)) =
-                                                self.scope_manager.current().get_var(&variable_name)
-                                            {
-                                                node.set(Var::hashmap(variable_name, data));
-                                            }
+                                        if let Some(Raw(data)) =
+                                            self.scope_manager.current().get_var(&variable_name)
+                                        {
+                                            trace!("Var (L): Setting node with variable hashmap from get-childitem: {:?}", Var::hashmap(variable_name.clone(), &data));
+                                            node.set(Var::hashmap(variable_name, data));
+                                        }
                                         }
                                     }
                                 }
@@ -654,13 +662,28 @@ impl<'a> RuleMut<'a> for StaticVar {
         let view = node.view();
         if view.kind() == "variable" {
             match view.text()?.to_lowercase().as_str() {
-                "$shellid" => node.set(Raw(Str(String::from("Microsoft.Powershell")))),
-                "$?" => node.set(Raw(Bool(true))),
-                "$null" => node.set(Null),
-                "$pshome" => node.set(Raw(Str(String::from(
-                    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
-                )))),
-                "$verbosepreference" => node.set(Raw(Str(String::from("SilentlyContinue")))),
+                "$shellid" => {
+                    trace!("Var (L): Setting node with special variable $shellid");
+                    node.set(Raw(Str(String::from("Microsoft.Powershell"))))
+                },
+                "$?" => {
+                    trace!("Var (L): Setting node with special variable $?");
+                    node.set(Raw(Bool(true)))
+                },
+                "$null" => {
+                    trace!("Var (L): Setting node with special variable $null");
+                    node.set(Null)
+                },
+                "$pshome" => {
+                    trace!("Var (L): Setting node with special variable $pshome");
+                    node.set(Raw(Str(String::from(
+                        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
+                    ))))
+                },
+                "$verbosepreference" => {
+                    trace!("Var (L): Setting node with special variable $verbosepreference");
+                    node.set(Raw(Str(String::from("SilentlyContinue"))))
+                },
                 _ => (),
             }
         }

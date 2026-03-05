@@ -1,3 +1,4 @@
+use log::{trace, warn};
 use crate::error::MinusOneResult;
 use crate::ps::Powershell;
 use crate::ps::Powershell::Raw;
@@ -59,8 +60,14 @@ impl<'a> RuleMut<'a> for ParseInt {
             "expression_with_unary_operator" => {
                 if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
                     match (operator.text()?, expression.data()) {
-                        ("-", Some(Raw(Num(num)))) => node.set(Raw(Num(-num))),
-                        ("+", Some(Raw(Num(num)))) => node.set(Raw(Num(*num))),
+                        ("-", Some(Raw(Num(num)))) => {
+                            trace!("ParseInt (L): Setting node with negative number: -{}", num);
+                            node.set(Raw(Num(-num)))
+                        },
+                        ("+", Some(Raw(Num(num)))) => {
+                            trace!("ParseInt (L): Setting node with positive number: +{}", num);
+                            node.set(Raw(Num(*num)))
+                        },
                         _ => (),
                     }
                 }
@@ -123,11 +130,15 @@ impl<'a> RuleMut<'a> for AddInt {
                     (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => {
                         if let Some(result) = number_left.checked_add(*number_right) {
                             node.reduce(Raw(Num(result)))
+                        } else {
+                            warn!("Addition overflow: {} + {}", number_left, number_right);
                         }
                     }
                     (Some(Raw(Num(number_left))), "-", Some(Raw(Num(number_right)))) => {
                         if let Some(result) = number_left.checked_sub(*number_right) {
                             node.reduce(Raw(Num(result)))
+                        } else {
+                            warn!("Subtraction overflow: {} - {}", number_left, number_right);
                         }
                     }
                     _ => {}
@@ -189,11 +200,15 @@ impl<'a> RuleMut<'a> for MultInt {
                     (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => {
                         if let Some(result) = number_left.checked_mul(*number_right) {
                             node.reduce(Raw(Num(result)))
+                        } else {
+                            warn!("Multiplication overflow: {} * {}", number_left, number_right);
                         }
                     }
                     (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {
                         if let Some(result) = number_left.checked_div(*number_right) {
                             node.reduce(Raw(Num(result)))
+                        } else {
+                            warn!("Division by zero: {} / {}", number_left, number_right);
                         }
                     }
                     _ => {}

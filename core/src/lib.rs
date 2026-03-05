@@ -7,6 +7,7 @@ extern crate regex;
 extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 extern crate tree_sitter_traversal2;
+extern crate log;
 
 #[macro_use]
 pub mod ps;

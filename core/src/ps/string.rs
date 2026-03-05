@@ -5,6 +5,7 @@ use crate::ps::Powershell::{Array, Raw};
 use crate::ps::Value::{Bool, Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::trace;
 
 #[derive(Default)]
 pub struct ParseString;
@@ -31,6 +32,7 @@ impl<'a> RuleMut<'a> for ParseString {
             "verbatim_string_characters" => {
                 let value = String::from(view.text()?);
                 // Parse string by removing the double quote
+                trace!("ParseString (L): Setting node with verbatim string: {:?}", &value[1..value.len() - 1]);
                 node.set(Raw(Str(
                     String::from(&value[1..value.len() - 1]).replace("''", "'")
                 )));
@@ -73,6 +75,7 @@ impl<'a> RuleMut<'a> for ParseString {
                         return Ok(());
                     }
                 }
+                trace!("ParseString (L): Setting node with expanded string: {:?}", result);
                 node.set(Raw(Str(result)));
             }
             _ => (),
@@ -345,13 +348,13 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
                                 if let Some(Raw(Str(separator))) = arg_1.data() {
                                     // not reduce to have a better deobfuscation
                                     // if we reduce this step we will maybe lost the string
-                                    node.set(Array(
-                                        src.split(separator)
-                                            .collect::<Vec<&str>>()
-                                            .iter()
-                                            .map(|e| Str(e.to_string()))
-                                            .collect(),
-                                    ));
+                                    let array = src.split(separator)
+                                        .collect::<Vec<&str>>()
+                                        .iter()
+                                        .map(|e| Str(e.to_string()))
+                                        .collect();
+                                    trace!("StringSplitMethod (L): Setting node with split string: {:?} with separator: {:?}", array, separator);
+                                    node.set(Array(array));
                                 }
                             }
                         }

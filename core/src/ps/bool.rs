@@ -5,6 +5,7 @@ use crate::ps::Powershell::Raw;
 use crate::ps::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::trace;
 
 /// This rule will infer boolean variable $true $false
 ///
@@ -52,8 +53,14 @@ impl<'a> RuleMut<'a> for ParseBool {
         // Booleans in powershell are variables
         if view.kind() == "variable" {
             match view.text()?.to_lowercase().as_str() {
-                "$true" => node.set(Raw(Bool(true))),
-                "$false" => node.set(Raw(Bool(false))),
+                "$true" => {
+                    trace!("cast true (L): Setting node with casted true value: 1");
+                    node.set(Raw(Bool(true)))
+                }
+                "$false" => {
+                    trace!("cast false (L): Setting node with casted false value: 0");
+                    node.set(Raw(Bool(false)))
+                }
                 _ => (),
             }
         }
@@ -117,10 +124,20 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
                     right_node.data(),
                 ) {
                     (Some(Raw(Bool(left_value))), "-or", Some(Raw(Bool(right_value)))) => {
-                        node.set(Raw(Bool(*left_value || *right_value)))
+                        let value = *left_value || *right_value;
+                        trace!(
+                            "Boolean algebra (L): Setting node with inferred value: {}",
+                            value
+                        );
+                        node.set(Raw(Bool(value)))
                     }
                     (Some(Raw(Bool(left_value))), "-and", Some(Raw(Bool(right_value)))) => {
-                        node.set(Raw(Bool(*left_value && *right_value)))
+                        let value = *left_value && *right_value;
+                        trace!(
+                            "Boolean algebra (L): Setting node with inferred value: {}",
+                            value
+                        );
+                        node.set(Raw(Bool(value)))
                     }
                     _ => (),
                 }
@@ -184,6 +201,10 @@ impl<'a> RuleMut<'a> for Comparison {
                 (view.child(0), view.child(1), view.child(2))
             {
                 if let Some(infered_bool) = infer_comparison(&left_node, &operator, &right_node) {
+                    trace!(
+                        "Comparison (L): Setting node with inferred value: {}",
+                        infered_bool
+                    );
                     node.set(Raw(Bool(infered_bool)));
                 }
             }
@@ -215,6 +236,7 @@ impl<'a> RuleMut<'a> for Not {
         if node_view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(expression)) = (node_view.child(0), node_view.child(1)) {
                 if let ("!", Some(Raw(Bool(b)))) = (operator.text()?, expression.data()) {
+                    trace!("Not (L): Setting node with inferred value: {}", !(*b));
                     node.set(Raw(Bool(!(*b))));
                 }
             }

@@ -1,5 +1,6 @@
 use crate::error::{Error, MinusOneResult};
 use crate::rule::{Rule, RuleMut};
+use log::{trace, warn};
 use std::collections::HashMap;
 use std::ops;
 use std::str::Utf8Error;
@@ -287,7 +288,7 @@ pub struct NodeMut<'a, T> {
     source: &'a [u8],
 
     /// Reference to the storage
-    storage: &'a mut dyn Storage<Component = T>,
+    storage: &'a mut dyn Storage<Component=T>,
 }
 
 /// NodeMut methods
@@ -295,7 +296,7 @@ impl<'a, T> NodeMut<'a, T> {
     pub fn new(
         root: TreeNode<'a>,
         source: &'a [u8],
-        storage: &'a mut dyn Storage<Component = T>,
+        storage: &'a mut dyn Storage<Component=T>,
     ) -> Self {
         Self {
             inner: root,
@@ -473,11 +474,20 @@ impl<'a, T> NodeMut<'a, T> {
     ///
     /// assert_eq!(node.view().data(), Some(&5));
     /// ```
-    pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language = T>) -> MinusOneResult<()> {
+    pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language=T>) -> MinusOneResult<()> {
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize)> = vec![];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
+            match node.kind() {
+                "ERROR" => warn!(
+                    "An error node was found in the tree, maybe the tree-sitter parser failed to parse the source code correctly. Node id: {}, Node kind: {}, Node text: {:?}",
+                    node.id(),
+                    node.kind(),
+                    node.utf8_text(self.source).unwrap_or("<invalid utf8>")
+                ),
+                _ => trace!("Visiting node: kind: {}, id: {}", node.kind(), node.id()),
+            }
             self.inner = node;
             // compute strategy
 
@@ -575,7 +585,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     pub fn apply_with_strategy_recurcive(
         &mut self,
-        rule: &mut impl RuleMut<'a, Language = T>,
+        rule: &mut impl RuleMut<'a, Language=T>,
         strategy: &impl Strategy<T>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
@@ -663,7 +673,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// ```
     pub fn apply_with_strategy(
         &mut self,
-        rule: &mut impl RuleMut<'a, Language = T>,
+        rule: &mut impl RuleMut<'a, Language=T>,
         strategy: &impl Strategy<T>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
@@ -672,6 +682,16 @@ impl<'a, T> NodeMut<'a, T> {
         let mut stack: Vec<(TreeNode, usize, ControlFlow)> = vec![];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
+            match node.kind() {
+                "ERROR" => warn!(
+                    "An error node was found in the tree, maybe the tree-sitter parser failed to parse the source code correctly. Node id: {}, Node kind: {}, Node text: {:?}",
+                    node.id(),
+                    node.kind(),
+                    node.utf8_text(self.source).unwrap_or("<invalid utf8>")
+                ),
+                _ => trace!("Visiting node: kind: {}, id: {}", node.kind(), node.id()),
+            }
+
             self.inner = node;
             // compute strategy
 
@@ -737,7 +757,7 @@ pub struct Node<'a, T> {
     /// Source reference
     source: &'a [u8],
     /// The associate component storage
-    storage: &'a dyn Storage<Component = T>,
+    storage: &'a dyn Storage<Component=T>,
 }
 
 /// Two nodes are equals if they have the same node id
@@ -751,7 +771,7 @@ impl<'a, T> Node<'a, T> {
     pub fn new(
         node: TreeNode<'a>,
         source: &'a [u8],
-        storage: &'a dyn Storage<Component = T>,
+        storage: &'a dyn Storage<Component=T>,
     ) -> Self {
         Self {
             node,
@@ -865,12 +885,13 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
-    fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
+    fn apply(&self, rule: &mut impl Rule<'a, Language=T>) -> MinusOneResult<()> {
         let mut is_visiting = true;
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize, bool)> = vec![];
 
         for node in traverse(self.node.walk(), Order::Pre) {
+
             stack.push((node, node.child_count(), is_visiting));
             if is_visiting {
                 is_visiting =
@@ -1019,7 +1040,7 @@ where
 
     pub fn apply_mut<'b>(
         &'b mut self,
-        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized),
+        rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized),
     ) -> MinusOneResult<()> {
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
         node.apply(rule)
@@ -1027,7 +1048,7 @@ where
 
     pub fn apply_mut_with_strategy<'b>(
         &'b mut self,
-        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized),
+        rule: &mut (impl RuleMut<'b, Language=S::Component> + Sized),
         strategy: impl Strategy<S::Component>,
     ) -> MinusOneResult<()> {
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
@@ -1040,7 +1061,7 @@ where
 
     pub fn apply<'b>(
         &'b self,
-        rule: &mut (impl Rule<'b, Language = S::Component> + Sized),
+        rule: &mut (impl Rule<'b, Language=S::Component> + Sized),
     ) -> MinusOneResult<()> {
         let node = Node::new(self.tree_sitter.root_node(), self.source, &self.storage);
         node.apply(rule)

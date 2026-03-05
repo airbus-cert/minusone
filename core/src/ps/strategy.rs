@@ -1,3 +1,4 @@
+use log::warn;
 use crate::error::MinusOneResult;
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::Bool;
@@ -15,7 +16,7 @@ impl Strategy<Powershell> for PowershellStrategy {
             return Ok(Break);
         }
 
-        match node.kind() {
+        let predictability = match node.kind() {
             "statement_block" => {
                 let parent = node.parent().unwrap();
                 match parent.kind() {
@@ -122,6 +123,12 @@ impl Strategy<Powershell> for PowershellStrategy {
             }
             // Any other node than statement block become unpredictable
             _ => Ok(Continue(Predictable)),
+        };
+
+        if let Ok(Continue(Unpredictable)) = predictability {
+            warn!("Control flow is unpredictable at node '{}' with data: {:?}", node.kind(), node.data());
         }
+
+        predictability
     }
 }
