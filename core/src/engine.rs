@@ -1,7 +1,6 @@
 use crate::debug::DebugView;
 use crate::error::MinusOneResult;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
-use ps::backend::PowershellBackend;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -31,7 +30,7 @@ pub trait DeobfuscationBackend {
     fn language_rules<'a>() -> Vec<&'a str>;
 }
 
-pub struct DeobfuscateEngine<'a, B: DeobfuscationBackend = PowershellBackend> {
+pub struct DeobfuscateEngine<'a, B: DeobfuscationBackend> {
     root: Tree<'a, HashMapStorage<B::Language>>,
     backend: PhantomData<B>,
 }
@@ -86,7 +85,7 @@ pub trait CleanBackend {
     fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String>;
 }
 
-pub struct CleanEngine<'a, B: CleanBackend = PowershellBackend> {
+pub struct CleanEngine<'a, B: CleanBackend> {
     root: Tree<'a, EmptyStorage>,
     backend: PhantomData<B>,
 }
