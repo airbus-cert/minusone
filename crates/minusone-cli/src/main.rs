@@ -5,7 +5,7 @@ extern crate minusone;
 mod cli;
 mod utils;
 
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 use clap_help::Printer;
 use cli::{Cli, Language, INTRO};
 use minusone::ps::backend::PowershellBackend;
@@ -22,9 +22,21 @@ fn main() {
         return;
     }
 
+    let lang = match cli.lang {
+        Some(l) => l,
+        None => {
+            eprintln!("[x] ERROR: No language specified. Use --lang to specify the language.");
+            eprintln!("Available languages:");
+            for l in Language::value_variants() {
+                println!("- {}", l.to_string());
+            }
+            process::exit(1);
+        }
+    };
+
     if cli.list {
-        let rules = get_available_rules(cli.lang);
-        println!("Available rules for {}:", cli.lang);
+        let rules = get_available_rules(lang);
+        println!("Available rules for {}:", lang);
         for rule in rules {
             println!("- {}", rule);
         }
@@ -61,7 +73,7 @@ fn main() {
 
     let now = std::time::Instant::now();
 
-    let result = match cli.lang {
+    let result = match lang {
         Language::Powershell => {
             run_deobf::<PowershellBackend>(&source, debug, rule_set, skip_rule_set)
         }

@@ -3,9 +3,8 @@ use std::fmt::Display;
 
 const APPLICATION_NAME: &str = env!("CARGO_PKG_NAME");
 
-#[derive(Debug, Default, Clone, ValueEnum, Copy)]
+#[derive(Debug, Clone, ValueEnum, Copy)]
 pub enum Language {
-    #[default]
     Powershell,
 }
 
@@ -41,8 +40,8 @@ pub struct Cli {
     pub debug: bool,
 
     /// Language of the script (default: powershell)
-    #[arg(long, short, value_enum, default_value_t = Language::Powershell)]
-    pub lang: Language,
+    #[arg(long, short, value_enum)]
+    pub lang: Option<Language>,
 
     /// List rules available for a language
     #[arg(long, short = 'L')]
