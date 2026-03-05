@@ -1,3 +1,4 @@
+use log::trace;
 use crate::error::{Error, MinusOneError, MinusOneErrorKind, MinusOneResult};
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, Raw};
@@ -64,6 +65,8 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
                     return Ok(());
                 }
             }
+
+            trace!("ParseArrayLiteral: Setting node with Array: {:?}", range);
             node.set(Array(range));
         }
         Ok(())
@@ -144,6 +147,7 @@ impl<'a> RuleMut<'a> for ParseRange {
                             }
                         }
 
+                        trace!("ParseRange: Setting node with Array: {:?}", result);
                         node.set(Array(result));
                     }
                 }
@@ -426,12 +430,17 @@ impl<'a> RuleMut<'a> for NewObjectArray {
                             )
                         ));
                     }
+
+                    let value =std::cmp::max(
+                        (*size) as usize,
+                        self.max_size.unwrap_or_default()
+                    );
+
+                    trace!("NewObjectArray: Setting node with Array: [0; {}]", value);
+
                     node.set(Array(vec![
                         Num(0);
-                        std::cmp::max(
-                            (*size) as usize,
-                            self.max_size.unwrap_or_default()
-                        )
+                        value
                     ]));
                 }
             }

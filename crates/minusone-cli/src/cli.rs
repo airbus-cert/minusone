@@ -60,7 +60,7 @@ pub struct Cli {
     pub time: bool,
 
     /// Log level for the deobfuscation process
-    #[arg(long, short, value_enum, default_value_t = LogLevel::Info)]
+    #[arg(long, value_enum, default_value_t = LogLevel::Info, alias = "log")]
     pub log_level: LogLevel,
 }
 

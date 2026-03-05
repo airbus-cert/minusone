@@ -1,3 +1,4 @@
+use log::trace;
 use crate::{
     ps::{
         LoopStatus::{Dead, Inifite, OneTurn},
@@ -87,6 +88,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
             && self.loop_id == view.parent().map(|n| n.id())
         {
             if let Some(&Raw(Bool(false))) = view.data() {
+                trace!("ForStatementCondition (L): Setting loop with id {} as dead", self.loop_id.unwrap());
                 node.set_by_node_id(self.loop_id.unwrap(), Loop(Dead));
                 node.apply_transaction();
             } else {
@@ -185,6 +187,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .map(|n| n.id())
                     .collect();
                 for id in following_children_ids {
+                    trace!("ForStatementFlowControl (L): Setting node with id {} as dead", id);
                     node.set_by_node_id(id, Powershell::DeadCode);
                 }
             }
@@ -228,15 +231,20 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
                         match iter.next().map(|n| n.smallest_child().kind()) {
                             Some("break" | "return" | "exit" | "throw") => {
+                                trace!("ForStatementFlowControl (L): Setting loop with id {} as one turn", parent.id());
                                 node.set_by_node_id(parent.id(), Loop(OneTurn));
 
                                 self.iterators.iter().for_each(|it| {
                                     it.references.iter().for_each(|&id| {
-                                        node.set_by_node_id(id, Powershell::Raw(it.value.clone()))
+                                        trace!("ForStatementFlowControl (L): Setting node with id {} as raw with value {}", id, it.value);
+                                        node.set_by_node_id(id, Raw(it.value.clone()))
                                     })
                                 });
                             }
-                            Some("continue") => node.set(Loop(Inifite)),
+                            Some("continue") => {
+                                trace!("ForStatementFlowControl (L): Setting loop with id {} as infinite", parent.id());
+                                node.set(Loop(Inifite))
+                            },
                             _ => {}
                         }
                     }

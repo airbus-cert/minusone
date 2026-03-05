@@ -1,3 +1,4 @@
+use log::{trace, warn};
 use crate::error::MinusOneResult;
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, PSItem, Raw, Type};
@@ -61,86 +62,122 @@ impl<'a> RuleMut<'a> for Cast {
                     {
                         (Some(Type(t)), Some(Raw(v))) if t == "int" => {
                             if let Some(number) = v.clone().to_i64() {
+                                trace!("cast (L): Setting node with casted int value: {}", number);
                                 node.set(Raw(Num(number)));
+                            } else {
+                                warn!("cast (L): Failed to cast value {} to int", v);
                             }
-                        },
+                        }
                         (Some(Type(t)), Some(Raw(v))) if t == "byte" => {
                             if let Some(number) = v.clone().to_i64() {
                                 if number < 256 && number > 0 {
+                                    trace!("cast (L): Setting node with casted byte value: {}", number);
                                     node.set(Raw(Num(number)));
+                                } else {
+                                    warn!("cast (L): Failed to cast value {} to byte, out of range", number);
                                 }
                             }
-                        },
+                        }
                         (Some(Type(t)), Some(Raw(Num(num)))) if t == "char" => {
+                            if *num > 0xff {
+                                warn!("cast (L): The value {} is too big to be casted to char and will be truncated to fit into a char", num);
+                            }
+
                             let mut result = String::new();
+                            // todo: check if the number is in the valid range for char (0..=0x10FFFF) instead of just truncating it to fit into a char
                             result.push(char::from(*num as u8));
+                            trace!("cast (L): Setting node with casted char value: {}", result);
                             node.set(Raw(Str(result)));
-                        },
+                        }
                         (Some(Type(t)), Some(PSItem(values))) if t == "int" => {
                             let mut result = Vec::new();
                             for v in values {
                                 if let Some(n) = v.clone().to_i64() {
                                     result.push(Num(n));
                                 } else {
-                                    return Ok(())
+                                    warn!("cast (L): Failed to cast value {:?} to int, invalid number", v);
+                                    return Ok(());
                                 }
                             }
+                            trace!("cast (L): Setting node with casted int value: {:?}", result);
                             node.set(PSItem(result));
-                        },
+                        }
                         (Some(Type(t)), Some(PSItem(values))) if t == "byte" => {
                             let mut result = Vec::new();
                             for v in values {
                                 if let Some(n) = v.clone().to_i64() {
                                     // invalid cast
                                     if !(0..=255).contains(&n) {
-                                        return Ok(())
+                                        warn!("cast (L): Failed to cast value {:?} to byte, out of range", v);
+                                        return Ok(());
                                     }
                                     result.push(Num(n));
                                 } else {
-                                    return Ok(())
+                                    warn!("cast (L): Failed to cast value {:?} to byte, invalid number", v);
+                                    return Ok(());
                                 }
                             }
+                            trace!("cast (L): Setting node with casted byte value: {:?}", result);
                             node.set(PSItem(result));
-                        },
+                        }
                         (Some(Type(t)), Some(PSItem(values))) => if t == "char" {
                             let mut result = Vec::new();
                             for e in values {
                                 let casted_value = match e {
                                     Num(number) => {
+                                        if *number < 0 || *number > u32::MAX as i64 {
+                                            warn!("cast (L): The value {} is out of range for char and cannot be casted to an unsigned integer", number);
+                                            return Ok(());
+                                        }
+
                                         char::from_u32(*number as u32)
-                                    },
-                                    _ => None
+                                    }
+                                    _ => {
+                                        warn!("cast (L): Failed to cast value {:?} to char, invalid type", e);
+                                        None
+                                    }
                                 };
 
                                 if casted_value.is_none() {
                                     // Failed to cast -> stop the rule
-                                    return Ok(())
+                                    warn!("cast (L): Failed to cast value {:?} to char, invalid number", e);
+                                    return Ok(());
                                 }
 
                                 result.push(Str(casted_value.unwrap().to_string()));
                             }
+                            trace!("cast (L): Setting node with casted char value: {:?}", result);
                             node.set(PSItem(result));
                         },
                         (Some(Type(t)), Some(Raw(Num(v)))) => if t == "bool" {
+                            trace!(" Setting node with casted bool value: {}", *v != 0);
                             node.set(Raw(Bool(*v != 0)));
                         },
                         (Some(Type(t)), Some(Raw(Str(v)))) => if t == "bool" {
-                            node.set(Raw(Bool(!v.is_empty())));
+                            trace!("cast (L): Setting node with casted bool value: {}", !v.is_empty());
+                                node.set(Raw(Bool(!v.is_empty())));
                         } else if t == "char[]" {
-                            node.set(Array(v.chars().map(|c| Str(c.to_string())).collect()));
+                            let array = v.chars().map(|c| Str(c.to_string())).collect();
+                            trace!("cast (L): Setting node with casted char[] value: {:?}", array);
+                            node.set(Array(array));
                         } else if t == "string" {
+                                trace!("cast (L): Setting node with casted string value: {}", v);
                             node.set(Raw(Str(v.clone())));
                         },
                         (Some(Type(t)), Some(Raw(Bool(v)))) => if t == "bool" {
+                            trace!("cast (L): Setting node with casted bool value: {}", v);
                             node.set(Raw(Bool(*v)));
                         },
                         (Some(Type(t)), Some(Powershell::Null)) => if t == "bool" {
+                            trace!("cast (L): Setting node with casted bool value: false");
                             node.set(Raw(Bool(false)));
                         },
                         (Some(Type(t)), Some(Powershell::HashMap(_))) => if t == "bool" {
+                            trace!("cast (L): Setting node with casted bool value: true");
                             node.set(Raw(Bool(true)));
                         },
                         (Some(Type(t)), None) => if t == "bool" {
+                            trace!("cast (L): Setting node with casted bool value: true");
                             node.set(Raw(Bool(true)));
                         },
                         (Some(Type(t)), Some(Array(array_value))) if t == "char[]" => {
@@ -156,15 +193,16 @@ impl<'a> RuleMut<'a> for Cast {
                             for v in transformed_value {
                                 if let Some(c) = v {
                                     result.push(Str(String::from(c)));
-                                }
-                                else {
+                                } else {
                                     return Ok(());
                                 }
                             }
 
+                                trace!("cast (L): Setting node with casted char[] value: {:?}", result);
                             node.set(Array(result));
-                        },
+                        }
                         (Some(Type(t)), Some(Array(_array_value))) if t == "bool" => {
+                            trace!("cast (L): Setting node with casted bool value: true");
                             node.set(Raw(Bool(true)));
                         }
                         _ => ()
@@ -177,6 +215,7 @@ impl<'a> RuleMut<'a> for Cast {
                 if let Some(child) = view.child(0) {
                     if child.kind() == "cast_expression" {
                         if let Some(data) = child.data() {
+                            trace!("cast (L): Forwarding casted value: {:?}", data);
                             node.set(data.clone());
                         }
                     }
@@ -211,8 +250,14 @@ impl<'a> RuleMut<'a> for CastNull {
         if view.kind() == "expression_with_unary_operator" {
             if let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
                 match (operator.text()?.to_lowercase().as_str(), expression.data()) {
-                    ("+", Some(Powershell::Null)) => node.set(Raw(Num(0))),
-                    ("-", Some(Powershell::Null)) => node.set(Raw(Num(0))),
+                    ("+", Some(Powershell::Null)) => {
+                        trace!("cast null (L): Setting node with casted null value: 0");
+                        node.set(Raw(Num(0)))
+                    },
+                    ("-", Some(Powershell::Null)) => {
+                        trace!("cast null (L): Setting node with casted null value: 0");
+                        node.set(Raw(Num(0)))
+                    },
                     _ => (),
                 }
             }
@@ -243,7 +288,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-        .unwrap();
+            .unwrap();
 
         assert_eq!(
             *tree
@@ -268,7 +313,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-        .unwrap();
+            .unwrap();
 
         assert_eq!(
             *tree
@@ -294,7 +339,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-        .unwrap();
+            .unwrap();
 
         assert_eq!(
             *tree
@@ -321,7 +366,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-        .unwrap();
+            .unwrap();
 
         assert_eq!(
             *tree
@@ -349,7 +394,7 @@ mod test {
             PSItemInferrator::default(),
             ParseType::default(),
         ))
-        .unwrap();
+            .unwrap();
 
         assert_eq!(
             *tree

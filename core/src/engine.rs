@@ -3,6 +3,7 @@ use crate::error::MinusOneResult;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use log::debug;
 
 pub trait DeobfuscationBackend {
     type Language;
@@ -56,6 +57,7 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
+        debug!("Starting deobfuscation process with {} rules", B::language_rules().len());
         B::deobfuscate_tree(&mut self.root)
     }
 
@@ -68,10 +70,20 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
     }
 
     pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
+        debug!(
+            "Starting deobfuscation process with {} custom rules: {}",
+            ruleset.len(),
+            ruleset.join(", ")
+        );
         B::deobfuscate_tree_with_custom_ruleset(&mut self.root, ruleset)
     }
 
     pub fn deobfuscate_without_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
+        debug!(
+            "Starting deobfuscation process with all rules except {}: {}",
+            ruleset.len(),
+            ruleset.join(", ")
+        );
         B::deobfuscate_tree_without_custom_ruleset(&mut self.root, ruleset)
     }
 

@@ -5,6 +5,7 @@ use crate::ps::Powershell::{Array, Raw, Type};
 use crate::ps::Value::{Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::{trace, warn};
 use base64::{engine::general_purpose, Engine as _};
 
 /// Compute the length of predictable Array or string
@@ -64,12 +65,14 @@ impl<'a> RuleMut<'a> for Length {
                     | (Some(Array(value)), ".", _, Some(Raw(Str(m))))
                         if m.clone().normalize() == "length" =>
                     {
+                        trace!("Length (L): Setting node with array length: {}", value.len());
                         node.set(Raw(Num(value.len() as i64)))
                     }
                     (Some(Raw(Str(s))), ".", m, None)
                     | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))
                         if m.clone().normalize() == "length" =>
                     {
+                        trace!("Length (L): Setting node with string length: {}", s.len());
                         node.set(Raw(Num(s.len() as i64)))
                     }
                     _ => (),
@@ -149,6 +152,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                             && (typename == "system.convert" || typename == "convert") =>
                     {
                         // infer type of member access
+                        trace!("DecodeBase64 (L): Setting node with type convert::frombase64string");
                         node.set(Type(String::from("convert::frombase64string")));
                     }
                     _ => (),
@@ -178,10 +182,17 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
-                                    if let Ok(bytes) = general_purpose::STANDARD.decode(s) {
-                                        node.set(Array(
-                                            bytes.iter().map(|b| Num(*b as i64)).collect(),
-                                        ));
+
+                                    // todo : ignore b64 padding
+                                    match general_purpose::STANDARD.decode(s) {
+                                        Ok(bytes) => {
+                                            let decoded_array: Vec<_> = bytes.iter().map(|b| Num(*b as i64)).collect();
+                                            trace!("DecodeBase64 (L): Setting node with decoded base64 array: {:?}", decoded_array);
+                                            node.set(Array(decoded_array));
+                                        },
+                                        Err(e) => {
+                                            warn!("DecodeBase64 (L): Failed to decode base64 string: {}. Error: {}", s, e);
+                                        }
                                     }
                                 }
                             }
@@ -267,6 +278,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                         // infer type of member access
                         let mut function_typename = String::from("text.encoding.");
                         function_typename += &m.clone().normalize();
+                        trace!("FromUTF (L): Setting node with encoding type: {:?}", function_typename);
                         node.set(Type(function_typename));
                     }
 
@@ -283,6 +295,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                     {
                         let mut function_typename = typename.clone();
                         function_typename += ".getstring";
+                        trace!("FromUTF (L): Setting node with getstring type: {:?}", function_typename);
                         node.set(Type(function_typename));
                     }
                     _ => (),
@@ -319,6 +332,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                                         }
                                     }
                                     if let Ok(s) = String::from_utf8(int_vec) {
+                                        trace!("FromUTF (L): Setting node with UTF-8 decoded string: {:?}", s);
                                         node.set(Raw(Str(s)));
                                     }
                                 }
@@ -353,6 +367,7 @@ impl<'a> RuleMut<'a> for FromUTF {
                                     let int_vec = int_vec.as_slice();
 
                                     if let Ok(s) = String::from_utf16(int_vec) {
+                                        trace!("FromUTF (L): Setting node with UTF-16 decoded string: {:?}", s);
                                         node.set(Raw(Str(s)));
                                     }
                                 }
