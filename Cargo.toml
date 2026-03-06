@@ -15,3 +15,8 @@ description = "A script deobfuscator"
 repository = "https://github.com/airbus-cert/minusone"
 readme = "README.md"
 license = "MIT"
+
+[profile.minusonejs-release]
+inherits = "release"
+lto = false
+panic = "abort"
