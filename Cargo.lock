@@ -629,6 +629,7 @@ dependencies = [
  "num",
  "regex",
  "tree-sitter",
+ "tree-sitter-javascript",
  "tree-sitter-powershell",
  "tree-sitter-traversal2",
 ]
@@ -1214,6 +1215,16 @@ dependencies = [
  "streaming-iterator",
  "thiserror 2.0.18",
  "tree-sitter",
+]
+
+[[package]]
+name = "tree-sitter-javascript"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]
