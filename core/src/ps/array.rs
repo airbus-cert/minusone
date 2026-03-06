@@ -1,10 +1,10 @@
-use log::trace;
 use crate::error::{Error, MinusOneError, MinusOneErrorKind, MinusOneResult};
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, Raw};
 use crate::ps::Value::Num;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::trace;
 
 /// Parse array literal
 ///

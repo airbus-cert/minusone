@@ -1,4 +1,3 @@
-use log::warn;
 use crate::error::MinusOneResult;
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::Bool;
@@ -6,6 +5,7 @@ use crate::ps::{LoopStatus, Powershell};
 use crate::tree::BranchFlow::{Predictable, Unpredictable};
 use crate::tree::ControlFlow::{Break, Continue};
 use crate::tree::{ControlFlow, Node, Strategy};
+use log::warn;
 
 #[derive(Default)]
 pub struct PowershellStrategy;
@@ -126,7 +126,11 @@ impl Strategy<Powershell> for PowershellStrategy {
         };
 
         if let Ok(Continue(Unpredictable)) = predictability {
-            warn!("Control flow is unpredictable at node '{}' with data: {:?}", node.kind(), node.data());
+            warn!(
+                "Control flow is unpredictable at node '{}' with data: {:?}",
+                node.kind(),
+                node.data()
+            );
         }
 
         predictability

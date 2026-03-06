@@ -1,10 +1,10 @@
-use log::trace;
 use crate::error::MinusOneResult;
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, Raw, Type};
 use crate::ps::Value::Str;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::trace;
 
 /// This rule will infer the -join opoerator
 /// in the context of comparison operator
@@ -169,7 +169,10 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
                                         .collect::<Vec<String>>()
                                         .join(join_token);
 
-                                    trace!("JoinStringMethod: Setting node with result: {}", result);
+                                    trace!(
+                                        "JoinStringMethod: Setting node with result: {}",
+                                        result
+                                    );
                                     node.set(Raw(Str(result)));
                                 }
                             }
@@ -247,7 +250,7 @@ impl<'a> RuleMut<'a> for JoinOperator {
                         .collect::<Vec<String>>()
                         .join(""); // by default the join operator join with an empty token
 
-                        trace!("JoinOperator: Setting node with result: {}", result);
+                    trace!("JoinOperator: Setting node with result: {}", result);
                     node.set(Raw(Str(result)));
                 }
             }

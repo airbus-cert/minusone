@@ -1,9 +1,9 @@
-use log::trace;
 use crate::error::{Error, MinusOneResult};
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, PSItem, Raw};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
+use log::trace;
 
 fn find_previous_expr<'a>(
     command: &Node<'a, Powershell>,
@@ -230,7 +230,7 @@ impl<'a> RuleMut<'a> for ForEach {
                                     }
                                 }
                                 if !result.is_empty() {
-                                        trace!("ForEach (L): Setting node with result: {:?}", result);
+                                    trace!("ForEach (L): Setting node with result: {:?}", result);
                                     node.set(Array(result));
                                 }
                             }

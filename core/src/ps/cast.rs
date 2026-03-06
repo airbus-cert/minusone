@@ -1,10 +1,10 @@
-use log::{trace, warn};
 use crate::error::MinusOneResult;
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, PSItem, Raw, Type};
 use crate::ps::Value::{Bool, Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::{trace, warn};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
@@ -253,11 +253,11 @@ impl<'a> RuleMut<'a> for CastNull {
                     ("+", Some(Powershell::Null)) => {
                         trace!("cast null (L): Setting node with casted null value: 0");
                         node.set(Raw(Num(0)))
-                    },
+                    }
                     ("-", Some(Powershell::Null)) => {
                         trace!("cast null (L): Setting node with casted null value: 0");
                         node.set(Raw(Num(0)))
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -288,7 +288,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-            .unwrap();
+        .unwrap();
 
         assert_eq!(
             *tree
@@ -313,7 +313,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-            .unwrap();
+        .unwrap();
 
         assert_eq!(
             *tree
@@ -339,7 +339,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-            .unwrap();
+        .unwrap();
 
         assert_eq!(
             *tree
@@ -366,7 +366,7 @@ mod test {
             Cast::default(),
             ParseType::default(),
         ))
-            .unwrap();
+        .unwrap();
 
         assert_eq!(
             *tree
@@ -394,7 +394,7 @@ mod test {
             PSItemInferrator::default(),
             ParseType::default(),
         ))
-            .unwrap();
+        .unwrap();
 
         assert_eq!(
             *tree

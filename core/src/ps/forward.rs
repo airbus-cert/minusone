@@ -1,9 +1,9 @@
-use log::trace;
 use crate::error::{Error, MinusOneResult};
 use crate::ps::Powershell;
 use crate::ps::Powershell::Null;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::trace;
 
 /// The forward rule is use to forward
 /// inferedtype in the most simple case : where there is nothing to do
@@ -108,7 +108,10 @@ impl<'a> RuleMut<'a> for Forward {
             "pipeline" | "pipeline_chain" => {
                 if let Some(expression) = view.child(view.child_count() - 1) {
                     if let Some(expression_data) = expression.data() {
-                        trace!("Forward (L): Setting node with pipeline expression data: {:?}", expression_data);
+                        trace!(
+                            "Forward (L): Setting node with pipeline expression data: {:?}",
+                            expression_data
+                        );
                         node.set(expression_data.clone())
                     }
                 }

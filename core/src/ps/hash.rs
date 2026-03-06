@@ -4,8 +4,8 @@ use crate::ps::Powershell::{HashEntry, HashMap, Raw};
 use crate::ps::Value::Str;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use std::collections::BTreeMap;
 use log::trace;
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub struct ParseHash;
@@ -32,11 +32,19 @@ impl<'a> RuleMut<'a> for ParseHash {
             if let (Some(key_expression), Some(pipeline)) = (view.child(0), view.child(2)) {
                 if let Some(Raw(value)) = pipeline.data() {
                     if let Some(Raw(key)) = key_expression.data() {
-                        trace!("ParseHash: Setting node with key: {:?} and value: {:?}", key, value);
+                        trace!(
+                            "ParseHash: Setting node with key: {:?} and value: {:?}",
+                            key,
+                            value
+                        );
                         node.set(HashEntry(key.normalize(), value.clone()));
                     } else if let Some(key_child) = key_expression.child(0) {
                         if key_child.kind() == "simple_name" {
-                            trace!("ParseHash: Setting node with key: {:?} and value: {:?}", key_child.text(), value);
+                            trace!(
+                                "ParseHash: Setting node with key: {:?} and value: {:?}",
+                                key_child.text(),
+                                value
+                            );
                             node.set(HashEntry(
                                 Str(key_child.text()?.to_lowercase()),
                                 value.clone(),
@@ -53,7 +61,7 @@ impl<'a> RuleMut<'a> for ParseHash {
                     result.insert(Str(k.to_string().to_lowercase()), v.clone());
                 }
             }
-            
+
             trace!("ParseHash: Setting node with HashMap: {:?}", result);
             node.set(HashMap(result))
         }

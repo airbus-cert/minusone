@@ -1,9 +1,9 @@
 use crate::debug::DebugView;
 use crate::error::MinusOneResult;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
+use log::debug;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use log::debug;
 
 pub trait DeobfuscationBackend {
     type Language;
@@ -57,7 +57,10 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
     }
 
     pub fn deobfuscate(&mut self) -> MinusOneResult<()> {
-        debug!("Starting deobfuscation process with {} rules", B::language_rules().len());
+        debug!(
+            "Starting deobfuscation process with {} rules",
+            B::language_rules().len()
+        );
         B::deobfuscate_tree(&mut self.root)
     }
 

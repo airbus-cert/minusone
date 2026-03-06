@@ -1,10 +1,10 @@
-use log::{trace, warn};
 use crate::error::MinusOneResult;
 use crate::ps::Powershell;
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::Num;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::{trace, warn};
 
 /// Parse int will interpret integer node into Rust world
 /// as decimal
@@ -63,11 +63,11 @@ impl<'a> RuleMut<'a> for ParseInt {
                         ("-", Some(Raw(Num(num)))) => {
                             trace!("ParseInt (L): Setting node with negative number: -{}", num);
                             node.set(Raw(Num(-num)))
-                        },
+                        }
                         ("+", Some(Raw(Num(num)))) => {
                             trace!("ParseInt (L): Setting node with positive number: +{}", num);
                             node.set(Raw(Num(*num)))
-                        },
+                        }
                         _ => (),
                     }
                 }
@@ -201,7 +201,10 @@ impl<'a> RuleMut<'a> for MultInt {
                         if let Some(result) = number_left.checked_mul(*number_right) {
                             node.reduce(Raw(Num(result)))
                         } else {
-                            warn!("Multiplication overflow: {} * {}", number_left, number_right);
+                            warn!(
+                                "Multiplication overflow: {} * {}",
+                                number_left, number_right
+                            );
                         }
                     }
                     (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {

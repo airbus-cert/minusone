@@ -100,7 +100,10 @@ impl<'a> RuleMut<'a> for AccessString {
                                 }
                             }
                         }
-                        trace!("AccessString (L): Setting node with string array result: {:?}", result);
+                        trace!(
+                            "AccessString (L): Setting node with string array result: {:?}",
+                            result
+                        );
                         node.set(Array(result));
                     }
                     // "foo"[0]
@@ -109,7 +112,10 @@ impl<'a> RuleMut<'a> for AccessString {
                             if let Some(string_result) =
                                 get_at_index(string_element, parsed_index_value)
                             {
-                                trace!("AccessString (L): Setting node with string result: {:?}", string_result);
+                                trace!(
+                                    "AccessString (L): Setting node with string result: {:?}",
+                                    string_result
+                                );
                                 node.set(Raw(Str(string_result)));
                             }
                         }
@@ -156,7 +162,10 @@ impl<'a> RuleMut<'a> for AccessArray {
                                 }
                             }
                         }
-                        trace!("AccessArray (L): Setting node with array result: {:?}", result);
+                        trace!(
+                            "AccessArray (L): Setting node with array result: {:?}",
+                            result
+                        );
                         node.set(Array(result));
                     }
                     // "foo"[0]

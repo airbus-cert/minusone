@@ -1,4 +1,3 @@
-use log::trace;
 use crate::{
     ps::{
         LoopStatus::{Dead, Inifite, OneTurn},
@@ -7,6 +6,7 @@ use crate::{
     },
     rule::RuleMut,
 };
+use log::trace;
 
 struct IteratorVariable {
     name: String,
@@ -88,7 +88,10 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
             && self.loop_id == view.parent().map(|n| n.id())
         {
             if let Some(&Raw(Bool(false))) = view.data() {
-                trace!("ForStatementCondition (L): Setting loop with id {} as dead", self.loop_id.unwrap());
+                trace!(
+                    "ForStatementCondition (L): Setting loop with id {} as dead",
+                    self.loop_id.unwrap()
+                );
                 node.set_by_node_id(self.loop_id.unwrap(), Loop(Dead));
                 node.apply_transaction();
             } else {
@@ -187,7 +190,10 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .map(|n| n.id())
                     .collect();
                 for id in following_children_ids {
-                    trace!("ForStatementFlowControl (L): Setting node with id {} as dead", id);
+                    trace!(
+                        "ForStatementFlowControl (L): Setting node with id {} as dead",
+                        id
+                    );
                     node.set_by_node_id(id, Powershell::DeadCode);
                 }
             }
@@ -244,7 +250,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                             Some("continue") => {
                                 trace!("ForStatementFlowControl (L): Setting loop with id {} as infinite", parent.id());
                                 node.set(Loop(Inifite))
-                            },
+                            }
                             _ => {}
                         }
                     }

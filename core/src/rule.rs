@@ -1,6 +1,6 @@
-use log::warn;
 use crate::error::MinusOneResult;
 use crate::tree::{ControlFlow, Node, NodeMut};
+use log::warn;
 
 pub trait RuleMut<'a> {
     type Language;
@@ -54,7 +54,10 @@ impl<'a, T> RuleSet<'a, T> {
         }
 
         // delete unknown rules
-        let low_input: Vec<String> = low_input.into_iter().filter(|s| full_names.contains(s)).collect();
+        let low_input: Vec<String> = low_input
+            .into_iter()
+            .filter(|s| full_names.contains(s))
+            .collect();
 
         Self {
             rules: full_names
