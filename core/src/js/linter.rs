@@ -10,7 +10,8 @@ struct RemoveCode {
     last_index: usize,
 }
 
-impl RemoveCode { // todo: factorize with powershell
+impl RemoveCode {
+    // todo: factorize with powershell
     pub fn start_program<T>(&mut self, root: &Node<T>) -> MinusOneResult<()> {
         self.source = root.text()?.to_string();
         Ok(())

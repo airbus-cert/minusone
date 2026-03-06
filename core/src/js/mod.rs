@@ -1,7 +1,9 @@
 pub mod backend;
+pub mod integer;
 pub mod linter;
 pub mod strategy;
 
+use self::integer::*;
 use self::linter::RemoveComment;
 use error::{Error, MinusOneResult};
 use rule::{RuleMut, RuleSet, RuleSetBuilderType};
@@ -14,15 +16,6 @@ pub enum Value {
     Num(i64),
     Str(String),
     Bool(bool),
-}
-
-impl Value {
-    fn normalize(&self) -> Value {
-        match self {
-            Value::Str(x) => Value::Str(x.to_lowercase()),
-            x => x.clone(),
-        }
-    }
 }
 
 impl Display for Value {
@@ -83,7 +76,14 @@ macro_rules! impl_javascript_ruleset {
     };
 }
 
-impl_javascript_ruleset!();
+impl_javascript_ruleset!(
+    ParseInt, // Parse integer literals (decimal, hex, octal, binary)
+    NegInt,   // Infer unary - operations on integers
+    AddInt,   // Infer + and - operations on integers
+    MultInt,  // Infer *, / and % operations on integers
+    PowInt,   // Infer ** operations on integers
+    ShiftInt  // Infer <<, >> and >>> operations on integers
+);
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
     type Language = JavaScript;
