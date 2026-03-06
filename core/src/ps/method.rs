@@ -194,7 +194,6 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
-                                    // todo : ignore b64 padding
                                     match FLEXIBLE_B64.decode(s) {
                                         Ok(bytes) => {
                                             let decoded_array: Vec<_> =
