@@ -5,8 +5,15 @@ use crate::ps::Powershell::{Array, Raw, Type};
 use crate::ps::Value::{Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use base64::{engine::general_purpose, Engine as _};
+use base64::{alphabet, Engine as _};
+use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use log::{trace, warn};
+
+const FLEXIBLE_B64: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::STANDARD,
+    GeneralPurposeConfig::new()
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
 
 /// Compute the length of predictable Array or string
 ///
@@ -188,7 +195,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
                                     // todo : ignore b64 padding
-                                    match general_purpose::STANDARD.decode(s) {
+                                    match FLEXIBLE_B64.decode(s) {
                                         Ok(bytes) => {
                                             let decoded_array: Vec<_> =
                                                 bytes.iter().map(|b| Num(*b as i64)).collect();
