@@ -1,6 +1,7 @@
 use crate::cli::Language;
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
+use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use std::fmt::Debug;
 
@@ -37,6 +38,7 @@ where
 pub(crate) fn get_available_rules(language: Language) -> Vec<String> {
     let rules = match language {
         Language::Powershell => DeobfuscateEngine::<PowershellBackend>::language_rules(),
+        Language::Javascript => DeobfuscateEngine::<JavaScriptBackend>::language_rules(),
     };
 
     rules.into_iter().map(String::from).collect()

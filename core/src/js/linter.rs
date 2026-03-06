@@ -67,7 +67,7 @@ impl<'a> Rule<'a> for RemoveComment {
     }
 }
 
-/// Reconstructs the JavaScript source while preserving original whitespac
+/// Reconstructs the JavaScript source while preserving original whitespace
 #[derive(Default)]
 pub struct Linter {
     pub output: String,

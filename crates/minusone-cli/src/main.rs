@@ -10,6 +10,7 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use clap_help::Printer;
 use cli::{Cli, INTRO, Language};
 use log::{LevelFilter, error};
+use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
 use utils::{get_available_rules, run_deobf};
@@ -84,6 +85,9 @@ fn main() {
     let result = match lang {
         Language::Powershell => {
             run_deobf::<PowershellBackend>(&source, debug, rule_set, skip_rule_set)
+        }
+        Language::Javascript => {
+            run_deobf::<JavaScriptBackend>(&source, debug, rule_set, skip_rule_set)
         }
     };
 
