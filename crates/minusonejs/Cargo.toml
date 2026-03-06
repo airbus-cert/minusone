@@ -6,10 +6,6 @@ edition = "2021"
 [package.metadata.component]
 package = "airbus-cert:minusone"
 
-[profile.release]
-lto = false
-panic = "abort"
-
 [lib]
 crate-type = ["cdylib"]
 
