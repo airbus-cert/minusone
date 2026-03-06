@@ -24,10 +24,16 @@ fn main() {
         return;
     }
 
+    pretty_env_logger::formatted_builder()
+        .filter(None, LevelFilter::Off)
+        .filter_module("minusone", LevelFilter::from(cli.log_level))
+        .filter_module(APPLICATION_NAME, LevelFilter::Error)
+        .init();
+
     let lang = match cli.lang {
         Some(l) => l,
         None => {
-            error!("[x] ERROR: No language specified. Use --lang to specify the language.");
+            error!("No language specified. Use --lang to specify the language.");
             error!("Available languages:");
             for l in Language::value_variants() {
                 error!("- {}", l.to_string());
@@ -35,12 +41,6 @@ fn main() {
             process::exit(1);
         }
     };
-
-    pretty_env_logger::formatted_builder()
-        .filter(None, LevelFilter::Off)
-        .filter_module("minusone", LevelFilter::from(cli.log_level))
-        .filter_module(APPLICATION_NAME, LevelFilter::Error)
-        .init();
 
     if cli.list {
         let rules = get_available_rules(lang);
