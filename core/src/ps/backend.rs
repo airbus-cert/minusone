@@ -1,11 +1,11 @@
-use engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
-use error::MinusOneResult;
-use init::Init;
-use ps;
+use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
+use crate::error::MinusOneResult;
+use crate::init::Init;
+use crate::ps;
 use ps::linter::RemoveUnusedVar;
 use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
-use rule::RuleSetBuilderType;
-use tree::{EmptyStorage, HashMapStorage, Tree};
+use crate::rule::RuleSetBuilderType;
+use crate::tree::{EmptyStorage, HashMapStorage, Tree};
 
 pub struct PowershellBackend;
 
