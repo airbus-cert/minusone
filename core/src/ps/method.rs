@@ -1,19 +1,12 @@
 use crate::error::MinusOneResult;
-use crate::ps::tool::StringTool;
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, Raw, Type};
 use crate::ps::Value::{Num, Str};
+use crate::ps::tool::StringTool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use base64::{alphabet, Engine as _};
-use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use base64::{Engine as _, engine::general_purpose};
 use log::{trace, warn};
-
-const FLEXIBLE_B64: GeneralPurpose = GeneralPurpose::new(
-    &alphabet::STANDARD,
-    GeneralPurposeConfig::new()
-        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
-);
 
 /// Compute the length of predictable Array or string
 ///
@@ -194,15 +187,21 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                         {
                             if let Some(arg_1) = argument_expression_list.child(0) {
                                 if let Some(Raw(Str(s))) = arg_1.data() {
-                                    match FLEXIBLE_B64.decode(s) {
+                                    match general_purpose::STANDARD.decode(s) {
                                         Ok(bytes) => {
                                             let decoded_array: Vec<_> =
                                                 bytes.iter().map(|b| Num(*b as i64)).collect();
-                                            trace!("DecodeBase64 (L): Setting node with decoded base64 array: {:?}", decoded_array);
+                                            trace!(
+                                                "DecodeBase64 (L): Setting node with decoded base64 array: {:?}",
+                                                decoded_array
+                                            );
                                             node.set(Array(decoded_array));
                                         }
                                         Err(e) => {
-                                            warn!("DecodeBase64 (L): Failed to decode base64 string: {}. Error: {}", s, e);
+                                            warn!(
+                                                "DecodeBase64 (L): Failed to decode base64 string: {}. Error: {}",
+                                                s, e
+                                            );
                                         }
                                     }
                                 }
@@ -349,7 +348,10 @@ impl<'a> RuleMut<'a> for FromUTF {
                                         }
                                     }
                                     if let Ok(s) = String::from_utf8(int_vec) {
-                                        trace!("FromUTF (L): Setting node with UTF-8 decoded string: {:?}", s);
+                                        trace!(
+                                            "FromUTF (L): Setting node with UTF-8 decoded string: {:?}",
+                                            s
+                                        );
                                         node.set(Raw(Str(s)));
                                     }
                                 }
@@ -384,7 +386,10 @@ impl<'a> RuleMut<'a> for FromUTF {
                                     let int_vec = int_vec.as_slice();
 
                                     if let Ok(s) = String::from_utf16(int_vec) {
-                                        trace!("FromUTF (L): Setting node with UTF-16 decoded string: {:?}", s);
+                                        trace!(
+                                            "FromUTF (L): Setting node with UTF-16 decoded string: {:?}",
+                                            s
+                                        );
                                         node.set(Raw(Str(s)));
                                     }
                                 }
@@ -401,6 +406,8 @@ impl<'a> RuleMut<'a> for FromUTF {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::Powershell::{Array, Raw};
+    use crate::ps::Value::{Num, Str};
     use crate::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
@@ -408,8 +415,6 @@ mod test {
     use crate::ps::method::{DecodeBase64, FromUTF, Length};
     use crate::ps::string::ParseString;
     use crate::ps::typing::ParseType;
-    use crate::ps::Powershell::{Array, Raw};
-    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_array_length() {
