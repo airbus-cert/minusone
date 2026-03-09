@@ -36,7 +36,11 @@ impl<'a> RuleMut<'a> for ParseArray {
         for child in view.iter() {
             if let Some(Raw(value)) = child.data() {
                 values.push(value.clone());
-            } else if child.kind() != "," {
+            } else if child.kind() != "," && child.kind() != "[" && child.kind() != "]" {
+                warn!(
+                    "ParseArray (L): unexpected non-raw value in array: {}",
+                    child.kind()
+                );
                 return Ok(());
             }
         }

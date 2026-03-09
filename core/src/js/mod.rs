@@ -1,11 +1,15 @@
+mod array;
 pub mod backend;
+pub mod bool;
 pub mod integer;
 pub mod linter;
 pub mod strategy;
 
+use self::bool::*;
 use self::integer::*;
 use self::linter::RemoveComment;
 use error::{Error, MinusOneResult};
+use js::array::ParseArray;
 use rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use std::fmt::Display;
 use tree::{HashMapStorage, Storage, Tree};
@@ -26,8 +30,8 @@ impl Display for Value {
             match self {
                 Value::Num(e) => e.to_string(),
                 Value::Str(s) => s.clone(),
-                Value::Bool(true) => "True".to_string(),
-                Value::Bool(false) => "False".to_string(),
+                Value::Bool(true) => "true".to_string(),
+                Value::Bool(false) => "false".to_string(),
             }
         )
     }
@@ -36,12 +40,21 @@ impl Display for Value {
 #[derive(Debug, Clone, PartialEq)]
 pub enum JavaScript {
     Raw(Value),
+    Array(Vec<Value>),
 }
 
 impl Display for JavaScript {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JavaScript::Raw(v) => write!(f, "{}", v),
+            JavaScript::Array(arr) => {
+                let arr_str = arr
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "[{}]", arr_str)
+            }
         }
     }
 }
@@ -77,12 +90,16 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt, // Parse integer literals (decimal, hex, octal, binary)
-    NegInt,   // Infer unary - operations on integers
-    AddInt,   // Infer + and - operations on integers
-    MultInt,  // Infer *, / and % operations on integers
-    PowInt,   // Infer ** operations on integers
-    ShiftInt  // Infer <<, >> and >>> operations on integers
+    ParseInt,   // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,  // Parse boolean literals (true, false)
+    ParseArray, // Parse arrays
+    NegInt,     // Infer unary - operations on integers
+    AddInt,     // Infer + and - operations on integers
+    MultInt,    // Infer *, / and % operations on integers
+    PowInt,     // Infer ** operations on integers
+    ShiftInt,   // Infer <<, >> and >>> operations on integers
+    NotBool,    // Infer unary ! operations on booleans
+    BoolAlgebra  // Infer boolean algebra operations (&&, ||)
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

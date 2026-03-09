@@ -49,21 +49,21 @@ impl<'a> RuleMut<'a> for ParseInt {
 
         if token.len() > 2 && (token.starts_with("0x") || token.starts_with("0X")) {
             if let Ok(n) = u64::from_str_radix(&token[2..], 16) {
-                trace!("ParseInt: hex {} => {}", token, n);
+                trace!("ParseInt (L): hex {} => {}", token, n);
                 node.reduce(Raw(Num(n as i64)));
             }
         } else if token.len() > 2 && (token.starts_with("0o") || token.starts_with("0O")) {
             if let Ok(n) = u64::from_str_radix(&token[2..], 8) {
-                trace!("ParseInt: octal {} => {}", token, n);
+                trace!("ParseInt (L): octal {} => {}", token, n);
                 node.reduce(Raw(Num(n as i64)));
             }
         } else if token.len() > 2 && (token.starts_with("0b") || token.starts_with("0B")) {
             if let Ok(n) = u64::from_str_radix(&token[2..], 2) {
-                trace!("ParseInt: binary {} => {}", token, n);
+                trace!("ParseInt (L): binary {} => {}", token, n);
                 node.reduce(Raw(Num(n as i64)));
             }
         } else if let Ok(n) = token.parse::<i64>() {
-            trace!("ParseInt: decimal {} => {}", token, n);
+            trace!("ParseInt (L): decimal {} => {}", token, n);
             node.reduce(Raw(Num(n)));
         }
 
@@ -114,10 +114,10 @@ impl<'a> RuleMut<'a> for NegInt {
             if op.text()? == "-" {
                 if let Some(Raw(Num(n))) = operand.data() {
                     if let Some(result) = n.checked_neg() {
-                        trace!("NegInt: -{} = {}", n, result);
+                        trace!("NegInt (L): -{} = {}", n, result);
                         node.reduce(Raw(Num(result)));
                     } else {
-                        warn!("NegInt: overflow -{}", n);
+                        warn!("NegInt (L): overflow -{}", n);
                     }
                 }
             }
@@ -169,18 +169,18 @@ impl<'a> RuleMut<'a> for AddInt {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Raw(Num(l))), "+", Some(Raw(Num(r)))) => {
                     if let Some(result) = l.checked_add(*r) {
-                        trace!("AddInt: {} + {} = {}", l, r, result);
+                        trace!("AddInt (L): {} + {} = {}", l, r, result);
                         node.reduce(Raw(Num(result)));
                     } else {
-                        warn!("AddInt: overflow {} + {}", l, r);
+                        warn!("AddInt (L): overflow {} + {}", l, r);
                     }
                 }
                 (Some(Raw(Num(l))), "-", Some(Raw(Num(r)))) => {
                     if let Some(result) = l.checked_sub(*r) {
-                        trace!("AddInt: {} - {} = {}", l, r, result);
+                        trace!("AddInt (L): {} - {} = {}", l, r, result);
                         node.reduce(Raw(Num(result)));
                     } else {
-                        warn!("AddInt: overflow {} - {}", l, r);
+                        warn!("AddInt (L): overflow {} - {}", l, r);
                     }
                 }
                 _ => {}
@@ -233,26 +233,26 @@ impl<'a> RuleMut<'a> for MultInt {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Raw(Num(l))), "*", Some(Raw(Num(r)))) => {
                     if let Some(result) = l.checked_mul(*r) {
-                        trace!("MultInt: {} * {} = {}", l, r, result);
+                        trace!("MultInt (L): {} * {} = {}", l, r, result);
                         node.reduce(Raw(Num(result)));
                     } else {
-                        warn!("MultInt: overflow {} * {}", l, r);
+                        warn!("MultInt (L): overflow {} * {}", l, r);
                     }
                 }
                 (Some(Raw(Num(l))), "/", Some(Raw(Num(r)))) => {
                     if let Some(result) = l.checked_div(*r) {
-                        trace!("MultInt: {} / {} = {}", l, r, result);
+                        trace!("MultInt (L): {} / {} = {}", l, r, result);
                         node.reduce(Raw(Num(result)));
                     } else {
-                        warn!("MultInt: division by zero {} / {}", l, r);
+                        warn!("MultInt (L): division by zero {} / {}", l, r);
                     }
                 }
                 (Some(Raw(Num(l))), "%", Some(Raw(Num(r)))) => {
                     if *r != 0 {
-                        trace!("MultInt: {} % {} = {}", l, r, l % r);
+                        trace!("MultInt (L): {} % {} = {}", l, r, l % r);
                         node.reduce(Raw(Num(l % r)));
                     } else {
-                        warn!("MultInt: modulo by zero {} % {}", l, r);
+                        warn!("MultInt (L): modulo by zero {} % {}", l, r);
                     }
                 }
                 _ => {}
@@ -305,10 +305,10 @@ impl<'a> RuleMut<'a> for PowInt {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Raw(Num(l))), "**", Some(Raw(Num(r)))) => {
                     if let Some(result) = l.checked_pow(*r as u32) {
-                        trace!("PowInt: {} ** {} = {}", l, r, result);
+                        trace!("PowInt (L): {} ** {} = {}", l, r, result);
                         node.reduce(Raw(Num(result)));
                     } else {
-                        warn!("PowInt: overflow {} ** {}", l, r);
+                        warn!("PowInt (L): overflow {} ** {}", l, r);
                     }
                 }
                 _ => {}
@@ -361,19 +361,19 @@ impl<'a> RuleMut<'a> for ShiftInt {
                 (Some(Raw(Num(l))), ">>", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as i32).wrapping_shr(shift) as i64;
-                    trace!("ShiftInt: {} >> {} = {}", l, r, result);
+                    trace!("ShiftInt (L): {} >> {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), "<<", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as i32).wrapping_shl(shift) as i64;
-                    trace!("ShiftInt: {} << {} = {}", l, r, result);
+                    trace!("ShiftInt (L): {} << {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), ">>>", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as u32).wrapping_shr(shift) as i64;
-                    trace!("ShiftInt: {} >>> {} = {}", l, r, result);
+                    trace!("ShiftInt (L): {} >>> {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
                 _ => {}
@@ -512,3 +512,5 @@ mod test {
         assert_eq!(lint(&tree), "var x = 16;");
     }
 }
+
+// Todo: Bitwise operators (&, |, ^, ~)

@@ -29,9 +29,10 @@ where
 
     if debug {
         engine.debug();
-    } else {
-        println!("{}", engine.lint()?);
+        println!("\n\n");
     }
+    println!("{}", engine.lint()?);
+
     Ok(())
 }
 
