@@ -250,3 +250,59 @@ impl<'a> RuleMut<'a> for AddBool {
         Ok(())
     }
 }
+
+/// Infers unary plus and minus on booleans
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::bool::{BoolPlusMinus, ParseBool};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = +true; var y = -false;").unwrap();
+/// tree.apply_mut(&mut (ParseBool::default(), BoolPlusMinus::default())).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 1; var y = 0;");
+/// ```
+#[derive(Default)]
+pub struct BoolPlusMinus;
+
+impl<'a> RuleMut<'a> for BoolPlusMinus {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "unary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
+            match (operator.text()?, operand.data()) {
+                ("+", Some(Raw(Bool(b)))) => {
+                    trace!("BoolPlusMinus: reducing + {} to {}", b, *b as i32);
+                    node.reduce(Raw(Num(*b as i64)));
+                }
+                ("-", Some(Raw(Bool(b)))) => {
+                    trace!("BoolPlusMinus: reducing - {} to {}", b, -(*b as i32));
+                    node.reduce(Raw(Num(-(*b as i64))));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}

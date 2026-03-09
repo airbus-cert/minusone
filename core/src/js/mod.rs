@@ -110,7 +110,8 @@ impl_javascript_ruleset!(
     CharAt,          // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     Forward,         // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
-    ArrayPlusMinus   // Infer unary plus and minus on arrays
+    ArrayPlusMinus,  // Infer unary plus and minus on arrays
+    BoolPlusMinus    // Infer + and - operations on booleans
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
