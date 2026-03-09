@@ -1,6 +1,7 @@
 pub mod array;
 pub mod backend;
 pub mod bool;
+pub mod forward;
 pub mod integer;
 pub mod linter;
 pub mod strategy;
@@ -8,6 +9,7 @@ pub mod string;
 
 use self::array::*;
 use self::bool::*;
+use self::forward::*;
 use self::integer::*;
 use self::linter::RemoveComment;
 use self::string::*;
@@ -105,7 +107,8 @@ impl_javascript_ruleset!(
     BoolAlgebra,   // Infer boolean algebra operations (&&, ||)
     AddBool,       // Infer + and - operations on booleans
     CombineArrays, // Infer + operations on two arrays
-    CharAt         // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    Forward  // Forward inferred type in the most simple cases
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
