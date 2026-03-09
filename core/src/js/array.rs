@@ -7,7 +7,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use js::Value;
 use js::Value::{Num, Str};
 use log::{debug, trace, warn};
-use js::JavaScript::Undefined;
+use js::JavaScript::{NaN, Undefined};
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -177,7 +177,7 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                 }
             }
             if let (Some(Array(arr)), Some(Raw(Str(index_str)))) = (array_node.data(), index_node.data()) {
-                if let Ok(index) = index_str.parse::<usize>() {
+                return if let Ok(index) = index_str.parse::<usize>() {
                     if index < arr.len() {
                         trace!("GetArrayElement: accessing index '{}' of array {:?} => index {}", index_str, arr, index);
                         node.reduce(arr[index].clone());
@@ -185,10 +185,19 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                         trace!("GetArrayElement: index '{}' out of bounds, setting to undefined", index_str);
                         node.reduce(Undefined);
                     }
+                    Ok(())
                 } else {
                     warn!("GetArrayElement: cannot parse index '{}' as number", index_str);
                     node.reduce(Undefined);
+                    Ok(())
                 }
+            }
+        }
+
+        if let (Some(nan_node), Some(index_node)) = (view.child(0), view.child(2)) {
+            if let (Some(NaN), Some(Raw(_))) = (nan_node.data(), index_node.data()) {
+                trace!("GetArrayElement: accessing index of non-array, setting to undefined");
+                node.reduce(Undefined);
             }
         }
 
