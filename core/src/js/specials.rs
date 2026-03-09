@@ -4,9 +4,9 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use js::array::flatten_array;
 use js::Value::{Num, Str};
 use log::{debug, trace, warn};
-use js::array::flatten_array;
 
 /// Parse specials
 #[derive(Default)]
@@ -46,7 +46,9 @@ impl<'a> RuleMut<'a> for ParseSpecials {
         // detect [...]['at']
         if view.kind() == "subscript_expression" {
             if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
-                if let (Some(Array(_)), Some(Raw(Str(index)))) = (array_node.data(), index_node.data()) {
+                if let (Some(Array(_)), Some(Raw(Str(index)))) =
+                    (array_node.data(), index_node.data())
+                {
                     if index == "at" {
                         trace!("ParseSpecials (L): array['at'] => Special At");
                         node.reduce(At);
@@ -103,8 +105,12 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-
-            debug!("AddSubSpecials: Left: {:?}, Op: {:?}, Right: {:?}", left.data(), op.kind(), right.data());
+            debug!(
+                "AddSubSpecials: Left: {:?}, Op: {:?}, Right: {:?}",
+                left.data(),
+                op.kind(),
+                right.data()
+            );
 
             if op.kind() == "+" {
                 match (left.data(), right.data()) {
@@ -142,7 +148,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                             node.reduce(Raw(Str(format!("undefined{}", array_str))));
                         }
                     }
-                    (Some(Array(array)), Some(NaN))  => {
+                    (Some(Array(array)), Some(NaN)) => {
                         if array.is_empty() {
                             trace!("AddSubSpecials (L): [] + NaN => 'NaN'");
                             node.reduce(Raw(Str("NaN".to_string())));
@@ -159,7 +165,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                             node.reduce(Raw(Str(format!("{}NaN", array_str))));
                         }
                     }
-                    (Some(NaN), Some(Array(array)))  => {
+                    (Some(NaN), Some(Array(array))) => {
                         if array.is_empty() {
                             trace!("AddSubSpecials (R): NaN + [] => 'NaN'");
                             node.reduce(Raw(Str("NaN".to_string())));
@@ -192,7 +198,22 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                         trace!("AddSubSpecials (L): {} + undefined => NaN", b);
                         node.reduce(NaN);
                     }
-                    //todo: add string cases
+                    (Some(Undefined), Some(Raw(Str(s)))) => {
+                        trace!("AddSubSpecials (R): undefined + '{}' => 'undefined'", s);
+                        node.reduce(Raw(Str("undefined".to_string())));
+                    }
+                    (Some(Raw(Str(s))), Some(Undefined)) => {
+                        trace!("AddSubSpecials (L): '{}' + undefined => 'undefined'", s);
+                        node.reduce(Raw(Str("undefined".to_string())));
+                    }
+                    (Some(NaN), Some(Raw(Str(s)))) => {
+                        trace!("AddSubSpecials (R): NaN + '{}' => 'NaN'", s);
+                        node.reduce(Raw(Str("NaN".to_string())));
+                    }
+                    (Some(Raw(Str(s))), Some(NaN)) => {
+                        trace!("AddSubSpecials (L): '{}' + NaN => 'NaN'", s);
+                        node.reduce(Raw(Str("NaN".to_string())));
+                    }
                     _ => {}
                 }
             }
@@ -246,17 +267,27 @@ impl<'a> RuleMut<'a> for AtTrick {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-
-            debug!("AtTrick: Left: {:?}, Op: {:?}, Right: {:?}", left.data(), op.kind(), right.data());
+            debug!(
+                "AtTrick: Left: {:?}, Op: {:?}, Right: {:?}",
+                left.data(),
+                op.kind(),
+                right.data()
+            );
 
             if op.kind() == "+" {
                 match (left.data(), right.data()) {
                     (Some(At), Some(Raw(Str(s)))) => {
-                        trace!("AtTrick: []['at'] + '{}' => 'function at() {{ [native code] }}'", s);
+                        trace!(
+                            "AtTrick: []['at'] + '{}' => 'function at() {{ [native code] }}'",
+                            s
+                        );
                         node.reduce(Raw(Str(format!("function at() {{ [native code] }}{}", s))));
                     }
                     (Some(Raw(Str(s))), Some(At)) => {
-                        trace!("AtTrick: '{}' + []['at'] => 'function at() {{ [native code] }}'", s);
+                        trace!(
+                            "AtTrick: '{}' + []['at'] => 'function at() {{ [native code] }}'",
+                            s
+                        );
                         node.reduce(Raw(Str(format!("{}function at() {{ [native code] }}", s))));
                     }
                     (Some(At), Some(Array(array))) => {
@@ -266,8 +297,15 @@ impl<'a> RuleMut<'a> for AtTrick {
                             .map(|v| v.to_string())
                             .collect::<Vec<_>>()
                             .join(",");
-                        trace!("AtTrick: []['at'] + [{}] => 'function at() {{ [native code] }}[{}]'", array_join, array_join);
-                        node.reduce(Raw(Str(format!("function at() {{ [native code] }}{}", array_str))));
+                        trace!(
+                            "AtTrick: []['at'] + [{}] => 'function at() {{ [native code] }}[{}]'",
+                            array_join,
+                            array_join
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "function at() {{ [native code] }}{}",
+                            array_str
+                        ))));
                     }
                     (Some(Array(array)), Some(At)) => {
                         let array_str = flatten_array(array);
@@ -276,8 +314,15 @@ impl<'a> RuleMut<'a> for AtTrick {
                             .map(|v| v.to_string())
                             .collect::<Vec<_>>()
                             .join(",");
-                        trace!("AtTrick: [{}] + []['at'] => '[{}]function at() {{ [native code] }}'", array_join, array_join);
-                        node.reduce(Raw(Str(format!("{}function at() {{ [native code] }}", array_str))));
+                        trace!(
+                            "AtTrick: [{}] + []['at'] => '[{}]function at() {{ [native code] }}'",
+                            array_join,
+                            array_join
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "{}function at() {{ [native code] }}",
+                            array_str
+                        ))));
                     }
                     _ => {}
                 }
