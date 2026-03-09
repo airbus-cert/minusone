@@ -4,22 +4,22 @@ pub mod bool;
 pub mod forward;
 pub mod integer;
 pub mod linter;
+pub mod specials;
 pub mod strategy;
 pub mod string;
-pub mod specials;
 
 use self::array::*;
 use self::bool::*;
 use self::forward::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::specials::*;
 use self::string::*;
 use error::{Error, MinusOneResult};
 use rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use std::fmt::Display;
 use tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_javascript::LANGUAGE as javascript_language;
-use js::specials::AddSubSpecials;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -62,7 +62,7 @@ impl Display for JavaScript {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "[{}]", arr_str)
-            },
+            }
             JavaScript::Undefined => write!(f, "undefined"),
             JavaScript::NaN => write!(f, "NaN"),
         }
@@ -113,14 +113,15 @@ impl_javascript_ruleset!(
     BoolAlgebra,     // Infer boolean algebra operations (&&, ||)
     AddBool,         // Infer + and - operations on booleans
     CombineArrays,   // Infer + operations on two arrays
-    CharAt,          // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
-    Forward,         // Forward inferred type in the most simple cases
+    CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    Forward, // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
-    ArrayPlusMinus,  // Infer unary plus and minus on arrays
-    BoolPlusMinus,   // Infer + and - operations on booleans
-    Concat,          // Infer string concatenation with + operator on string literals
+    ArrayPlusMinus, // Infer unary plus and minus on arrays
+    BoolPlusMinus, // Infer + and - operations on booleans
+    Concat, // Infer string concatenation with + operator on string literals
     GetArrayElement, // Get element at array index
-    AddSubSpecials   // Infer add and sub on Undefined and NaN
+    AddSubSpecials, // Infer add and sub on Undefined and NaN
+    ParseSpecials  // Parse specials (undefined, NaN, At, ...)
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

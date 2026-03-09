@@ -8,6 +8,43 @@ use js::Value::{Num, Str};
 use log::{debug, trace, warn};
 use js::array::flatten_array;
 
+/// Parse specials
+#[derive(Default)]
+pub struct ParseSpecials;
+
+impl<'a> RuleMut<'a> for ParseSpecials {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        match view.kind() {
+            "undefined" => {
+                trace!("ParseSpecials (L): undefined");
+                node.reduce(Undefined);
+            }
+            "NaN" => {
+                trace!("ParseSpecials (L): NaN");
+                node.reduce(NaN);
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
 /// This rule will infer add and sub on Undefined and NaN.
 ///
 /// # Example
@@ -126,6 +163,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                             node.reduce(Raw(Str(format!("NaN{}", array_str))));
                         }
                     }
+                    //todo: add string cases
                     _ => {}
                 }
             }
