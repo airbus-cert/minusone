@@ -29,7 +29,7 @@ impl Display for Value {
             "{}",
             match self {
                 Value::Num(e) => e.to_string(),
-                Value::Str(s) => s.clone(),
+                Value::Str(s) => format!("\"{}\"", s),
                 Value::Bool(true) => "true".to_string(),
                 Value::Bool(false) => "false".to_string(),
             }
@@ -90,16 +90,17 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt,   // Parse integer literals (decimal, hex, octal, binary)
-    ParseBool,  // Parse boolean literals (true, false)
-    ParseArray, // Parse arrays
-    NegInt,     // Infer unary - operations on integers
-    AddInt,     // Infer + and - operations on integers
-    MultInt,    // Infer *, / and % operations on integers
-    PowInt,     // Infer ** operations on integers
-    ShiftInt,   // Infer <<, >> and >>> operations on integers
-    NotBool,    // Infer unary ! operations on booleans
-    BoolAlgebra  // Infer boolean algebra operations (&&, ||)
+    ParseInt,    // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,   // Parse boolean literals (true, false)
+    ParseArray,  // Parse arrays
+    NegInt,      // Infer unary - operations on integers
+    AddInt,      // Infer + and - operations on integers
+    MultInt,     // Infer *, / and % operations on integers
+    PowInt,      // Infer ** operations on integers
+    ShiftInt,    // Infer <<, >> and >>> operations on integers
+    NotBool,     // Infer unary ! operations on booleans
+    BoolAlgebra, // Infer boolean algebra operations (&&, ||)
+    AddBool      // Infer + and - operations on booleans
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

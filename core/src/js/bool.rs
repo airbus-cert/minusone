@@ -4,7 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::Value::Num;
+use js::Value::{Num, Str};
 use log::{debug, trace, warn};
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
@@ -154,6 +154,94 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
                 (Some(Raw(Bool(a))), "||", Some(Raw(Bool(b)))) => {
                     trace!("BoolAlgebra (L): {} || {} => {}", a, b, *a || *b);
                     node.reduce(Raw(Bool(*a || *b)));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// This rule will infer + and - operations on booleans
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::bool::{AddBool, ParseBool};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = true + false - true;").unwrap();
+/// tree.apply_mut(&mut (ParseBool::default(), AddBool::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 0;");
+/// ```
+
+#[derive(Default)]
+pub struct AddBool;
+
+impl<'a> RuleMut<'a> for AddBool {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            match (left.data(), op.text()?, right.data()) {
+                (Some(Raw(Bool(l))), "+", Some(Raw(Bool(r)))) => {
+                    let result = (*l as i32) + (*r as i32);
+                    trace!("AddBool (L): {} + {} => {}", l, r, result);
+                    node.reduce(Raw(Num(result as i64)));
+                }
+                (Some(Raw(Bool(l))), "-", Some(Raw(Bool(r)))) => {
+                    let result = (*l as i32) - (*r as i32);
+                    trace!("AddBool (L): {} - {} => {}", l, r, result);
+                    node.reduce(Raw(Num(result as i64)));
+                }
+                (Some(Raw(Bool(l))), "+", Some(Raw(Num(r)))) => {
+                    let result = (*l as i32) + (*r as i32);
+                    trace!("AddBool (L): {} + {} => {}", l, r, result);
+                    node.reduce(Raw(Num(result as i64)));
+                }
+                (Some(Raw(Bool(l))), "-", Some(Raw(Num(r)))) => {
+                    let result = (*l as i32) - (*r as i32);
+                    trace!("AddBool (L): {} - {} => {}", l, r, result);
+                    node.reduce(Raw(Num(result as i64)));
+                }
+                (Some(Raw(Num(l))), "+", Some(Raw(Bool(r)))) => {
+                    let result = (*l as i32) + (*r as i32);
+                    trace!("AddBool (L): {} + {} => {}", l, r, result);
+                    node.reduce(Raw(Num(result as i64)));
+                }
+                (Some(Raw(Num(l))), "-", Some(Raw(Bool(r)))) => {
+                    let result = (*l as i32) - (*r as i32);
+                    trace!("AddBool (L): {} - {} => {}", l, r, result);
+                    node.reduce(Raw(Num(result as i64)));
+                }
+                (Some(Raw(Bool(l))), "+", Some(Array(_))) => {
+                    trace!("AddBool (L): {} + array => '{}'", l, l);
+                    node.reduce(Raw(Str(l.to_string())));
+                }
+                (Some(Array(_)), "+", Some(Raw(Bool(r)))) => {
+                    trace!("AddBool (L): array + {} => '{}'", r, r);
+                    node.reduce(Raw(Str(r.to_string())));
                 }
                 _ => {}
             }
