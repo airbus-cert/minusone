@@ -33,14 +33,27 @@ impl<'a> RuleMut<'a> for ParseSpecials {
             "undefined" => {
                 trace!("ParseSpecials (L): undefined");
                 node.reduce(Undefined);
+                return Ok(());
             }
             "NaN" => {
                 trace!("ParseSpecials (L): NaN");
                 node.reduce(NaN);
+                return Ok(());
             }
             _ => {}
         }
 
+        // detect [...]['at']
+        if view.kind() == "subscript_expression" {
+            if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
+                if let (Some(Array(_)), Some(Raw(Str(index)))) = (array_node.data(), index_node.data()) {
+                    if index == "at" {
+                        trace!("ParseSpecials (L): array['at'] => Special At");
+                        node.reduce(At);
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -164,6 +177,92 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                         }
                     }
                     //todo: add string cases
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// This rule will infer add on At.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::specials::{AtTrick, ParseSpecials};
+/// use minusone::js::string::ParseString;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = []['at'] + '';").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseSpecials::default(), ParseString::default(), ParseArray::default(), AtTrick::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'function at() { [native code] }';");
+/// ```
+#[derive(Default)]
+pub struct AtTrick;
+
+impl<'a> RuleMut<'a> for AtTrick {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+
+            debug!("AtTrick: Left: {:?}, Op: {:?}, Right: {:?}", left.data(), op.kind(), right.data());
+
+            if op.kind() == "+" {
+                match (left.data(), right.data()) {
+                    (Some(At), Some(Raw(Str(s)))) => {
+                        trace!("AtTrick: []['at'] + '{}' => 'function at() {{ [native code] }}'", s);
+                        node.reduce(Raw(Str(format!("function at() {{ [native code] }}{}", s))));
+                    }
+                    (Some(Raw(Str(s))), Some(At)) => {
+                        trace!("AtTrick: '{}' + []['at'] => 'function at() {{ [native code] }}'", s);
+                        node.reduce(Raw(Str(format!("{}function at() {{ [native code] }}", s))));
+                    }
+                    (Some(At), Some(Array(array))) => {
+                        let array_str = flatten_array(array);
+                        let array_join = array
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        trace!("AtTrick: []['at'] + [{}] => 'function at() {{ [native code] }}[{}]'", array_join, array_join);
+                        node.reduce(Raw(Str(format!("function at() {{ [native code] }}{}", array_str))));
+                    }
+                    (Some(Array(array)), Some(At)) => {
+                        let array_str = flatten_array(array);
+                        let array_join = array
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        trace!("AtTrick: [{}] + []['at'] => '[{}]function at() {{ [native code] }}'", array_join, array_join);
+                        node.reduce(Raw(Str(format!("{}function at() {{ [native code] }}", array_str))));
+                    }
                     _ => {}
                 }
             }

@@ -49,6 +49,7 @@ pub enum JavaScript {
     Array(Vec<JavaScript>),
     Undefined,
     NaN,
+    At, // This is a special value that represents ƒ -> at() { [native code] }
 }
 
 impl Display for JavaScript {
@@ -65,6 +66,7 @@ impl Display for JavaScript {
             }
             JavaScript::Undefined => write!(f, "undefined"),
             JavaScript::NaN => write!(f, "NaN"),
+            JavaScript::At => write!(f, "[]['at']"),
         }
     }
 }
@@ -121,7 +123,8 @@ impl_javascript_ruleset!(
     Concat, // Infer string concatenation with + operator on string literals
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
-    ParseSpecials  // Parse specials (undefined, NaN, At, ...)
+    ParseSpecials, // Parse specials (undefined, NaN, At, ...)
+    AtTrick // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
