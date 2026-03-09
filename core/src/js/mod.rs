@@ -50,6 +50,7 @@ pub enum JavaScript {
     Undefined,
     NaN,
     At, // This is a special value that represents ƒ -> at() { [native code] }
+    Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
 }
 
 impl Display for JavaScript {
@@ -65,8 +66,24 @@ impl Display for JavaScript {
                 write!(f, "[{}]", arr_str)
             }
             JavaScript::Undefined => write!(f, "undefined"),
-            JavaScript::NaN => write!(f, "NaN"),
+            JavaScript::NaN => write!(f, "0"),
             JavaScript::At => write!(f, "[]['at']"),
+            JavaScript::Constructor(inner) => {
+                let value = match **inner {
+                    JavaScript::Undefined => "undefined".to_string(),
+                    JavaScript::NaN => "Number".to_string(),
+                    JavaScript::At => "[]['at']".to_string(),
+                    JavaScript::Raw(ref v) => match v {
+                        Value::Num(_) => "0".to_string(),
+                        Value::Str(_) => "''".to_string(),
+                        Value::Bool(_) => "true".to_string(),
+                    },
+                    JavaScript::Array(_) => "[]".to_string(),
+                    JavaScript::Constructor(_) => "['constructor']".to_string(),
+                };
+
+                write!(f, "{}['constructor']", value)
+            }
         }
     }
 }
@@ -124,7 +141,8 @@ impl_javascript_ruleset!(
     Concat, // Infer string concatenation with + operator on string literals
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
-    AtTrick // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
+    AtTrick, // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
+    ConstructorTrick // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

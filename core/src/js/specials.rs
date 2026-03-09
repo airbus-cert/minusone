@@ -52,10 +52,27 @@ impl<'a> RuleMut<'a> for ParseSpecials {
                     if index == "at" {
                         trace!("ParseSpecials (L): array['at'] => Special At");
                         node.reduce(At);
+                        return Ok(());
                     }
                 }
             }
         }
+
+        // detect ...['constructor'] can be string array At number...
+        if view.kind() == "subscript_expression" {
+            if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
+                if let (Some(js), Some(Raw(Str(index)))) =
+                    (array_node.data(), index_node.data())
+                {
+                    if index == "constructor" {
+                        trace!("ParseSpecials (L): array['constructor'] => Special Constructor");
+                        node.reduce(Constructor(Box::new(js.clone())));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -369,4 +386,145 @@ impl<'a> RuleMut<'a> for AtTrick {
 
         Ok(())
     }
+}
+
+/// This rule will infer add on Constructor.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::specials::{ConstructorTrick, ParseSpecials};
+/// use minusone::js::string::ParseString;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = []['constructor'] + '';").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseSpecials::default(), ParseString::default(), ParseArray::default(), ConstructorTrick::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'function Array() { [native code] }';");
+/// ```
+#[derive(Default)]
+pub struct ConstructorTrick;
+
+impl<'a> RuleMut<'a> for ConstructorTrick {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            debug!(
+                "ConstructorTrick: Left: {:?}, Op: {:?}, Right: {:?}",
+                left.data(),
+                op.kind(),
+                right.data()
+            );
+
+            if op.kind() == "+" {
+                match (left.data(), right.data()) {
+                    (Some(Constructor(constructor)), Some(Raw(Str(s)))) => {
+                        trace!(
+                            "ConstructorTrick: []['constructor'] + '{}' => '{}'",
+                            s,
+                            constructor_to_string(constructor)
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "{}{}",
+                            constructor_to_string(constructor),
+                            s
+                        ))));
+                    }
+                    (Some(Raw(Str(s))), Some(Constructor(constructor))) => {
+                        trace!(
+                            "ConstructorTrick: '{}' + []['constructor'] => '{}'",
+                            s,
+                            constructor_to_string(constructor)
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "{}{}",
+                            s,
+                            constructor_to_string(constructor)
+                        ))));
+                    }
+                    (Some(Constructor(constructor)), Some(Array(array))) => {
+                        let array_str = flatten_array(array);
+                        let array_join = array
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        trace!(
+                            "ConstructorTrick: []['constructor'] + [{}] => '{}[{}]'",
+                            array_join,
+                            constructor_to_string(constructor),
+                            array_join
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "{}{}",
+                            constructor_to_string(constructor),
+                            array_str
+                        ))));
+                    }
+                    (Some(Array(array)), Some(Constructor(constructor))) => {
+                        let array_str = flatten_array(array);
+                        let array_join = array
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        trace!(
+                            "ConstructorTrick: [{}] + []['constructor'] => '[{}]{}'",
+                            array_join,
+                            array_join,
+                            constructor_to_string(constructor)
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "{}{}",
+                            array_str,
+                            constructor_to_string(constructor)
+                        ))));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn constructor_to_string(constructor: &JavaScript) -> String {
+    let fn_name = match constructor {
+        Undefined => "".to_string(),
+        NaN => "Number".to_string(),
+        At => "Function".to_string(),
+        Raw(v) => match v {
+            Num(_) => "Number".to_string(),
+            Str(_) => "String".to_string(),
+            Bool(_) => "Boolean".to_string(),
+        },
+        Array(_) => "Array".to_string(),
+        Constructor(inner) => constructor_to_string(inner),
+    };
+
+    format!("function {fn_name}() {{ [native code] }}")
 }
