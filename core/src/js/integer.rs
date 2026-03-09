@@ -4,6 +4,9 @@ use crate::js::JavaScript::Raw;
 use crate::js::Value::Num;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use js::array::flatten_array;
+use js::JavaScript::Array;
+use js::Value::Str;
 use log::{debug, trace, warn};
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
@@ -183,6 +186,21 @@ impl<'a> RuleMut<'a> for AddInt {
                         warn!("AddInt (L): overflow {} - {}", l, r);
                     }
                 }
+                (Some(Array(l)), "+", Some(Raw(Num(r)))) => {
+                    let r = r.to_string();
+                    let l = flatten_array(l);
+                    let result = l.clone() + &r;
+                    trace!("AddInt (L): {} + {} = {}", l, r, result);
+                    node.reduce(Raw(Str(result)));
+                }
+                (Some(Raw(Num(l))), "+", Some(Array(r))) => {
+                    let l = l.to_string();
+                    let r = flatten_array(r);
+                    let result = l.clone() + &r.clone();
+                    trace!("AddInt (L): {} + {} = {}", l, r, result);
+                    node.reduce(Raw(Str(result)));
+                }
+
                 _ => {}
             }
         }
