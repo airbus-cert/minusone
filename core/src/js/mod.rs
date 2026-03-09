@@ -4,7 +4,7 @@ pub mod bool;
 pub mod integer;
 pub mod linter;
 pub mod strategy;
-mod string;
+pub mod string;
 
 use self::array::*;
 use self::bool::*;
@@ -104,7 +104,8 @@ impl_javascript_ruleset!(
     NotBool,       // Infer unary ! operations on booleans
     BoolAlgebra,   // Infer boolean algebra operations (&&, ||)
     AddBool,       // Infer + and - operations on booleans
-    CombineArrays  // Infer + operations on two arrays
+    CombineArrays, // Infer + operations on two arrays
+    CharAt         // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

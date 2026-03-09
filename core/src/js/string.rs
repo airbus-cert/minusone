@@ -53,7 +53,7 @@ fn unescaped_js_string(s: &str) -> String {
     }
 
     let mut result = String::new();
-    let mut chars = s[1..s.len()-1].chars().peekable();
+    let mut chars = s[1..s.len() - 1].chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\\' {
             if let Some(next) = chars.next() {
@@ -73,7 +73,6 @@ fn unescaped_js_string(s: &str) -> String {
                                 warn!("ParseString: incomplete unicode escape sequence");
                                 break;
                             }
-
                         }
                         if let Ok(code_point) = u16::from_str_radix(&hex, 16) {
                             if let Some(ch) = std::char::from_u32(code_point as u32) {
@@ -99,6 +98,66 @@ fn unescaped_js_string(s: &str) -> String {
         }
     }
     result
+}
+
+/// Infers charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, CharAt};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'test'[1];").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), CharAt::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = 'e';");
+/// ```
+#[derive(Default)]
+pub struct CharAt;
+
+impl<'a> RuleMut<'a> for CharAt {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "subscript_expression" {
+            return Ok(());
+        }
+
+        if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
+            match (string.data(), index.data()) {
+                (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
+                    if *i >= 0 && (*i as usize) < s.len() {
+                        let ch = s.chars().nth(*i as usize).unwrap();
+                        trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                        node.reduce(Raw(Str(ch.to_string())));
+                    } else {
+                        warn!("InferCharAt: index {} out of bounds for string '{}'", i, s);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub fn escape_js_string(s: &str) -> String {
