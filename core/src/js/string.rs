@@ -7,6 +7,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use js::Value;
 use js::Value::{Num, Str};
 use log::{debug, trace, warn};
+use js::JavaScript::Undefined;
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -144,12 +145,31 @@ impl<'a> RuleMut<'a> for CharAt {
         if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
             match (string.data(), index.data()) {
                 (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
-                    if *i >= 0 && (*i as usize) < s.len() {
+                    return if *i >= 0 && (*i as usize) < s.len() {
                         let ch = s.chars().nth(*i as usize).unwrap();
                         trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
                         node.reduce(Raw(Str(ch.to_string())));
+                        Ok(())
                     } else {
-                        warn!("InferCharAt: index {} out of bounds for string '{}'", i, s);
+                        trace!("InferCharAt: index {} out of bounds, setting to undefined", i);
+                        node.reduce(Undefined);
+                        Ok(())
+                    }
+                }
+                (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
+                    if let Ok(i) = i.parse::<i64>() {
+                        return if i >= 0 && (i as usize) < s.len() {
+                            let ch = s.chars().nth(i as usize).unwrap();
+                            trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                            node.reduce(Raw(Str(ch.to_string())));
+                            Ok(())
+                        } else {
+                            trace!("InferCharAt: index {} out of bounds, setting to undefined", i);
+                            node.reduce(Undefined);
+                            Ok(())
+                        };
+                    } else {
+                        warn!("InferCharAt: cannot parse index '{}' as number", i);
                     }
                 }
                 _ => {}
