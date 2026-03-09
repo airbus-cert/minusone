@@ -286,10 +286,12 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
                             trace!("ArrayPlusMinus: reducing + {:?} to {}", arr, num);
                             node.reduce(Raw(Num(num)));
                         } else {
-                            warn!("ArrayPlusMinus: Cannot parse array {:?} as number", arr);
+                            trace!("ArrayPlusMinus: Cannot extract number from array {:?}, setting to NaN", arr);
+                            node.reduce(NaN);
                         }
                     } else {
-                        warn!("ArrayPlusMinus: Cannot apply unary plus to array with multiple elements");
+                        trace!("ArrayPlusMinus: Cannot apply unary plus to array with multiple elements, setting to NaN");
+                        node.reduce(NaN);
                     }
                 }
 

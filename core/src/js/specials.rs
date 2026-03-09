@@ -346,6 +346,22 @@ impl<'a> RuleMut<'a> for AtTrick {
                             b
                         ))));
                     }
+                    (Some(NaN), Some(At)) => {
+                        trace!(
+                            "AtTrick: NaN + []['at'] => 'NaNfunction at() {{ [native code] }}'"
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "NaNfunction at() {{ [native code] }}"
+                        ))));
+                    }
+                    (Some(At), Some(NaN)) => {
+                        trace!(
+                            "AtTrick: []['at'] + NaN => 'function at() {{ [native code] }}NaN'"
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "function at() {{ [native code] }}NaN"
+                        ))));
+                    }
                     _ => {}
                 }
             }
