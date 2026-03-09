@@ -107,8 +107,9 @@ impl_javascript_ruleset!(
     BoolAlgebra,   // Infer boolean algebra operations (&&, ||)
     AddBool,       // Infer + and - operations on booleans
     CombineArrays, // Infer + operations on two arrays
-    CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
-    Forward  // Forward inferred type in the most simple cases
+    CharAt,        // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    Forward,       // Forward inferred type in the most simple cases
+    StringPlusMinus
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

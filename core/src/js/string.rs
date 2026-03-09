@@ -175,6 +175,70 @@ pub fn escape_js_string(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
+/// Infers unary plus and minus on string literals
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, StringPlusMinus};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = +'42'; var y = -'42';").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), StringPlusMinus::default())).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 42; var y = -42;");
+/// ```
+#[derive(Default)]
+pub struct StringPlusMinus;
+
+impl<'a> RuleMut<'a> for StringPlusMinus {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "unary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
+            match (operator.text()?, operand.data()) {
+                ("+", Some(Raw(Str(s)))) => {
+                    if let Ok(num) = s.parse::<i64>() {
+                        trace!("StringPlusMinus: reducing + '{}' to {}", s, num);
+                        node.reduce(Raw(Num(num)));
+                    } else {
+                        warn!("StringPlusMinus: cannot parse '{}' as number", s);
+                    }
+                }
+                ("-", Some(Raw(Str(s)))) => {
+                    if let Ok(num) = s.parse::<i64>() {
+                        trace!("StringPlusMinus: reducing - '{}' to {}", s, -num);
+                        node.reduce(Raw(Num(-num)));
+                    } else {
+                        warn!("StringPlusMinus: cannot parse '{}' as number", s);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::string::{escape_js_string, unescaped_js_string};
