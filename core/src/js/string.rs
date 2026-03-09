@@ -239,6 +239,72 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
     }
 }
 
+/// Infers string concatenation with + operator and reduces them to single string literals
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Concat};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'Hello, ' + 'world!' + 1;").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), Concat::default())).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'Hello, world!1';");
+/// ```
+#[derive(Default)]
+pub struct Concat;
+
+impl<'a> RuleMut<'a> for Concat {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(operator), Some(right)) =
+            (view.child(0), view.child(1), view.child(2))
+        {
+            if operator.text()? == "+" {
+                match (left.data(), right.data()) {
+                    (Some(Raw(Str(s1))), Some(Raw(Str(s2)))) => {
+                        trace!("Concat: reducing '{}' + '{}' to '{}'", s1, s2, s1.to_string() + s2);
+                        node.reduce(Raw(Str(s1.to_string() + s2)));
+                    }
+                    // numbers + strings should also be concatenated as strings
+                    (Some(Raw(Num(n))), Some(Raw(Str(s)))) => {
+                        trace!("Concat: reducing {} + '{}' to '{}'", n, s, n.to_string() + s);
+                        node.reduce(Raw(Str(n.to_string() + s)));
+                    }
+                    (Some(Raw(Str(s))), Some(Raw(Num(n)))) => {
+                        trace!("Concat: reducing '{}' + {} to '{}'", s, n, s.to_string() + n.to_string().as_str());
+                        node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::string::{escape_js_string, unescaped_js_string};

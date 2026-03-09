@@ -111,7 +111,8 @@ impl_javascript_ruleset!(
     Forward,         // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus,  // Infer unary plus and minus on arrays
-    BoolPlusMinus    // Infer + and - operations on booleans
+    BoolPlusMinus,   // Infer + and - operations on booleans
+    Concat           // Infer string concatenation with + operator on string literals
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
