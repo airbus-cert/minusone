@@ -349,20 +349,45 @@ mod test {
 
     #[test]
     fn test_unpredictable_for_statement() {
-        let mut tree = build_powershell_tree("for ($i = 0; $i -lt 10; $i++) {}").unwrap();
-        tree.apply_mut(&mut (ForStatementCondition::default()))
-            .unwrap();
+        let mut tree = build_powershell_tree("for ($i = 0; $i -lt 10; $i++) {$i}").unwrap();
+        tree.apply_mut(&mut (
+            Forward::default(),
+            ParseInt::default(),
+            Var::default(),
+            ForStatementCondition::default(),
+        ))
+        .unwrap();
 
-        assert!(tree
-            .root()
-            .unwrap()
-            .child(0)
-            .unwrap()
-            .child(0)
-            .unwrap()
-            .child(3)
-            .unwrap()
-            .data()
-            .is_none());
+        // The loop should not be infered
+        assert!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(3)
+                .unwrap()
+                .data()
+                .is_none()
+        );
+
+        // The statement should not be infered
+        assert!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(8)
+                .unwrap()
+                .child(1)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .is_none()
+        );
     }
 }
