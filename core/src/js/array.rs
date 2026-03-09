@@ -165,6 +165,13 @@ impl<'a> RuleMut<'a> for GetArrayElement {
         }
 
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
+            if let Some(Array(arr)) = array_node.data() {
+                if arr.is_empty() {
+                    trace!("GetArrayElement: accessing index of empty array, setting to undefined");
+                    node.reduce(Undefined);
+                    return Ok(());
+                }
+            }
             if let (Some(Array(arr)), Some(Raw(Num(index)))) = (array_node.data(), index_node.data()) {
                 return if (*index as usize) < arr.len() {
                     trace!("GetArrayElement: accessing index {} of array {:?}", index, arr);
