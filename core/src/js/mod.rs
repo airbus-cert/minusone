@@ -106,6 +106,7 @@ impl_javascript_ruleset!(
     ParseBool,       // Parse boolean literals (true, false)
     ParseString,     // Parse string literals (single and double quotes)
     ParseArray,      // Parse arrays
+    ParseSpecials, // Parse specials (undefined, NaN, At, ...)
     NegInt,          // Infer unary - operations on integers
     AddInt,          // Infer + and - operations on integers
     MultInt,         // Infer *, / and % operations on integers
@@ -123,7 +124,6 @@ impl_javascript_ruleset!(
     Concat, // Infer string concatenation with + operator on string literals
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
-    ParseSpecials, // Parse specials (undefined, NaN, At, ...)
     AtTrick // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
 );
 

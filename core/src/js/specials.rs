@@ -324,6 +324,28 @@ impl<'a> RuleMut<'a> for AtTrick {
                             array_str
                         ))));
                     }
+                    (Some(At), Some(Raw(Bool(b))) ) => {
+                        trace!(
+                            "AtTrick: []['at'] + {} => 'function at() {{ [native code] }}{}'",
+                            b,
+                            b
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "function at() {{ [native code] }}{}",
+                            b
+                        ))));
+                    }
+                    (Some(Raw(Bool(b))), Some(At)) => {
+                        trace!(
+                            "AtTrick: {} + []['at'] => '{}function at() {{ [native code] }}'",
+                            b,
+                            b
+                        );
+                        node.reduce(Raw(Str(format!(
+                            "{}function at() {{ [native code] }}",
+                            b
+                        ))));
+                    }
                     _ => {}
                 }
             }
