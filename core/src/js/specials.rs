@@ -176,6 +176,22 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                             node.reduce(Raw(Str(format!("NaN{}", array_str))));
                         }
                     }
+                    (Some(Undefined), Some(Raw(Num(n)))) => {
+                        trace!("AddSubSpecials (L): undefined + {} => NaN", n);
+                        node.reduce(NaN);
+                    }
+                    (Some(Raw(Num(n))), Some(Undefined)) => {
+                        trace!("AddSubSpecials (R): {} + undefined => NaN", n);
+                        node.reduce(NaN);
+                    }
+                    (Some(Undefined), Some(Raw(Bool(b)))) => {
+                        trace!("AddSubSpecials (R): undefined + {} => NaN", b);
+                        node.reduce(NaN);
+                    }
+                    (Some(Raw(Bool(b))), Some(Undefined)) => {
+                        trace!("AddSubSpecials (L): {} + undefined => NaN", b);
+                        node.reduce(NaN);
+                    }
                     //todo: add string cases
                     _ => {}
                 }
