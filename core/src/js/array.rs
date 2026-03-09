@@ -134,6 +134,83 @@ fn combine_arrays(left: &Vec<JavaScript>, right: &Vec<JavaScript>) -> String {
     format!("{}{}", flatten_array(left), flatten_array(right))
 }
 
+/// Infers unary plus and minus on arrays
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::ParseString;
+/// use minusone::js::array::{ParseArray, ArrayPlusMinus};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = +[['455']];").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseArray::default(), ArrayPlusMinus::default())).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 455;");
+/// ```
+#[derive(Default)]
+pub struct ArrayPlusMinus;
+
+impl<'a> RuleMut<'a> for ArrayPlusMinus {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "unary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
+            match (operator.text()?, operand.data()) {
+                ("+", Some(Array(arr))) => {
+                    if arr.is_empty() {
+                        node.reduce(Raw(Num(0)));
+                    } else if arr.len() == 1 {
+                        if let Some(num) = recursive_array_number_extraction(arr) {
+                            trace!("ArrayPlusMinus: reducing + {:?} to {}", arr, num);
+                            node.reduce(Raw(Num(num)));
+                        } else {
+                            warn!("ArrayPlusMinus: Cannot parse array {:?} as number", arr);
+                        }
+                    } else {
+                        warn!("ArrayPlusMinus: Cannot apply unary plus to array with multiple elements");
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<i64> {
+    if arr.len() == 1 {
+        match &arr[0] {
+            Raw(Num(n)) => Some(*n),
+            Raw(Str(s)) => s.parse::<i64>().ok(),
+            Array(inner) => recursive_array_number_extraction(inner),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests_js_array {
     use js::string::ParseString;

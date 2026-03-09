@@ -259,4 +259,6 @@ mod tests_js_string {
         assert_eq!(escape_js_string("Quote: \""), r#"'Quote: \"'"#);
         assert_eq!(escape_js_string("Backslash: \\"), r#"'Backslash: \\'"#);
     }
+
+    // todo: add tests for CharAt and StringPlusMinus rules
 }

@@ -94,22 +94,23 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt,      // Parse integer literals (decimal, hex, octal, binary)
-    ParseBool,     // Parse boolean literals (true, false)
-    ParseString,   // Parse string literals (single and double quotes)
-    ParseArray,    // Parse arrays
-    NegInt,        // Infer unary - operations on integers
-    AddInt,        // Infer + and - operations on integers
-    MultInt,       // Infer *, / and % operations on integers
-    PowInt,        // Infer ** operations on integers
-    ShiftInt,      // Infer <<, >> and >>> operations on integers
-    NotBool,       // Infer unary ! operations on booleans
-    BoolAlgebra,   // Infer boolean algebra operations (&&, ||)
-    AddBool,       // Infer + and - operations on booleans
-    CombineArrays, // Infer + operations on two arrays
-    CharAt,        // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
-    Forward,       // Forward inferred type in the most simple cases
-    StringPlusMinus
+    ParseInt,        // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,       // Parse boolean literals (true, false)
+    ParseString,     // Parse string literals (single and double quotes)
+    ParseArray,      // Parse arrays
+    NegInt,          // Infer unary - operations on integers
+    AddInt,          // Infer + and - operations on integers
+    MultInt,         // Infer *, / and % operations on integers
+    PowInt,          // Infer ** operations on integers
+    ShiftInt,        // Infer <<, >> and >>> operations on integers
+    NotBool,         // Infer unary ! operations on booleans
+    BoolAlgebra,     // Infer boolean algebra operations (&&, ||)
+    AddBool,         // Infer + and - operations on booleans
+    CombineArrays,   // Infer + operations on two arrays
+    CharAt,          // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    Forward,         // Forward inferred type in the most simple cases
+    StringPlusMinus, // Infer + and - unary operations on string literals
+    ArrayPlusMinus   // Infer unary plus and minus on arrays
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
