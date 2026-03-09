@@ -102,6 +102,18 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 let combined = combine_arrays(left_values, right_values);
                 trace!("CombineArrays (L): combining arrays => '{}'", combined);
                 node.reduce(Raw(Str(combined)));
+                return Ok(());
+            }
+            if let (Some(Array(left_values)), "+", Some(Raw(raw))) =
+                (left.data(), op.text()?, right.data())
+            {
+                debug!(
+                    "CombineArrays (L): combining array and raw => left: {:?}, right: {:?}",
+                    left_values, raw
+                );
+                let combined = format!("{}{}", flatten_array(left_values), flatten_value(&Raw(raw.clone())));
+                trace!("CombineArrays (L): combining array and raw => '{}'", combined);
+                node.reduce(Raw(Str(combined)));
             }
         }
 
