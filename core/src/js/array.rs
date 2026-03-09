@@ -170,7 +170,8 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     trace!("GetArrayElement: accessing index {} of array {:?}", index, arr);
                     node.reduce(arr[*index as usize].clone());
                 } else {
-                    warn!("GetArrayElement: index {} out of bounds for array {:?}", index, arr);
+                    trace!("GetArrayElement: index {} out of bounds, setting to undefined", index);
+                    node.reduce(Undefined);
                 }
             }
         }
@@ -179,7 +180,7 @@ impl<'a> RuleMut<'a> for GetArrayElement {
     }
 }
 
-fn flatten_array(arr: &Vec<JavaScript>) -> String {
+pub fn flatten_array(arr: &Vec<JavaScript>) -> String {
     arr.iter()
         .map(flatten_value)
         .filter(|s| !s.is_empty())

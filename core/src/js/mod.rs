@@ -6,7 +6,7 @@ pub mod integer;
 pub mod linter;
 pub mod strategy;
 pub mod string;
-mod specials;
+pub mod specials;
 
 use self::array::*;
 use self::bool::*;
@@ -19,6 +19,7 @@ use rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use std::fmt::Display;
 use tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_javascript::LANGUAGE as javascript_language;
+use js::specials::AddSubSpecials;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -118,7 +119,8 @@ impl_javascript_ruleset!(
     ArrayPlusMinus,  // Infer unary plus and minus on arrays
     BoolPlusMinus,   // Infer + and - operations on booleans
     Concat,          // Infer string concatenation with + operator on string literals
-    GetArrayElement  // Get element at array index
+    GetArrayElement, // Get element at array index
+    AddSubSpecials   // Infer add and sub on Undefined and NaN
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
