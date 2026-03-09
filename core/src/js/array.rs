@@ -7,6 +7,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use js::Value;
 use js::Value::{Num, Str};
 use log::{debug, trace, warn};
+use js::JavaScript::Undefined;
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -114,6 +115,63 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 let combined = format!("{}{}", flatten_array(left_values), flatten_value(&Raw(raw.clone())));
                 trace!("CombineArrays (L): combining array and raw => '{}'", combined);
                 node.reduce(Raw(Str(combined)));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Get element at array index
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::ParseString;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::{ParseArray, GetArrayElement};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = [1, [2, '3'], 4][1];").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), GetArrayElement::default()
+/// )).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = [2, '3'];");
+/// ```
+#[derive(Default)]
+pub struct GetArrayElement;
+
+impl<'a> RuleMut<'a> for GetArrayElement {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "subscript_expression" {
+            return Ok(());
+        }
+
+        if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
+            if let (Some(Array(arr)), Some(Raw(Num(index)))) = (array_node.data(), index_node.data()) {
+                if (*index as usize) < arr.len() {
+                    trace!("GetArrayElement: accessing index {} of array {:?}", index, arr);
+                    node.reduce(arr[*index as usize].clone());
+                } else {
+                    warn!("GetArrayElement: index {} out of bounds for array {:?}", index, arr);
+                }
             }
         }
 

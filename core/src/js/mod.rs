@@ -6,6 +6,7 @@ pub mod integer;
 pub mod linter;
 pub mod strategy;
 pub mod string;
+mod specials;
 
 use self::array::*;
 use self::bool::*;
@@ -45,6 +46,8 @@ impl Display for Value {
 pub enum JavaScript {
     Raw(Value),
     Array(Vec<JavaScript>),
+    Undefined,
+    NaN,
 }
 
 impl Display for JavaScript {
@@ -58,7 +61,9 @@ impl Display for JavaScript {
                     .collect::<Vec<String>>()
                     .join(", ");
                 write!(f, "[{}]", arr_str)
-            }
+            },
+            JavaScript::Undefined => write!(f, "undefined"),
+            JavaScript::NaN => write!(f, "NaN"),
         }
     }
 }
@@ -112,7 +117,8 @@ impl_javascript_ruleset!(
     StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus,  // Infer unary plus and minus on arrays
     BoolPlusMinus,   // Infer + and - operations on booleans
-    Concat           // Infer string concatenation with + operator on string literals
+    Concat,          // Infer string concatenation with + operator on string literals
+    GetArrayElement  // Get element at array index
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
