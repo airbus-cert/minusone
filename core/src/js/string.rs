@@ -7,6 +7,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use js::Value;
 use js::Value::{Num, Str};
 use log::{debug, trace, warn};
+use js::array::flatten_array;
 use js::JavaScript::Undefined;
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
@@ -315,6 +316,16 @@ impl<'a> RuleMut<'a> for Concat {
                     (Some(Raw(Str(s))), Some(Raw(Num(n)))) => {
                         trace!("Concat: reducing '{}' + {} to '{}'", s, n, s.to_string() + n.to_string().as_str());
                         node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
+                    }
+                    (Some(Array(array)), Some(Raw(Str(s)))) => {
+                        let array_str = flatten_array(array);
+                        trace!("Concat: reducing array + '{}' to '{}'", s, array_str.to_string() + s);
+                        node.reduce(Raw(Str(array_str.to_string() + s)));
+                    }
+                    (Some(Raw(Str(s))), Some(Array(array))) => {
+                        let array_str = flatten_array(array);
+                        trace!("Concat: reducing '{}' + array to '{}'", s, s.to_string() + array_str.as_str());
+                        node.reduce(Raw(Str(s.to_string() + array_str.as_str())));
                     }
                     _ => {}
                 }
