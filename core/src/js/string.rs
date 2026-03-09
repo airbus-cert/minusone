@@ -109,7 +109,6 @@ pub fn escape_js_string(s: &str) -> String {
             '\t' => escaped.push_str("\\t"),
             '\r' => escaped.push_str("\\r"),
             '\\' => escaped.push_str("\\\\"),
-            '"' => escaped.push_str("\\\""),
             '\'' => escaped.push_str("\\'"),
             _ => escaped.push(c),
         }

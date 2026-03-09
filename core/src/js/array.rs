@@ -4,7 +4,8 @@ use crate::js::JavaScript::{Array, Raw};
 use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::Value::Num;
+use js::Value;
+use js::Value::{Num, Str};
 use log::{debug, trace, warn};
 
 /// Parses JavaScript array literals into `Array(_)`.
@@ -32,22 +33,125 @@ impl<'a> RuleMut<'a> for ParseArray {
             return Ok(());
         }
 
-        let mut values = Vec::new();
+        let mut js = Vec::new();
         for child in view.iter() {
-            if let Some(Raw(value)) = child.data() {
-                values.push(value.clone());
-            } else if child.kind() != "," && child.kind() != "[" && child.kind() != "]" {
-                warn!(
-                    "ParseArray (L): unexpected non-raw value in array: {}",
-                    child.kind()
-                );
-                return Ok(());
+            if let Some(data) = child.data() {
+                js.push(data.clone());
             }
         }
 
-        trace!("ParseArray (L): array with {} elements", values.len());
-        node.reduce(Array(values));
+        trace!("ParseArray (L): array with {} elements", js.len());
+        node.reduce(Array(js));
 
         Ok(())
+    }
+}
+
+/// Infers `+` on two arrays
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::{ParseArray, CombineArrays};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = [1, 2] + [3, 4]").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(), ParseArray::default(), CombineArrays::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = '1,23,4'");
+/// ```
+
+#[derive(Default)]
+pub struct CombineArrays;
+
+impl<'a> RuleMut<'a> for CombineArrays {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            if let (Some(Array(left_values)), "+", Some(Array(right_values))) =
+                (left.data(), op.text()?, right.data())
+            {
+                debug!(
+                    "CombineArrays (L): combining arrays => left: {:?}, right: {:?}",
+                    left_values, right_values
+                );
+                let combined = combine_arrays(left_values, right_values);
+                trace!("CombineArrays (L): combining arrays => '{}'", combined);
+                node.reduce(Raw(Str(combined)));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn flatten_array(arr: &Vec<JavaScript>) -> String {
+    arr.iter()
+        .map(flatten_value)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<String>>()
+        .join(",")
+}
+
+fn flatten_value(value: &JavaScript) -> String {
+    match value {
+        Array(arr) => flatten_array(arr),
+        Raw(Num(n)) => n.to_string(),
+        Raw(Str(s)) => s.clone(),
+        Raw(Bool(b)) => b.to_string(),
+        _ => {
+            warn!("CombineArrays: Unsupported value type");
+            String::new()
+        }
+    }
+}
+
+fn combine_arrays(left: &Vec<JavaScript>, right: &Vec<JavaScript>) -> String {
+    format!("{}{}", flatten_array(left), flatten_array(right))
+}
+
+#[cfg(test)]
+mod tests_js_array {
+    use js::string::ParseString;
+    use super::*;
+    use crate::js::build_javascript_tree;
+    use crate::js::integer::ParseInt;
+    use crate::js::linter::Linter;
+
+    #[test]
+    fn test_combine_arrays() {
+        let mut tree = build_javascript_tree("var x = [0, 1,7] + [3, [7, '2', [88]]]").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(), ParseString::default(), ParseArray::default(), CombineArrays::default()
+        )).unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "var x = '0,1,73,7,2,88'");
     }
 }

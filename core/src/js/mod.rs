@@ -1,15 +1,17 @@
-mod array;
+pub mod array;
 pub mod backend;
 pub mod bool;
 pub mod integer;
 pub mod linter;
 pub mod strategy;
+mod string;
 
+use self::array::*;
 use self::bool::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::string::*;
 use error::{Error, MinusOneResult};
-use js::array::ParseArray;
 use rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use std::fmt::Display;
 use tree::{HashMapStorage, Storage, Tree};
@@ -29,7 +31,7 @@ impl Display for Value {
             "{}",
             match self {
                 Value::Num(e) => e.to_string(),
-                Value::Str(s) => format!("\"{}\"", s),
+                Value::Str(s) => escape_js_string(s),
                 Value::Bool(true) => "true".to_string(),
                 Value::Bool(false) => "false".to_string(),
             }
@@ -40,7 +42,7 @@ impl Display for Value {
 #[derive(Debug, Clone, PartialEq)]
 pub enum JavaScript {
     Raw(Value),
-    Array(Vec<Value>),
+    Array(Vec<JavaScript>),
 }
 
 impl Display for JavaScript {
@@ -90,17 +92,19 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt,    // Parse integer literals (decimal, hex, octal, binary)
-    ParseBool,   // Parse boolean literals (true, false)
-    ParseArray,  // Parse arrays
-    NegInt,      // Infer unary - operations on integers
-    AddInt,      // Infer + and - operations on integers
-    MultInt,     // Infer *, / and % operations on integers
-    PowInt,      // Infer ** operations on integers
-    ShiftInt,    // Infer <<, >> and >>> operations on integers
-    NotBool,     // Infer unary ! operations on booleans
-    BoolAlgebra, // Infer boolean algebra operations (&&, ||)
-    AddBool      // Infer + and - operations on booleans
+    ParseInt,      // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,     // Parse boolean literals (true, false)
+    ParseString,   // Parse string literals (single and double quotes)
+    ParseArray,    // Parse arrays
+    NegInt,        // Infer unary - operations on integers
+    AddInt,        // Infer + and - operations on integers
+    MultInt,       // Infer *, / and % operations on integers
+    PowInt,        // Infer ** operations on integers
+    ShiftInt,      // Infer <<, >> and >>> operations on integers
+    NotBool,       // Infer unary ! operations on booleans
+    BoolAlgebra,   // Infer boolean algebra operations (&&, ||)
+    AddBool,       // Infer + and - operations on booleans
+    CombineArrays  // Infer + operations on two arrays
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
