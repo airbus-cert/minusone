@@ -32,6 +32,9 @@ pub trait Storage {
     /// Remove data from starage
     fn remove(&mut self, node: usize);
 
+    /// Test if a transaction is ongoing
+    fn is_ongoing_transaction(&self) -> bool;
+
     /// Start a transaction
     fn start_transaction(&mut self) -> MinusOneResult<()>;
 
@@ -61,6 +64,10 @@ impl Storage for EmptyStorage {
     }
 
     fn remove(&mut self, _: usize) {}
+
+    fn is_ongoing_transaction(&self) -> bool {
+        false
+    }
 
     fn start_transaction(&mut self) -> MinusOneResult<()> {
         Ok(())
@@ -191,6 +198,10 @@ impl<T> Storage for HashMapStorage<T> {
             true => _ = self.pending.insert(node_id, PendingAction::Remove),
             false => _ = self.map.remove(&node_id),
         };
+    }
+
+    fn is_ongoing_transaction(&self) -> bool {
+        self.is_ongoing_transaction
     }
 
     fn start_transaction(&mut self) -> MinusOneResult<()> {
@@ -734,6 +745,10 @@ impl<'a, T> NodeMut<'a, T> {
             }
         }
         Ok(())
+    }
+
+    pub fn is_ongoing_transaction(&self) -> bool {
+        self.storage.is_ongoing_transaction()
     }
 
     pub fn start_transaction(&mut self) -> MinusOneResult<()> {
