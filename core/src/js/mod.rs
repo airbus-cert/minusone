@@ -143,7 +143,8 @@ impl_javascript_ruleset!(
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     AtTrick, // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
     ConstructorAccessTrick, // Infer the constructor access trick
-    ConstructorTrick // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
+    ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
+    ToString // Infer toString calls
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

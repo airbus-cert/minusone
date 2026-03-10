@@ -336,6 +336,148 @@ impl<'a> RuleMut<'a> for Concat {
     }
 }
 
+/// Infers toString calls
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 31['toString']('32')").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'v';");
+/// ```
+#[derive(Default)]
+pub struct ToString;
+
+/*(program inferred_type: None
+ (expression_statement inferred_type: None
+  (call_expression inferred_type: None
+   (subscript_expression inferred_type: None
+    (number inferred_type: Some(Raw(Num(31))))
+    ([ inferred_type: None)
+    (string inferred_type: Some(Raw(Str("toString")))
+     (' inferred_type: None)
+     (string_fragment inferred_type: None)
+     (' inferred_type: None))
+    (] inferred_type: None))
+   (arguments inferred_type: None
+    (( inferred_type: None)
+    (string inferred_type: Some(Raw(Str("32")))
+     (' inferred_type: None)
+     (string_fragment inferred_type: None)
+     (' inferred_type: None))
+    () inferred_type: None)))))
+*/
+
+impl<'a> RuleMut<'a> for ToString {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        if let (Some(subscript_expression), Some(arguments)) = (view.child(0), view.child(1)) {
+            if subscript_expression.kind() == "subscript_expression" {
+                if let (Some(object), Some(property)) =
+                    (subscript_expression.child(0), subscript_expression.child(2))
+                {
+                    if property.data() == Some(&Raw(Str("toString".to_string()))) {
+
+                        // get radix argument if exists
+                        let radix = if arguments.child_count() > 2 {
+                            if let Some(arg) = arguments.child(1) {
+                                if let Some(Raw(Num(radix))) = arg.data() {
+                                    *radix
+                                } else if let Some(Raw(Str(radix_str))) = arg.data() {
+                                    if let Ok(radix) = radix_str.parse::<i64>() {
+                                        radix
+                                    } else {
+                                        warn!("ToString: cannot parse radix argument '{}' as number, defaulting to 10", radix_str);
+                                        10
+                                    }
+                                } else {
+                                    warn!("ToString: unsupported radix argument type, defaulting to 10");
+                                    10
+                                }
+                            } else {
+                                10
+                            }
+                        } else {
+                            10
+                        };
+
+                        let result = match object.data() {
+                            Some(Raw(Num(n))) => {
+                                if radix == 10 {
+                                    n.to_string()
+                                } else if radix >= 2 && radix <= 36 {
+                                    let mut num = *n as i64;
+                                    let mut result = String::new();
+                                    let negative = num < 0;
+                                    if negative {
+                                        num = -num;
+                                    }
+                                    while num > 0 {
+                                        let digit = (num % radix) as u8;
+                                        result.push(if digit < 10 {
+                                            (b'0' + digit) as char
+                                        } else {
+                                            (b'a' + digit - 10) as char
+                                        });
+                                        num /= radix;
+                                    }
+                                    if negative {
+                                        result.push('-');
+                                    }
+                                    result.chars().rev().collect()
+                                } else {
+                                    warn!("ToString: invalid radix {}, defaulting to 10", radix);
+                                    n.to_string()
+                                }
+                            }
+                            Some(Raw(Bool(b))) => b.to_string(),
+                            Some(Raw(Str(s))) => s.to_string(),
+                            Some(Array(array)) => flatten_array(array),
+                            _ => {
+                                warn!("ToString: unsupported object type for toString call");
+                                return Ok(());
+                            }
+                        };
+
+                        trace!("ToString: reducing {:?}['toString']({}) to '{}'", object.data(), radix, result);
+                        node.reduce(Raw(Str(result)));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::string::{escape_js_string, unescaped_js_string};
