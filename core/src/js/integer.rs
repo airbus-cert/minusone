@@ -532,3 +532,68 @@ mod test {
 }
 
 // Todo: Bitwise operators (&, |, ^, ~)
+/// Infers bitwise operators on integers if both operands are known integers (bitwise AND, OR, XOR, NOT)
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::{ParseInt, BitwiseInt};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 0x15487596 ^ 0x5216598 | 0x36598745 & ~0x21215487;").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 377066318;");
+/// ```
+#[derive(Default)]
+pub struct BitwiseInt;
+
+impl<'a> RuleMut<'a> for BitwiseInt {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" && view.kind() != "unary_expression" {
+            return Ok(());
+        }
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            match (left.data(), op.text()?, right.data()) {
+                (Some(Raw(Num(l))), "&", Some(Raw(Num(r)))) => {
+                    trace!("BitwiseInt (L): {} & {} = {}", l, r, l & r);
+                    node.reduce(Raw(Num(l & r)));
+                }
+                (Some(Raw(Num(l))), "|", Some(Raw(Num(r)))) => {
+                    trace!("BitwiseInt (L): {} | {} = {}", l, r, l | r);
+                    node.reduce(Raw(Num(l | r)));
+                }
+                (Some(Raw(Num(l))), "^", Some(Raw(Num(r)))) => {
+                    trace!("BitwiseInt (L): {} ^ {} = {}", l, r, l ^ r);
+                    node.reduce(Raw(Num(l ^ r)));
+                }
+                _ => {}
+            }
+        } else if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
+            if op.text()? == "~" {
+                if let Some(Raw(Num(n))) = operand.data() {
+                    trace!("BitwiseInt (L): ~{} = {}", n, !n);
+                    node.reduce(Raw(Num(!n)));
+                }
+            }
+        }
+        Ok(())
+    }
+}

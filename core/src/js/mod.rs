@@ -129,6 +129,7 @@ impl_javascript_ruleset!(
     MultInt,         // Infer *, / and % operations on integers
     PowInt,          // Infer ** operations on integers
     ShiftInt,        // Infer <<, >> and >>> operations on integers
+    BitwiseInt,      // Infer &, |, ^ and ~ operations on integers
     NotBool,         // Infer unary ! operations on booleans
     BoolAlgebra,     // Infer boolean algebra operations (&&, ||)
     AddBool,         // Infer + and - operations on booleans
