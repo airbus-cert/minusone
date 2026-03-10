@@ -513,6 +513,8 @@ impl<'a> RuleMut<'a> for ToString {
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::string::{escape_js_string, unescaped_js_string};
+    use js::integer::ParseInt;
+    use js::string::{CharAt, Concat, ParseString, StringPlusMinus};
 
     #[test]
     fn test_unescaped_js_string() {
@@ -531,5 +533,72 @@ mod tests_js_string {
         assert_eq!(escape_js_string("Backslash: \\"), r#"'Backslash: \\'"#);
     }
 
-    // todo: add tests for CharAt and StringPlusMinus rules
+    #[test]
+    fn test_concat() {
+        let mut tree =
+            crate::js::build_javascript_tree("var x = 'Hello, ' + 'world!' + 1;").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            StringPlusMinus::default(),
+            Concat::default(),
+        ))
+        .unwrap();
+        let mut linter = crate::js::linter::Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "var x = 'Hello, world!1';");
+    }
+
+    #[test]
+    fn test_charat() {
+        let mut tree = crate::js::build_javascript_tree("var x = 'test'[1];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            CharAt::default(),
+        ))
+        .unwrap();
+        let mut linter = crate::js::linter::Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "var x = 'e';");
+
+        // OOB
+        let mut tree = crate::js::build_javascript_tree("var x = 'test'[10];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            CharAt::default(),
+        ))
+        .unwrap();
+        let mut linter = crate::js::linter::Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "var x = undefined;");
+    }
+
+    #[test]
+    fn test_charat_concat() {
+        let mut tree = crate::js::build_javascript_tree(
+            "var x = 'minusone'[0] + 'minusone'[1] + 'minusone'[2] + 'minusone'[3] + 'minusone'[4] + 'minusone'[5] + 'minusone'[6] + 'minusone'[7];"
+        ).unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            CharAt::default(),
+            Concat::default(),
+        ))
+        .unwrap();
+        let mut linter = crate::js::linter::Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "var x = 'minusone';");
+    }
+
+    #[test]
+    fn test_string_plus_minus() {
+        let mut tree = crate::js::build_javascript_tree("var x = +'42'; var y = -'42';").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), StringPlusMinus::default()))
+            .unwrap();
+        let mut linter = crate::js::linter::Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "var x = 42; var y = -42;");
+    }
 }

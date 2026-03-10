@@ -35,10 +35,12 @@ impl<'a> RuleMut<'a> for ParseSpecials {
                 node.reduce(Undefined);
                 return Ok(());
             }
-            "NaN" => {
-                trace!("ParseSpecials (L): NaN");
-                node.reduce(NaN);
-                return Ok(());
+            "identifier" => {
+                if view.data() == None && view.text()? == "NaN" {
+                    trace!("ParseSpecials (L): NaN");
+                    node.reduce(NaN);
+                    return Ok(());
+                }
             }
             _ => {}
         }
@@ -213,20 +215,28 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                         node.reduce(NaN);
                     }
                     (Some(Undefined), Some(Raw(Str(s)))) => {
-                        trace!("AddSubSpecials (R): undefined + '{}' => 'undefined'", s);
-                        node.reduce(Raw(Str("undefined".to_string())));
+                        trace!(
+                            "AddSubSpecials (R): undefined + '{}' => 'undefined{}'",
+                            s,
+                            s
+                        );
+                        node.reduce(Raw(Str(format!("undefined{}", s))));
                     }
                     (Some(Raw(Str(s))), Some(Undefined)) => {
-                        trace!("AddSubSpecials (L): '{}' + undefined => 'undefined'", s);
-                        node.reduce(Raw(Str("undefined".to_string())));
+                        trace!(
+                            "AddSubSpecials (L): '{}' + undefined => '{}undefined'",
+                            s,
+                            s
+                        );
+                        node.reduce(Raw(Str(format!("{}undefined", s))));
                     }
                     (Some(NaN), Some(Raw(Str(s)))) => {
-                        trace!("AddSubSpecials (R): NaN + '{}' => 'NaN'", s);
-                        node.reduce(Raw(Str("NaN".to_string())));
+                        trace!("AddSubSpecials (R): NaN + '{}' => 'NaN{}'", s, s);
+                        node.reduce(Raw(Str(format!("NaN{}", s))));
                     }
                     (Some(Raw(Str(s))), Some(NaN)) => {
-                        trace!("AddSubSpecials (L): '{}' + NaN => 'NaN'", s);
-                        node.reduce(Raw(Str("NaN".to_string())));
+                        trace!("AddSubSpecials (L): '{}' + NaN => '{}NaN'", s, s);
+                        node.reduce(Raw(Str(format!("{}NaN", s))));
                     }
                     _ => {}
                 }
@@ -282,6 +292,7 @@ impl<'a> RuleMut<'a> for AtTrick {
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             if op.kind() == "+" {
+                println!("Left: {:?}, Right: {:?}", left.data(), right.data());
                 match (left.data(), right.data()) {
                     (Some(At), Some(Raw(Str(s)))) => {
                         trace!(
@@ -560,5 +571,251 @@ impl<'a> RuleMut<'a> for ConstructorAccessTrick {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests_js_specials {
+    use crate::js::array::{CombineArrays, GetArrayElement, ParseArray};
+    use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
+    use crate::js::integer::ParseInt;
+    use crate::js::linter::Linter;
+    use crate::js::specials::{
+        AddSubSpecials, AtTrick, ConstructorAccessTrick, ConstructorTrick, ParseSpecials,
+    };
+    use crate::js::string::ParseString;
+    use js::bool::ParseBool;
+    use js::JavaScript;
+    use tree::{HashMapStorage, Tree};
+
+    fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
+
+    #[test]
+    fn test_parse_specials() {
+        let mut tree = build_javascript_tree("var x = undefined;").unwrap();
+        tree.apply_mut(&mut ParseSpecials::default()).unwrap();
+        assert_eq!(lint(&tree), "var x = undefined;");
+
+        let mut tree = build_javascript_tree("var x = NaN;").unwrap();
+        tree.apply_mut(&mut ParseSpecials::default()).unwrap();
+        assert_eq!(lint(&tree), "var x = NaN;");
+    }
+
+    #[test]
+    fn test_empty_array_plus_undefined() {
+        let mut tree = build_javascript_tree("var x = ([1][2]) + [];").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseArray::default(),
+            Forward::default(),
+            CombineArrays::default(),
+            GetArrayElement::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'undefined';");
+    }
+
+    #[test]
+    fn test_empty_array_plus_nan() {
+        let mut tree = build_javascript_tree("var x = [] + NaN;").unwrap();
+        tree.apply_mut(&mut (
+            ParseArray::default(),
+            ParseSpecials::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'NaN';");
+    }
+
+    #[test]
+    fn test_undefined_plus_number_gives_nan() {
+        let mut tree = build_javascript_tree("var x = undefined + 1;").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseSpecials::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = NaN;");
+    }
+
+    #[test]
+    fn test_special_plus_string() {
+        let mut tree = build_javascript_tree("var x = undefined + 'hello';").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseSpecials::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'undefinedhello';");
+
+        let mut tree = build_javascript_tree("var x = 'cheese' + NaN;").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseSpecials::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'cheeseNaN';");
+    }
+
+    #[test]
+    fn test_array_plus_special() {
+        let mut tree = build_javascript_tree("var x = [1, 2] + undefined;").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseArray::default(),
+            ParseSpecials::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = '1,2undefined';");
+
+        let mut tree = build_javascript_tree("var x = [1, 2] + NaN;").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseArray::default(),
+            ParseSpecials::default(),
+            AddSubSpecials::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = '1,2NaN';");
+    }
+
+    #[test]
+    fn test_at_plus_string() {
+        let mut tree = build_javascript_tree("var x = []['at'] + 'hello';").unwrap();
+        tree.apply_mut(&mut (
+            ParseSpecials::default(),
+            ParseString::default(),
+            ParseArray::default(),
+            AtTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            lint(&tree),
+            "var x = 'function at() { [native code] }hello';"
+        );
+    }
+
+    #[test]
+    fn test_at_plus_nan() {
+        let mut tree = build_javascript_tree("var x = []['at'] + NaN;").unwrap();
+        tree.apply_mut(&mut (
+            ParseSpecials::default(),
+            ParseArray::default(),
+            ParseString::default(),
+            AtTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'function at() { [native code] }NaN';");
+    }
+
+    #[test]
+    fn test_at_plus_bool() {
+        let mut tree = build_javascript_tree("var x = []['at'] + true;").unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            ParseArray::default(),
+            ParseString::default(),
+            ParseSpecials::default(),
+            AtTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            lint(&tree),
+            "var x = 'function at() { [native code] }true';"
+        );
+    }
+
+    #[test]
+    fn test_array_constructor_plus_string() {
+        let mut tree = build_javascript_tree("var x = []['constructor'] + 'hello';").unwrap();
+        tree.apply_mut(&mut (
+            ParseSpecials::default(),
+            ParseString::default(),
+            ParseArray::default(),
+            ConstructorTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            lint(&tree),
+            "var x = 'function Array() { [native code] }hello';"
+        );
+    }
+
+    #[test]
+    fn test_string_constructor_name() {
+        let mut tree = build_javascript_tree("var x = ''['constructor'] + '';").unwrap();
+        tree.apply_mut(&mut (
+            ParseSpecials::default(),
+            ParseString::default(),
+            ParseArray::default(),
+            ConstructorTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            lint(&tree),
+            "var x = 'function String() { [native code] }';"
+        );
+    }
+
+    #[test]
+    fn test_constructor_access_name_string() {
+        let mut tree = build_javascript_tree("var x = ''['constructor']['name'];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseArray::default(),
+            ParseSpecials::default(),
+            ConstructorAccessTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'String';");
+    }
+
+    #[test]
+    fn test_constructor_access_name_array() {
+        let mut tree = build_javascript_tree("var x = []['constructor']['name'];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseArray::default(),
+            ParseSpecials::default(),
+            ConstructorAccessTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'Array';");
+    }
+
+    #[test]
+    fn test_constructor_access_name_nan() {
+        let mut tree = build_javascript_tree("var x = NaN['constructor']['name'];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseArray::default(),
+            ParseSpecials::default(),
+            ConstructorAccessTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'Number';");
+    }
+
+    #[test]
+    fn test_constructor_access_name_undefined() {
+        let mut tree = build_javascript_tree("var x = undefined['constructor']['name'];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseArray::default(),
+            ParseSpecials::default(),
+            ConstructorAccessTrick::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = 'undefined';");
     }
 }

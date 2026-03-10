@@ -137,13 +137,13 @@ impl<'a> RuleMut<'a> for NegInt {
 /// use minusone::js::integer::{ParseInt, AddInt};
 /// use minusone::js::linter::Linter;
 ///
-/// let mut tree = build_javascript_tree("var x = 4 + 5 - 2;").unwrap();
+/// let mut tree = build_javascript_tree("var x = 1 + 1;").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), AddInt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
 ///
-/// assert_eq!(linter.output, "var x = 7;");
+/// assert_eq!(linter.output, "var x = 2;");
 /// ```
 #[derive(Default)]
 pub struct AddInt;
@@ -349,7 +349,7 @@ impl<'a> RuleMut<'a> for PowInt {
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
-//// assert_eq!(linter.output, "var x = 8;");
+/// assert_eq!(linter.output, "var x = 8;");
 /// ```
 #[derive(Default)]
 pub struct ShiftInt;
@@ -401,137 +401,6 @@ impl<'a> RuleMut<'a> for ShiftInt {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::js::build_javascript_tree;
-    use crate::js::linter::Linter;
-    use crate::tree::{HashMapStorage, Tree};
-
-    fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        linter.output
-    }
-
-    #[test]
-    fn test_parse_decimal() {
-        let mut tree = build_javascript_tree("var x = 42;").unwrap();
-        tree.apply_mut(&mut ParseInt::default()).unwrap();
-        assert_eq!(lint(&tree), "var x = 42;");
-    }
-
-    #[test]
-    fn test_parse_hex() {
-        let mut tree = build_javascript_tree("var x = 0x1F;").unwrap();
-        tree.apply_mut(&mut ParseInt::default()).unwrap();
-        assert_eq!(lint(&tree), "var x = 31;");
-    }
-
-    #[test]
-    fn test_add() {
-        let mut tree = build_javascript_tree("var x = 4 + 5 - 2;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), AddInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 7;");
-    }
-
-    #[test]
-    fn test_neg() {
-        let mut tree = build_javascript_tree("var x = -5;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), NegInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = -5;");
-    }
-
-    #[test]
-    fn test_mult_negative() {
-        let mut tree = build_javascript_tree("var x = 1 * -2;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), NegInt::default(), MultInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = -2;");
-    }
-
-    #[test]
-    fn test_mult() {
-        let mut tree = build_javascript_tree("var x = 3 * 4;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), MultInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 12;");
-    }
-
-    #[test]
-    fn test_pow() {
-        let mut tree = build_javascript_tree("var x = 2 ** 3;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), PowInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 8;");
-    }
-
-    #[test]
-    fn test_shift_right() {
-        let mut tree = build_javascript_tree("var x = 16 >> 2;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 4;");
-
-        let mut tree = build_javascript_tree("var x = 2 >> 31;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 0;");
-
-        let mut tree = build_javascript_tree("var x = 2 >> 32;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 2;");
-
-        let mut tree = build_javascript_tree("var x = 2 >> 33;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 1;");
-
-        let mut tree = build_javascript_tree("let x = -16 >> 2;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), NegInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "let x = -4;");
-    }
-
-    #[test]
-    fn test_shift_left() {
-        let mut tree = build_javascript_tree("var x = 1 << 3;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 8;");
-
-        let mut tree = build_javascript_tree("var x = 2 << 31;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 0;");
-
-        let mut tree = build_javascript_tree("var x = 2 << 32;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 2;");
-    }
-
-    #[test]
-    fn test_shift_unsigned_right() {
-        let mut tree = build_javascript_tree("let x = -16 >>> 2;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), NegInt::default(), ShiftInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "let x = 1073741820;");
-    }
-
-    #[test]
-    fn test_combined() {
-        let mut tree = build_javascript_tree("var x = 0x0A + 3 * 2;").unwrap();
-        tree.apply_mut(&mut (ParseInt::default(), AddInt::default(), MultInt::default()))
-            .unwrap();
-        assert_eq!(lint(&tree), "var x = 16;");
-    }
-}
-
-// Todo: Bitwise operators (&, |, ^, ~)
 /// Infers bitwise operators on integers if both operands are known integers (bitwise AND, OR, XOR, NOT)
 ///
 /// # Example
@@ -540,12 +409,12 @@ mod test {
 /// use minusone::js::integer::{ParseInt, BitwiseInt};
 /// use minusone::js::linter::Linter;
 ///
-/// let mut tree = build_javascript_tree("var x = 0x15487596 ^ 0x5216598 | 0x36598745 & ~0x21215487;").unwrap();
+/// let mut tree = build_javascript_tree("var x = 0x4 ^ 0x8;").unwrap();
 /// tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = 377066318;");
+/// assert_eq!(linter.output, "var x = 12;");
 /// ```
 #[derive(Default)]
 pub struct BitwiseInt;
@@ -595,5 +464,207 @@ impl<'a> RuleMut<'a> for BitwiseInt {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests_js_integer {
+    use super::*;
+    use crate::js::build_javascript_tree;
+    use crate::js::linter::Linter;
+    use crate::tree::{HashMapStorage, Tree};
+
+    fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
+    #[test]
+    fn test_parse_int() {
+        // Decimal
+        let mut tree = build_javascript_tree("var x = 31;").unwrap();
+        tree.apply_mut(&mut ParseInt::default()).unwrap();
+        assert_eq!(lint(&tree), "var x = 31;");
+
+        // Hexadecimal
+        let mut tree = build_javascript_tree("var x = 0x1F;").unwrap();
+        tree.apply_mut(&mut ParseInt::default()).unwrap();
+        assert_eq!(lint(&tree), "var x = 31;");
+
+        // Octal
+        let mut tree = build_javascript_tree("var x = 0o37;").unwrap();
+        tree.apply_mut(&mut ParseInt::default()).unwrap();
+        assert_eq!(lint(&tree), "var x = 31;");
+
+        // Binary
+        let mut tree = build_javascript_tree("var x = 0b11111;").unwrap();
+        tree.apply_mut(&mut ParseInt::default()).unwrap();
+        assert_eq!(lint(&tree), "var x = 31;");
+    }
+
+    #[test]
+    fn test_neg_int() {
+        let mut tree = build_javascript_tree("var x = -42 - -5;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), NegInt::default(), AddInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = -37;");
+    }
+
+    #[test]
+    fn test_add_sub_int() {
+        // Add
+        let mut tree = build_javascript_tree("var x = 1 + 1;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), AddInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 2;");
+
+        // Sub
+        let mut tree = build_javascript_tree("var x = 5 - 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), AddInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 3;");
+
+        // Chained
+        let mut tree =
+            build_javascript_tree("var x = 1 - 25 + 47 - 6 - 2 -99 + 120 + 33;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), AddInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 69;");
+    }
+
+    #[test]
+    fn test_mult_div_mod_int() {
+        // Mult
+        let mut tree = build_javascript_tree("var x = 3 * 4;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), MultInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 12;");
+
+        // Div
+        let mut tree = build_javascript_tree("var x = 10 / 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), MultInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 5;");
+
+        // Mod
+        let mut tree = build_javascript_tree("var x = 10 % 3;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), MultInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 1;");
+
+        // Chained
+        let mut tree = build_javascript_tree("var x = 10 * 2 / 5 % 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), MultInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 0;");
+    }
+
+    #[test]
+    fn test_op_priority() {
+        let mut tree = build_javascript_tree("var x = 1 + 3 * 36;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), AddInt::default(), MultInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 109;");
+
+        let mut tree = build_javascript_tree("var x = 1 + 9 * 6 % 28 - 3 * 7;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), AddInt::default(), MultInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 6;");
+    }
+
+    #[test]
+    fn test_pow_int() {
+        let mut tree = build_javascript_tree("var x = 50 ** 8;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), PowInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 39062500000000;");
+    }
+
+    #[test]
+    fn test_shift_int() {
+        // Shift left
+        let mut tree = build_javascript_tree("var x = 1 << 3;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 8;");
+
+        // Shift right
+        let mut tree = build_javascript_tree("var x = 16 >> 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 4;");
+
+        // Unsigned shift right
+        let mut tree = build_javascript_tree("let x = -16 >>> 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), NegInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "let x = 1073741820;");
+
+        // Chained
+        let mut tree = build_javascript_tree("var x = 1 << 3 >> 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 2;");
+
+        // Overflow shift
+        let mut tree = build_javascript_tree("var x = 16 >> 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 4;");
+
+        let mut tree = build_javascript_tree("var x = 2 >> 31;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 0;");
+
+        let mut tree = build_javascript_tree("var x = 2 >> 32;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 2;");
+
+        let mut tree = build_javascript_tree("var x = 2 >> 33;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 1;");
+
+        let mut tree = build_javascript_tree("let x = -16 >> 2;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), NegInt::default(), ShiftInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "let x = -4;");
+    }
+
+    #[test]
+    fn test_bitwise_int() {
+        // AND
+        let mut tree = build_javascript_tree("var x = 0x4 & 0x8;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 0;");
+
+        // OR
+        let mut tree = build_javascript_tree("var x = 0x4 | 0x8;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 12;");
+
+        // XOR
+        let mut tree = build_javascript_tree("var x = 0x4 ^ 0x8;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 12;");
+
+        // NOT
+        let mut tree = build_javascript_tree("var x = ~0x4;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = -5;");
+
+        // Chained
+        let mut tree =
+            build_javascript_tree("var x = 0x15487596 ^ 0x5216598 | 0x36598745 & ~0x21215487;")
+                .unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), BitwiseInt::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = 377066318;");
     }
 }

@@ -350,7 +350,24 @@ mod tests_js_array {
     use crate::js::build_javascript_tree;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use js::forward::Forward;
     use js::string::ParseString;
+
+    #[test]
+    fn test_array_parsing() {
+        let mut tree = build_javascript_tree("var x = [1, 2, [3, '4']]").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            ParseArray::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "var x = [1, 2, [3, '4']]");
+    }
 
     #[test]
     fn test_combine_arrays() {
@@ -367,5 +384,52 @@ mod tests_js_array {
         tree.apply(&mut linter).unwrap();
 
         assert_eq!(linter.output, "var x = '0,1,73,7,2,88'");
+    }
+
+    #[test]
+    fn test_get_array_element() {
+        let mut tree = build_javascript_tree("var x = ([1, [2, '3'], 4][1])[0];").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            ParseArray::default(),
+            Forward::default(),
+            GetArrayElement::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "var x = 2;");
+    }
+
+    #[test]
+    fn test_array_plus_minus() {
+        let mut tree = build_javascript_tree("var x = +[['455']];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseArray::default(),
+            ArrayPlusMinus::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "var x = 455;");
+
+        let mut tree = build_javascript_tree("var x = +['a'];").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseArray::default(),
+            ArrayPlusMinus::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "var x = NaN;");
     }
 }

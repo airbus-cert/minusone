@@ -66,7 +66,7 @@ impl Display for JavaScript {
                 write!(f, "[{}]", arr_str)
             }
             JavaScript::Undefined => write!(f, "undefined"),
-            JavaScript::NaN => write!(f, "0"),
+            JavaScript::NaN => write!(f, "NaN"),
             JavaScript::At => write!(f, "[]['at']"),
             JavaScript::Constructor(inner) => {
                 let value = match **inner {

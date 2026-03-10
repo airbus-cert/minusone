@@ -11,7 +11,6 @@ pub struct Forward;
 impl<'a> RuleMut<'a> for Forward {
     type Language = JavaScript;
 
-    /// Nothing to do during top down exploration
     fn enter(
         &mut self,
         _node: &mut NodeMut<'a, Self::Language>,
@@ -20,7 +19,6 @@ impl<'a> RuleMut<'a> for Forward {
         Ok(())
     }
 
-    /// Forward the inferred type to the top node
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
@@ -43,5 +41,25 @@ impl<'a> RuleMut<'a> for Forward {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod tests_forward {
+    use crate::js::forward::Forward;
+    use js::build_javascript_tree;
+    use js::integer::{AddInt, ParseInt};
+    use js::linter::Linter;
+
+    #[test]
+    fn test_forward() {
+        let mut tree = build_javascript_tree("var x = ((1 + (((2)))))").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), AddInt::default(), Forward::default()))
+            .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "var x = 3");
     }
 }
