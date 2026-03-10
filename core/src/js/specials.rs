@@ -513,8 +513,14 @@ impl<'a> RuleMut<'a> for ConstructorTrick {
 }
 
 fn constructor_to_string(constructor: &JavaScript) -> String {
-    let fn_name = match constructor {
-        Undefined => "".to_string(),
+    let fn_name = constructor_to_name(constructor);
+
+    format!("function {fn_name}() {{ [native code] }}")
+}
+
+fn constructor_to_name(constructor: &JavaScript) -> String {
+    match constructor {
+        Undefined => "undefined".to_string(),
         NaN => "Number".to_string(),
         At => "Function".to_string(),
         Raw(v) => match v {
@@ -523,8 +529,68 @@ fn constructor_to_string(constructor: &JavaScript) -> String {
             Bool(_) => "Boolean".to_string(),
         },
         Array(_) => "Array".to_string(),
-        Constructor(inner) => constructor_to_string(inner),
-    };
+        Constructor(inner) => constructor_to_name(inner),
+    }
+}
 
-    format!("function {fn_name}() {{ [native code] }}")
+
+/// Infer constructor special accesse `''['constructor']['name']` => `'String'`
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::specials::{ParseSpecials, ConstructorAccessTrick};
+/// use minusone::js::string::ParseString;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = ''['constructor']['name'];").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseArray::default(), ParseSpecials::default(), ConstructorAccessTrick::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'String';");
+/// ```
+#[derive(Default)]
+pub struct ConstructorAccessTrick;
+
+impl<'a> RuleMut<'a> for ConstructorAccessTrick {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "subscript_expression" {
+            return Ok(());
+        }
+
+        if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
+            if let (Some(Constructor(constructor)), Some(Raw(Str(index)))) =
+                (array_node.data(), index_node.data())
+            {
+                if index == "name" {
+                    trace!(
+                        "ConstructorAccessTrick: []['constructor']['name'] => '{}'",
+                        constructor_to_name(constructor)
+                    );
+                    node.reduce(Raw(Str(constructor_to_name(constructor))));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
