@@ -8,6 +8,9 @@ extern crate regex;
 extern crate tree_sitter;
 extern crate tree_sitter_powershell;
 extern crate tree_sitter_traversal2;
+extern crate colored;
+
+use colored::Colorize;
 
 #[macro_use]
 pub mod ps;
