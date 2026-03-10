@@ -471,14 +471,8 @@ impl<'a> RuleMut<'a> for BitwiseInt {
 mod tests_js_integer {
     use super::*;
     use crate::js::build_javascript_tree;
-    use crate::js::linter::Linter;
-    use crate::tree::{HashMapStorage, Tree};
+    use js::lint;
 
-    fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        linter.output
-    }
     #[test]
     fn test_parse_int() {
         // Decimal

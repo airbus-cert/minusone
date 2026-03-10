@@ -1,4 +1,5 @@
 pub mod array;
+pub mod b64;
 pub mod backend;
 pub mod bool;
 pub mod forward;
@@ -9,6 +10,7 @@ pub mod strategy;
 pub mod string;
 
 use self::array::*;
+use self::b64::*;
 use self::bool::*;
 use self::forward::*;
 use self::integer::*;
@@ -20,6 +22,8 @@ use rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use std::fmt::Display;
 use tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_javascript::LANGUAGE as javascript_language;
+#[cfg(test)]
+use js::linter::Linter;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -51,6 +55,7 @@ pub enum JavaScript {
     NaN,
     At, // This is a special value that represents ƒ -> at() { [native code] }
     Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
+    Bytes(Vec<u8>),
 }
 
 impl Display for JavaScript {
@@ -80,10 +85,12 @@ impl Display for JavaScript {
                     },
                     JavaScript::Array(_) => "[]".to_string(),
                     JavaScript::Constructor(_) => "['constructor']".to_string(),
+                    JavaScript::Bytes(_) => "''".to_string(),
                 };
 
                 write!(f, "{}['constructor']", value)
             }
+            JavaScript::Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
         }
     }
 }
@@ -145,7 +152,8 @@ impl_javascript_ruleset!(
     AtTrick, // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
     ConstructorAccessTrick, // Infer the constructor access trick
     ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
-    ToString          // Infer toString calls
+    ToString,         // Infer toString calls
+    B64               // Infer atob & btoa calls and reduce them to string literals
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
@@ -208,4 +216,11 @@ pub fn build_javascript_tree_for_storage<T: Storage + Default>(
 
     let tree_sitter = parser.parse(source, None).unwrap();
     Ok(Tree::<T>::new(source.as_bytes(), tree_sitter))
+}
+
+#[cfg(test)]
+pub fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
+    let mut linter = Linter::default();
+    tree.apply(&mut linter).unwrap();
+    linter.output
 }

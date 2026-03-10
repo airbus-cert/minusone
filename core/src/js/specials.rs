@@ -510,10 +510,11 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
         },
         Array(_) => "Array".to_string(),
         Constructor(inner) => constructor_to_name(inner),
+        Bytes(_) => "String".to_string(),
     }
 }
 
-/// Infer constructor special accesse `''['constructor']['name']` => `'String'`
+/// Infer constructor special access `''['constructor']['name']` => `'String'`
 ///
 /// # Example
 /// ```
@@ -580,20 +581,12 @@ mod tests_js_specials {
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
-    use crate::js::linter::Linter;
     use crate::js::specials::{
         AddSubSpecials, AtTrick, ConstructorAccessTrick, ConstructorTrick, ParseSpecials,
     };
     use crate::js::string::ParseString;
     use js::bool::ParseBool;
-    use js::JavaScript;
-    use tree::{HashMapStorage, Tree};
-
-    fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        linter.output
-    }
+    use js::lint;
 
     #[test]
     fn test_parse_specials() {
