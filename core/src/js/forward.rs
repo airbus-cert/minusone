@@ -1,13 +1,8 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Raw};
-use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::Value;
-use js::Value::{Num, Str};
-use log::{debug, trace, warn};
-use error::Error;
+use log::trace;
 
 /// Forward inferred type in the most simple cases
 #[derive(Default)]
@@ -36,7 +31,10 @@ impl<'a> RuleMut<'a> for Forward {
             "parenthesized_expression" => {
                 if let Some(expression) = view.child(1) {
                     if let Some(expression_data) = expression.data() {
-                        trace!("Forward (L): Forwarding data from child to parent: {:?}", expression_data);
+                        trace!(
+                            "Forward (L): Forwarding data from child to parent: {:?}",
+                            expression_data
+                        );
                         node.reduce(expression_data.clone())
                     }
                 }

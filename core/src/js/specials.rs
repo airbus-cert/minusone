@@ -6,7 +6,7 @@ use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use js::array::flatten_array;
 use js::Value::{Num, Str};
-use log::{debug, trace, warn};
+use log::trace;
 
 /// Parse specials
 #[derive(Default)]
@@ -61,9 +61,7 @@ impl<'a> RuleMut<'a> for ParseSpecials {
         // detect ...['constructor'] can be string array At number...
         if view.kind() == "subscript_expression" {
             if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
-                if let (Some(js), Some(Raw(Str(index)))) =
-                    (array_node.data(), index_node.data())
-                {
+                if let (Some(js), Some(Raw(Str(index)))) = (array_node.data(), index_node.data()) {
                     if index == "constructor" {
                         trace!("ParseSpecials (L): array['constructor'] => Special Constructor");
                         node.reduce(Constructor(Box::new(js.clone())));
@@ -83,13 +81,19 @@ impl<'a> RuleMut<'a> for ParseSpecials {
 /// ```
 /// use minusone::js::build_javascript_tree;
 /// use minusone::js::specials::AddSubSpecials;
+/// use minusone::js::forward::Forward;
 /// use minusone::js::integer::ParseInt;
 /// use minusone::js::array::{ParseArray, CombineArrays, GetArrayElement};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = ([1][2]) + [];").unwrap();
 /// tree.apply_mut(&mut (
-///     ParseInt::default(), ParseArray::default(), CombineArrays::default(), GetArrayElement::default(), AddSubSpecials::default()
+///     ParseInt::default(),
+///     ParseArray::default(),
+///     Forward::default(),
+///     CombineArrays::default(),
+///     GetArrayElement::default(),
+///     AddSubSpecials::default()
 /// )).unwrap();
 ///
 /// let mut linter = Linter::default();
@@ -122,13 +126,6 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-            debug!(
-                "AddSubSpecials: Left: {:?}, Op: {:?}, Right: {:?}",
-                left.data(),
-                op.kind(),
-                right.data()
-            );
-
             if op.kind() == "+" {
                 match (left.data(), right.data()) {
                     (Some(Array(array)), Some(Undefined)) => {
@@ -284,13 +281,6 @@ impl<'a> RuleMut<'a> for AtTrick {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-            debug!(
-                "AtTrick: Left: {:?}, Op: {:?}, Right: {:?}",
-                left.data(),
-                op.kind(),
-                right.data()
-            );
-
             if op.kind() == "+" {
                 match (left.data(), right.data()) {
                     (Some(At), Some(Raw(Str(s)))) => {
@@ -341,16 +331,13 @@ impl<'a> RuleMut<'a> for AtTrick {
                             array_str
                         ))));
                     }
-                    (Some(At), Some(Raw(Bool(b))) ) => {
+                    (Some(At), Some(Raw(Bool(b)))) => {
                         trace!(
                             "AtTrick: []['at'] + {} => 'function at() {{ [native code] }}{}'",
                             b,
                             b
                         );
-                        node.reduce(Raw(Str(format!(
-                            "function at() {{ [native code] }}{}",
-                            b
-                        ))));
+                        node.reduce(Raw(Str(format!("function at() {{ [native code] }}{}", b))));
                     }
                     (Some(Raw(Bool(b))), Some(At)) => {
                         trace!(
@@ -358,26 +345,15 @@ impl<'a> RuleMut<'a> for AtTrick {
                             b,
                             b
                         );
-                        node.reduce(Raw(Str(format!(
-                            "{}function at() {{ [native code] }}",
-                            b
-                        ))));
+                        node.reduce(Raw(Str(format!("{}function at() {{ [native code] }}", b))));
                     }
                     (Some(NaN), Some(At)) => {
-                        trace!(
-                            "AtTrick: NaN + []['at'] => 'NaNfunction at() {{ [native code] }}'"
-                        );
-                        node.reduce(Raw(Str(format!(
-                            "NaNfunction at() {{ [native code] }}"
-                        ))));
+                        trace!("AtTrick: NaN + []['at'] => 'NaNfunction at() {{ [native code] }}'");
+                        node.reduce(Raw(Str(format!("NaNfunction at() {{ [native code] }}"))));
                     }
                     (Some(At), Some(NaN)) => {
-                        trace!(
-                            "AtTrick: []['at'] + NaN => 'function at() {{ [native code] }}NaN'"
-                        );
-                        node.reduce(Raw(Str(format!(
-                            "function at() {{ [native code] }}NaN"
-                        ))));
+                        trace!("AtTrick: []['at'] + NaN => 'function at() {{ [native code] }}NaN'");
+                        node.reduce(Raw(Str(format!("function at() {{ [native code] }}NaN"))));
                     }
                     _ => {}
                 }
@@ -432,13 +408,6 @@ impl<'a> RuleMut<'a> for ConstructorTrick {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-            debug!(
-                "ConstructorTrick: Left: {:?}, Op: {:?}, Right: {:?}",
-                left.data(),
-                op.kind(),
-                right.data()
-            );
-
             if op.kind() == "+" {
                 match (left.data(), right.data()) {
                     (Some(Constructor(constructor)), Some(Raw(Str(s)))) => {
@@ -532,7 +501,6 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
         Constructor(inner) => constructor_to_name(inner),
     }
 }
-
 
 /// Infer constructor special accesse `''['constructor']['name']` => `'String'`
 ///

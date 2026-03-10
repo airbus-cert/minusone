@@ -4,11 +4,10 @@ use crate::js::JavaScript::{Array, Raw};
 use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::Value;
-use js::Value::{Num, Str};
-use log::{debug, trace, warn};
 use js::array::flatten_array;
 use js::JavaScript::Undefined;
+use js::Value::{Num, Str};
+use log::{trace, warn};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -152,7 +151,10 @@ impl<'a> RuleMut<'a> for CharAt {
                         node.reduce(Raw(Str(ch.to_string())));
                         Ok(())
                     } else {
-                        trace!("InferCharAt: index {} out of bounds, setting to undefined", i);
+                        trace!(
+                            "InferCharAt: index {} out of bounds, setting to undefined",
+                            i
+                        );
                         node.reduce(Undefined);
                         Ok(())
                     }
@@ -165,7 +167,10 @@ impl<'a> RuleMut<'a> for CharAt {
                             node.reduce(Raw(Str(ch.to_string())));
                             Ok(())
                         } else {
-                            trace!("InferCharAt: index {} out of bounds, setting to undefined", i);
+                            trace!(
+                                "InferCharAt: index {} out of bounds, setting to undefined",
+                                i
+                            );
                             node.reduce(Undefined);
                             Ok(())
                         };
@@ -305,26 +310,49 @@ impl<'a> RuleMut<'a> for Concat {
             if operator.text()? == "+" {
                 match (left.data(), right.data()) {
                     (Some(Raw(Str(s1))), Some(Raw(Str(s2)))) => {
-                        trace!("Concat: reducing '{}' + '{}' to '{}'", s1, s2, s1.to_string() + s2);
+                        trace!(
+                            "Concat: reducing '{}' + '{}' to '{}'",
+                            s1,
+                            s2,
+                            s1.to_string() + s2
+                        );
                         node.reduce(Raw(Str(s1.to_string() + s2)));
                     }
                     // numbers + strings should also be concatenated as strings
                     (Some(Raw(Num(n))), Some(Raw(Str(s)))) => {
-                        trace!("Concat: reducing {} + '{}' to '{}'", n, s, n.to_string() + s);
+                        trace!(
+                            "Concat: reducing {} + '{}' to '{}'",
+                            n,
+                            s,
+                            n.to_string() + s
+                        );
                         node.reduce(Raw(Str(n.to_string() + s)));
                     }
                     (Some(Raw(Str(s))), Some(Raw(Num(n)))) => {
-                        trace!("Concat: reducing '{}' + {} to '{}'", s, n, s.to_string() + n.to_string().as_str());
+                        trace!(
+                            "Concat: reducing '{}' + {} to '{}'",
+                            s,
+                            n,
+                            s.to_string() + n.to_string().as_str()
+                        );
                         node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
                     }
                     (Some(Array(array)), Some(Raw(Str(s)))) => {
                         let array_str = flatten_array(array);
-                        trace!("Concat: reducing array + '{}' to '{}'", s, array_str.to_string() + s);
+                        trace!(
+                            "Concat: reducing array + '{}' to '{}'",
+                            s,
+                            array_str.to_string() + s
+                        );
                         node.reduce(Raw(Str(array_str.to_string() + s)));
                     }
                     (Some(Raw(Str(s))), Some(Array(array))) => {
                         let array_str = flatten_array(array);
-                        trace!("Concat: reducing '{}' + array to '{}'", s, s.to_string() + array_str.as_str());
+                        trace!(
+                            "Concat: reducing '{}' + array to '{}'",
+                            s,
+                            s.to_string() + array_str.as_str()
+                        );
                         node.reduce(Raw(Str(s.to_string() + array_str.as_str())));
                     }
                     _ => {}
@@ -346,7 +374,7 @@ impl<'a> RuleMut<'a> for Concat {
 /// use minusone::js::array::ParseArray;
 /// use minusone::js::linter::Linter;
 ///
-/// let mut tree = build_javascript_tree("var x = 31['toString']('32')").unwrap();
+/// let mut tree = build_javascript_tree("var x = 31['toString']('32');").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default()
 /// )).unwrap();
@@ -405,7 +433,6 @@ impl<'a> RuleMut<'a> for ToString {
                     (subscript_expression.child(0), subscript_expression.child(2))
                 {
                     if property.data() == Some(&Raw(Str("toString".to_string()))) {
-
                         // get radix argument if exists
                         let radix = if arguments.child_count() > 2 {
                             if let Some(arg) = arguments.child(1) {
@@ -467,7 +494,12 @@ impl<'a> RuleMut<'a> for ToString {
                             }
                         };
 
-                        trace!("ToString: reducing {:?}['toString']({}) to '{}'", object.data(), radix, result);
+                        trace!(
+                            "ToString: reducing {:?}['toString']({}) to '{}'",
+                            object.data(),
+                            radix,
+                            result
+                        );
                         node.reduce(Raw(Str(result)));
                     }
                 }
@@ -495,7 +527,7 @@ mod tests_js_string {
     fn test_escape_js_string() {
         assert_eq!(escape_js_string("Hello\nWorld"), r#"'Hello\nWorld'"#);
         assert_eq!(escape_js_string("Tab\tSeparated"), r#"'Tab\tSeparated'"#);
-        assert_eq!(escape_js_string("Quote: \""), r#"'Quote: \"'"#);
+        assert_eq!(escape_js_string("Quote: \""), r#"'Quote: "'"#);
         assert_eq!(escape_js_string("Backslash: \\"), r#"'Backslash: \\'"#);
     }
 

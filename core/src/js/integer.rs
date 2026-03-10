@@ -7,7 +7,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use js::array::flatten_array;
 use js::JavaScript::Array;
 use js::Value::Str;
-use log::{debug, trace, warn};
+use log::{trace, warn};
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 ///

@@ -5,7 +5,7 @@ use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use js::Value::{Num, Str};
-use log::{debug, trace, warn};
+use log::trace;
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 #[derive(Default)]
@@ -82,7 +82,6 @@ impl<'a> RuleMut<'a> for NotBool {
 
         if let (Some(op), Some(value)) = (view.child(0), view.child(1)) {
             if op.text()? == "!" {
-                debug!("Data for NotBool (L): {}", value.kind());
                 match value.data() {
                     Some(Raw(Bool(b))) => {
                         trace!("NotBool (L): !{} => {}", b, !*b);

@@ -4,10 +4,9 @@ use crate::js::JavaScript::{Array, Raw};
 use crate::js::Value::Bool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::Value;
+use js::JavaScript::{NaN, Undefined};
 use js::Value::{Num, Str};
 use log::{debug, trace, warn};
-use js::JavaScript::{NaN, Undefined};
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -112,8 +111,15 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     "CombineArrays (L): combining array and raw => left: {:?}, right: {:?}",
                     left_values, raw
                 );
-                let combined = format!("{}{}", flatten_array(left_values), flatten_value(&Raw(raw.clone())));
-                trace!("CombineArrays (L): combining array and raw => '{}'", combined);
+                let combined = format!(
+                    "{}{}",
+                    flatten_array(left_values),
+                    flatten_value(&Raw(raw.clone()))
+                );
+                trace!(
+                    "CombineArrays (L): combining array and raw => '{}'",
+                    combined
+                );
                 node.reduce(Raw(Str(combined)));
             }
         }
@@ -172,32 +178,54 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     return Ok(());
                 }
             }
-            if let (Some(Array(arr)), Some(Raw(Num(index)))) = (array_node.data(), index_node.data()) {
+            if let (Some(Array(arr)), Some(Raw(Num(index)))) =
+                (array_node.data(), index_node.data())
+            {
                 return if (*index as usize) < arr.len() {
-                    trace!("GetArrayElement: accessing index {} of array {:?}", index, arr);
+                    trace!(
+                        "GetArrayElement: accessing index {} of array {:?}",
+                        index,
+                        arr
+                    );
                     node.reduce(arr[*index as usize].clone());
                     Ok(())
                 } else {
-                    trace!("GetArrayElement: index {} out of bounds, setting to undefined", index);
+                    trace!(
+                        "GetArrayElement: index {} out of bounds, setting to undefined",
+                        index
+                    );
                     node.reduce(Undefined);
                     Ok(())
-                }
+                };
             }
-            if let (Some(Array(arr)), Some(Raw(Str(index_str)))) = (array_node.data(), index_node.data()) {
+            if let (Some(Array(arr)), Some(Raw(Str(index_str)))) =
+                (array_node.data(), index_node.data())
+            {
                 return if let Ok(index) = index_str.parse::<usize>() {
                     if index < arr.len() {
-                        trace!("GetArrayElement: accessing index '{}' of array {:?} => index {}", index_str, arr, index);
+                        trace!(
+                            "GetArrayElement: accessing index '{}' of array {:?} => index {}",
+                            index_str,
+                            arr,
+                            index
+                        );
                         node.reduce(arr[index].clone());
                     } else {
-                        trace!("GetArrayElement: index '{}' out of bounds, setting to undefined", index_str);
+                        trace!(
+                            "GetArrayElement: index '{}' out of bounds, setting to undefined",
+                            index_str
+                        );
                         node.reduce(Undefined);
                     }
                     Ok(())
                 } else {
-                    warn!("GetArrayElement: cannot parse index '{}' as number", index_str);
+                    warn!(
+                        "GetArrayElement: cannot parse index '{}' as number",
+                        index_str
+                    );
                     node.reduce(Undefined);
                     Ok(())
-                }
+                };
             }
         }
 
@@ -318,18 +346,22 @@ fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<i64> {
 
 #[cfg(test)]
 mod tests_js_array {
-    use js::string::ParseString;
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use js::string::ParseString;
 
     #[test]
     fn test_combine_arrays() {
         let mut tree = build_javascript_tree("var x = [0, 1,7] + [3, [7, '2', [88]]]").unwrap();
         tree.apply_mut(&mut (
-            ParseInt::default(), ParseString::default(), ParseArray::default(), CombineArrays::default()
-        )).unwrap();
+            ParseInt::default(),
+            ParseString::default(),
+            ParseArray::default(),
+            CombineArrays::default(),
+        ))
+        .unwrap();
 
         let mut linter = Linter::default();
         tree.apply(&mut linter).unwrap();
