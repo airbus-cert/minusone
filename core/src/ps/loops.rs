@@ -95,6 +95,10 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
                 node.set_by_node_id(self.loop_id.unwrap(), Loop(Dead));
                 node.apply_transaction();
             } else {
+                trace!(
+                    "ForStatementCondition (L): Abort transaction of loop with id {}",
+                    self.loop_id.unwrap()
+                );
                 node.abort_transaction();
             }
             self.loop_id = None;
@@ -237,7 +241,10 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
                         match iter.next().map(|n| n.smallest_child().kind()) {
                             Some("break" | "return" | "exit" | "throw") => {
-                                trace!("ForStatementFlowControl (L): Setting loop with id {} as one turn", parent.id());
+                                trace!(
+                                    "ForStatementFlowControl (L): Setting loop with id {} as one turn",
+                                    parent.id()
+                                );
                                 node.set_by_node_id(parent.id(), Loop(OneTurn));
 
                                 self.iterators.iter().for_each(|it| {
@@ -248,7 +255,10 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                                 });
                             }
                             Some("continue") => {
-                                trace!("ForStatementFlowControl (L): Setting loop with id {} as infinite", parent.id());
+                                trace!(
+                                    "ForStatementFlowControl (L): Setting loop with id {} as infinite",
+                                    parent.id()
+                                );
                                 node.set(Loop(Inifite))
                             }
                             _ => {}
@@ -265,15 +275,15 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::LoopStatus::{Dead, OneTurn};
+    use crate::ps::Powershell::{Loop, Raw};
+    use crate::ps::Value::Num;
     use crate::ps::bool::Comparison;
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
     use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
     use crate::ps::var::Var;
-    use crate::ps::LoopStatus::{Dead, OneTurn};
-    use crate::ps::Powershell::{Loop, Raw};
-    use crate::ps::Value::Num;
 
     #[test]
     fn test_dead_for_statement() {
