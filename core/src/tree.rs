@@ -1,11 +1,11 @@
 use crate::error::{Error, MinusOneResult};
 use crate::rule::{Rule, RuleMut};
-use log::{trace, warn};
+use log::{error, trace, warn};
 use std::collections::HashMap;
 use std::ops;
 use std::str::Utf8Error;
 use tree_sitter::{Node as TreeNode, Tree as TreeSitter};
-use tree_sitter_traversal2::{traverse, Order};
+use tree_sitter_traversal2::{Order, traverse};
 
 /// Node components are stored following
 /// a storage pattern
@@ -158,7 +158,10 @@ impl<T> Storage for HashMapStorage<T> {
     /// ```
     fn set(&mut self, node_id: usize, data: Self::Component) {
         match self.is_ongoing_transaction {
-            true => _ = self.pending.insert(node_id, PendingAction::Add(data)),
+            true => {
+                trace!("Set on node {} is pending", node_id);
+                _ = self.pending.insert(node_id, PendingAction::Add(data))
+            }
             false => _ = self.map.insert(node_id, data),
         };
         self.is_updated = true;
@@ -195,7 +198,10 @@ impl<T> Storage for HashMapStorage<T> {
 
     fn remove(&mut self, node_id: usize) {
         match self.is_ongoing_transaction {
-            true => _ = self.pending.insert(node_id, PendingAction::Remove),
+            true => {
+                trace!("Remove on {} is pending", node_id);
+                _ = self.pending.insert(node_id, PendingAction::Remove)
+            }
             false => _ = self.map.remove(&node_id),
         };
     }
@@ -205,7 +211,9 @@ impl<T> Storage for HashMapStorage<T> {
     }
 
     fn start_transaction(&mut self) -> MinusOneResult<()> {
+        trace!("Starting transaction");
         if self.is_ongoing_transaction {
+            error!("Nested transactions detected");
             return Err(Error::nested_transactions());
         }
 
@@ -237,6 +245,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(root_id), Some(&42));
     /// ```
     fn apply_transaction(&mut self) {
+        trace!("Apply transaction");
         let node_ids: Vec<usize> = self.pending.keys().cloned().collect();
         node_ids
             .into_iter()
@@ -275,6 +284,7 @@ impl<T> Storage for HashMapStorage<T> {
     /// assert_eq!(storage.get(root_id), None);
     /// ```
     fn abort_transaction(&mut self) {
+        trace!("Abort transaction");
         let keys: Vec<usize> = self.pending.keys().cloned().collect();
         let keys_to_forget: Vec<usize> = keys
             .iter()
