@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "minusone-cli"
-version = "0.6.0"
+version = "0.6.1"
 authors = ["Airbus CERT <cert@airbus.com>"]
 description = "A script deobfuscator"
 repository = "https://github.com/airbus-cert/minusone"
@@ -14,3 +14,4 @@ clap-help = "1.4.0"
 minusone = { path = "../../core" }
 pretty_env_logger = "0.5.0"
 log = { workspace = true }
+termimad = "0.34.1"

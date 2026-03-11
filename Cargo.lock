@@ -645,13 +645,14 @@ dependencies = [
 
 [[package]]
 name = "minusone-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "clap",
  "clap-help",
  "log",
  "minusone",
  "pretty_env_logger",
+ "termimad",
 ]
 
 [[package]]
