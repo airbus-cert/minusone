@@ -67,16 +67,27 @@ fn unescaped_js_string(s: &str) -> String {
                     '\'' => result.push('\''),
                     'u' => {
                         let mut hex = String::new();
-                        for _ in 0..4 {
-                            if let Some(h) = chars.next() {
+                        if let Some('{') = chars.peek() {
+                            chars.next(); // consume '{'
+                            while let Some(h) = chars.next() {
+                                if h == '}' {
+                                    break;
+                                }
                                 hex.push(h);
-                            } else {
-                                warn!("ParseString: incomplete unicode escape sequence");
-                                break;
+                            }
+                        } else {
+                            for _ in 0..4 {
+                                if let Some(h) = chars.next() {
+                                    hex.push(h);
+                                } else {
+                                    warn!("ParseString: incomplete unicode escape sequence");
+                                    break;
+                                }
                             }
                         }
-                        if let Ok(code_point) = u16::from_str_radix(&hex, 16) {
-                            if let Some(ch) = std::char::from_u32(code_point as u32) {
+
+                        if let Ok(code_point) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = std::char::from_u32(code_point) {
                                 result.push(ch);
                             } else {
                                 warn!("ParseString: invalid unicode code point: {}", hex);
@@ -539,6 +550,8 @@ mod tests_js_string {
         assert_eq!(unescaped_js_string(r#"'Quote: \"'"#), "Quote: \"");
         assert_eq!(unescaped_js_string(r#"'Backslash: \\'"#), "Backslash: \\");
         assert_eq!(unescaped_js_string(r#"'Unicode: \u0041'"#), "Unicode: A");
+        assert_eq!(unescaped_js_string(r#"'Unicode: \u0030 \u{00030} \u{000030} \u{0000000000000030} \u{30}'"#), "Unicode: 0 0 0 0 0");
+        assert_eq!(unescaped_js_string(r#"'Hex: \x41'"#), "Hex: A");
     }
 
     #[test]
