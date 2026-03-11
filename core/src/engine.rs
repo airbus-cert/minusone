@@ -48,11 +48,11 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
         })
     }
 
-    pub fn debug(&self)
+    pub fn debug(&self, custom_debug_view: Option<DebugView<B::Language>>)
     where
         B::Language: Debug,
     {
-        let mut debug_view = DebugView::default();
+        let mut debug_view = custom_debug_view.unwrap_or_else(DebugView::default);
         self.root.apply(&mut debug_view).unwrap();
     }
 

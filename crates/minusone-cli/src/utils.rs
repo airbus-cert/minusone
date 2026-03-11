@@ -1,4 +1,5 @@
-use crate::cli::Language;
+use crate::cli::{Cli, Language};
+use minusone::debug::DebugView;
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
 use minusone::ps::backend::PowershellBackend;
@@ -6,7 +7,7 @@ use std::fmt::Debug;
 
 pub(crate) fn run_deobf<B: DeobfuscationBackend>(
     source: &str,
-    debug: bool,
+    cli: Cli,
     rule_set: Option<Vec<String>>,
     skip_rule_set: Option<Vec<String>>,
 ) -> MinusOneResult<()>
@@ -26,11 +27,20 @@ where
         engine.deobfuscate()?;
     }
 
-    if debug {
-        engine.debug();
-    } else {
-        println!("{}", engine.lint()?);
+    if cli.debug {
+        let debug_view = DebugView::new(
+            cli.debug_indent,
+            !cli.debug_no_text,
+            !cli.debug_no_count,
+            !cli.debug_no_colors,
+        );
+        engine.debug(Some(debug_view));
+
+        println!("\n\n");
     }
+
+    println!("{}", engine.lint()?);
+
     Ok(())
 }
 
