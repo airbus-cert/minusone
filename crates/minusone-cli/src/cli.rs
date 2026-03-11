@@ -13,7 +13,7 @@ minusone (-1) is a deobfuscation tool that uses tree-sitter to parse and transfo
 It supports multiple languages and allows users to apply custom rules for deobfuscation.
 ";
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[clap(
     name = APPLICATION_NAME,
     author,
@@ -38,6 +38,22 @@ pub struct Cli {
     /// Debug mode: print the tree-sitter tree with inferred value on each node
     #[arg(long, short)]
     pub debug: bool,
+
+    /// Debug indent size for the debug mode (default: 2)
+    #[arg(long, default_value_t = 2)]
+    pub debug_indent: u32,
+
+    /// Disable text in debug nodes
+    #[arg(long)]
+    pub debug_no_text: bool,
+
+    /// Disable child count in debug nodes
+    #[arg(long)]
+    pub debug_no_count: bool,
+
+    /// Disable colors in debug nodes
+    #[arg(long)]
+    pub debug_no_colors: bool,
 
     /// Language of the script (default: powershell)
     #[arg(long, short, value_enum)]

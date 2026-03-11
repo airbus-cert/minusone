@@ -1,8 +1,8 @@
 use crate::error::MinusOneResult;
 use crate::rule::Rule;
 use crate::tree::Node;
-use std::fmt::Debug;
 use colored::Colorize;
+use std::fmt::Debug;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type
@@ -23,6 +23,19 @@ impl<T> Default for DebugView<T> {
             with_text: true,
             with_childs_count: true,
             with_colors: true,
+            _use: None,
+        }
+    }
+}
+
+impl<T> DebugView<T> {
+    pub fn new(tab_size: u32, with_text: bool, with_childs_count: bool, with_colors: bool) -> Self {
+        Self {
+            tab_depth: 0,
+            tab_size,
+            with_text,
+            with_childs_count,
+            with_colors,
             _use: None,
         }
     }

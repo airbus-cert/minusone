@@ -30,6 +30,8 @@ fn main() {
         .filter_module(APPLICATION_NAME, LevelFilter::Error)
         .init();
 
+    let cli_clone = cli.clone();
+
     let lang = match cli.lang {
         Some(l) => l,
         None => {
@@ -70,8 +72,6 @@ fn main() {
         process::exit(1);
     });
 
-    let debug = cli.debug;
-
     let rule_set = cli
         .rules
         .map(|vals| vals.into_iter().map(|s| s.to_lowercase()).collect());
@@ -83,7 +83,7 @@ fn main() {
 
     let result = match lang {
         Language::Powershell => {
-            run_deobf::<PowershellBackend>(&source, debug, rule_set, skip_rule_set)
+            run_deobf::<PowershellBackend>(&source, cli_clone, rule_set, skip_rule_set)
         }
     };
 
