@@ -8,6 +8,7 @@ pub mod linter;
 pub mod specials;
 pub mod strategy;
 pub mod string;
+pub mod var;
 
 use self::array::*;
 use self::b64::*;
@@ -17,13 +18,14 @@ use self::integer::*;
 use self::linter::RemoveComment;
 use self::specials::*;
 use self::string::*;
+use self::var::*;
 use error::{Error, MinusOneResult};
+#[cfg(test)]
+use js::linter::Linter;
 use rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use std::fmt::Display;
 use tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_javascript::LANGUAGE as javascript_language;
-#[cfg(test)]
-use js::linter::Linter;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -153,7 +155,8 @@ impl_javascript_ruleset!(
     ConstructorAccessTrick, // Infer the constructor access trick
     ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
     ToString,         // Infer toString calls
-    B64               // Infer atob & btoa calls and reduce them to string literals
+    B64,              // Infer atob & btoa calls and reduce them to string literals
+    Var               // Track variable assignments and propagate known values to usage sites
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
