@@ -5,21 +5,45 @@ extern crate minusone;
 mod cli;
 mod utils;
 
-use crate::cli::APPLICATION_NAME;
+use crate::cli::*;
 use clap::{CommandFactory, Parser, ValueEnum};
 use clap_help::Printer;
 use cli::{Cli, INTRO, Language};
 use log::{LevelFilter, error};
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
+use termimad::ansi;
 use utils::{get_available_rules, run_deobf};
 
 fn main() {
     let cli = Cli::parse();
     if cli.help {
-        Printer::new(Cli::command())
+        let mut printer = Printer::new(Cli::command())
             .with("introduction", INTRO)
-            .print_help();
+            .with("options", clap_help::TEMPLATE_OPTIONS_MERGED_VALUE);
+        printer.template_keys_mut().push("languages");
+        printer.set_template("languages", LANGUAGES_LIST_TEMPLATE);
+        printer.template_keys_mut().push("examples");
+        printer.set_template("examples", EXAMPLES_TEMPLATE);
+        let skin = printer.skin_mut();
+        skin.headers[0].compound_style.set_fg(ansi(39));
+        skin.bold.set_fg(ansi(39));
+        skin.italic.set_fg(ansi(39));
+        for (i, example) in EXAMPLES.iter().enumerate() {
+            printer
+                .expander_mut()
+                .sub("examples")
+                .set("example-number", i + 1)
+                .set("example-title", example.title)
+                .set("example-cmd", example.cmd);
+        }
+        for language in Language::value_variants() {
+            printer
+                .expander_mut()
+                .sub("languages")
+                .set("language", language.to_string());
+        }
+        printer.print_help();
 
         return;
     }
