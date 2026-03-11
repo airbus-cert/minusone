@@ -85,6 +85,22 @@ fn unescaped_js_string(s: &str) -> String {
                             warn!("ParseString: invalid unicode escape sequence: {}", hex);
                         }
                     }
+                    'x' => {
+                        let mut hex = String::new();
+                        for _ in 0..2 {
+                            if let Some(h) = chars.next() {
+                                hex.push(h);
+                            } else {
+                                warn!("ParseString: incomplete hex escape sequence");
+                                break;
+                            }
+                        }
+                        if let Ok(code_point) = u8::from_str_radix(&hex, 16) {
+                            result.push(code_point as char);
+                        } else {
+                            warn!("ParseString: invalid hex escape sequence: {}", hex);
+                        }
+                    }
                     _ => {
                         warn!("ParseString: unrecognized escape sequence: \\{}", next);
                         result.push(next);
