@@ -2,6 +2,7 @@ pub mod array;
 pub mod b64;
 pub mod backend;
 pub mod bool;
+pub mod fncall;
 pub mod forward;
 pub mod integer;
 pub mod linter;
@@ -13,6 +14,7 @@ pub mod var;
 use self::array::*;
 use self::b64::*;
 use self::bool::*;
+use self::fncall::*;
 use self::forward::*;
 use self::integer::*;
 use self::linter::RemoveComment;
@@ -156,7 +158,8 @@ impl_javascript_ruleset!(
     ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
     ToString,         // Infer toString calls
     B64,              // Infer atob & btoa calls and reduce them to string literals
-    Var               // Track variable assignments and propagate known values to usage sites
+    Var,              // Track variable assignments and propagate known values to usage sites
+    FnCall            // Resolve predictable function calls to their return values
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
