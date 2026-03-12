@@ -171,21 +171,33 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                 }
             }
             // x = ...;  (expression_statement wrapping an assignment_expression)
+            // also removes bare literal expression statements (e.g. 1;, 'hello';, true;)
             "expression_statement" => {
                 if let Some(child) = node.child(0) {
-                    if child.kind() == "assignment_expression" {
-                        if let Some(left) = child.child(0) {
-                            if left.kind() == "identifier" {
-                                let var_name = left.text()?.to_string();
-                                if self.rule.is_unused(&var_name) {
-                                    trace!(
-                                        "RemoveUnusedVar: removing assignment to '{}'",
-                                        var_name
-                                    );
-                                    self.remove_node(node)?;
+                    match child.kind() {
+                        "assignment_expression" => {
+                            if let Some(left) = child.child(0) {
+                                if left.kind() == "identifier" {
+                                    let var_name = left.text()?.to_string();
+                                    if self.rule.is_unused(&var_name) {
+                                        trace!(
+                                            "RemoveUnusedVar: removing assignment to '{}'",
+                                            var_name
+                                        );
+                                        self.remove_node(node)?;
+                                    }
                                 }
                             }
                         }
+                        // bare literals are dead code
+                        "number" | "string" | "true" | "false" | "null" | "undefined" => {
+                            trace!(
+                                "RemoveUnusedVar: removing bare literal statement '{}'",
+                                child.text().unwrap_or("?")
+                            );
+                            self.remove_node(node)?;
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -300,6 +312,38 @@ mod tests {
         assert_eq!(
             clean("function test() { return 'hello'; } console.log('hello');"),
             "console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_remove_bare_number() {
+        assert_eq!(
+            clean("1; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_bare_string() {
+        assert_eq!(
+            clean("'hello'; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_bare_bool() {
+        assert_eq!(
+            clean("true; false; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_bare_literal_after_fncall_inlining() {
+        assert_eq!(
+            clean("1; console.log('world');"),
+            "console.log('world');"
         );
     }
 }
