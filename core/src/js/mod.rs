@@ -2,6 +2,7 @@ pub mod array;
 pub mod b64;
 pub mod backend;
 pub mod bool;
+pub mod deadcode;
 pub mod fncall;
 pub mod forward;
 pub mod integer;
