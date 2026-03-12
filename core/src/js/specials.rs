@@ -292,7 +292,6 @@ impl<'a> RuleMut<'a> for AtTrick {
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             if op.kind() == "+" {
-                println!("Left: {:?}, Right: {:?}", left.data(), right.data());
                 match (left.data(), right.data()) {
                     (Some(At), Some(Raw(Str(s)))) => {
                         trace!(

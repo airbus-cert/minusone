@@ -150,6 +150,53 @@ impl RemoveUnusedVar {
         }
         name
     }
+
+    fn is_literal_bool(node: &Node<()>, expected: bool) -> bool {
+        let kind = if expected { "true" } else { "false" };
+
+        match node.kind() {
+            k if k == kind => true,
+            "parenthesized_expression" => {
+                node.iter().any(|child| child.kind() == kind)
+            }
+            _ => false,
+        }
+    }
+
+
+    fn has_else_clause(node: &Node<()>) -> bool {
+        for child in node.iter() {
+            if child.kind() == "else_clause" {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn block_inner_text(block: &Node<()>) -> Option<String> {
+        let text = block.text().ok()?;
+        let trimmed = text.trim();
+        // strip surrounding { }
+        if trimmed.starts_with('{') && trimmed.ends_with('}') {
+            Some(trimmed[1..trimmed.len() - 1].trim().to_string())
+        } else {
+            None
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
+        // skip leading newlines
+        while self.source.as_bytes().get(self.last_index) == Some(&b'\n') {
+            self.last_index += 1;
+        }
+        self.output += &self.source[self.last_index..node.start_abs()];
+        self.output += replacement;
+        if self.source.as_bytes().get(node.end_abs()) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = node.end_abs();
+        Ok(())
+    }
 }
 
 impl<'a> Rule<'a> for RemoveUnusedVar {
@@ -212,6 +259,42 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                                 fn_name
                             );
                             self.remove_node(node)?;
+                        }
+                    }
+                }
+            }
+            // if statements with known boolean conditions
+            "if_statement" => {
+                if let Some(condition) = node.named_child("condition") {
+                    if Self::is_literal_bool(&condition, false) {
+                        if Self::has_else_clause(node) {
+                            // if (false) { ... } else { BODY } -> keep BODY
+                            for child in node.iter() {
+                                if child.kind() == "else_clause" {
+                                    for else_child in child.iter() {
+                                        if else_child.kind() == "statement_block" {
+                                            if let Some(inner) = Self::block_inner_text(&else_child) {
+                                                trace!("RemoveUnusedVar: replacing if (false) ... else with else body");
+                                                self.replace_node_with_text(node, &inner)?;
+                                                return Ok(false);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // if (false) { ... } with no else -> remove entirely
+                            trace!("RemoveUnusedVar: removing dead if (false) statement");
+                            self.remove_node(node)?;
+                        }
+                    } else if Self::is_literal_bool(&condition, true) {
+                        // if (true) { BODY } ... -> keep BODY, discard else
+                        if let Some(consequence) = node.named_child("consequence") {
+                            if let Some(inner) = Self::block_inner_text(&consequence) {
+                                trace!("RemoveUnusedVar: replacing if (true) with if body");
+                                self.replace_node_with_text(node, &inner)?;
+                                return Ok(false);
+                            }
                         }
                     }
                 }
@@ -344,6 +427,46 @@ mod tests {
         assert_eq!(
             clean("1; console.log('world');"),
             "console.log('world');"
+        );
+    }
+
+    #[test]
+    fn test_remove_if_false() {
+        assert_eq!(
+            clean("if (false) { console.log('no'); } console.log('yes');"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_if_false_with_else_keeps_else_body() {
+        assert_eq!(
+            clean("if (false) { console.log('no'); } else { console.log('yes'); }"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_if_true_keeps_if_body() {
+        assert_eq!(
+            clean("if (true) { console.log('yes'); }"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_if_true_with_else_keeps_if_body() {
+        assert_eq!(
+            clean("if (true) { console.log('yes'); } else { console.log('no'); }"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_keep_if_variable() {
+        assert_eq!(
+            clean("if (x) { console.log('maybe'); }"),
+            "if (x) { console.log('maybe'); }"
         );
     }
 }

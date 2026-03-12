@@ -3,6 +3,7 @@ use error::MinusOneResult;
 use js;
 use js::deadcode::{RemoveUnusedVar, UnusedVar};
 use js::{build_javascript_tree_for_storage, remove_javascript_extra};
+use log::error;
 use rule::RuleSetBuilderType;
 use tree::{EmptyStorage, HashMapStorage, Tree};
 
@@ -58,7 +59,16 @@ impl DeobfuscationBackend for JavaScriptBackend {
         let mut linter = js::linter::Linter::default();
         root.apply(&mut linter)?;
 
-        CleanEngine::<JavaScriptBackend>::from_source(&linter.output)?.clean()
+        // fallback to returning the linted output without cleaning if the clean pass fails
+        match CleanEngine::<JavaScriptBackend>::from_source(&linter.output)
+            .and_then(|mut e| e.clean())
+        {
+            Ok(cleaned) => Ok(cleaned),
+            Err(e) => {
+                error!("Clean pass failed during linting: {:?}. Returning linted output without cleaning.", e);
+                Ok(linter.output)
+            }
+        }
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {
