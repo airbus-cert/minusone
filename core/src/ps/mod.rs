@@ -15,6 +15,7 @@ use crate::ps::string::{
     ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
     StringSplitMethod,
 };
+use crate::ps::switch::Switch;
 use crate::ps::typing::ParseType;
 use crate::ps::var::{StaticVar, Var};
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
@@ -39,6 +40,7 @@ pub mod loops;
 pub mod method;
 pub mod strategy;
 pub mod string;
+pub mod switch;
 mod tool;
 pub mod typing;
 pub mod var;
@@ -182,6 +184,7 @@ impl_powershell_ruleset!(
     StringSplitMethod, // Handle split method
     AccessArray,  // Handle static array element access
     AccessHashMap, // Handle hashmap access
+    Switch,       // Handle switch predictible branches
     ForStatementCondition, // Infer for condition to remove fake loops
     ForStatementFlowControl  // Simplify for statment based on flow control
 );
