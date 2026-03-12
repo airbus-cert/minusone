@@ -169,11 +169,9 @@ impl<'a> RuleMut<'a> for Var {
                                     | "method_definition"
                                     | "generator_function_declaration"
                                     | "generator_function" => {
-                                        // fn scope leave
-                                        self.scope_manager.leave();
+                                        self.scope_manager.leave_function();
                                     }
                                     _ => {
-                                        // bloc scope leave
                                         self.scope_manager.leave();
                                     }
                                 }
@@ -209,6 +207,12 @@ impl<'a> RuleMut<'a> for Var {
                                 self.scope_manager
                                     .current_mut()
                                     .assign(&var_name, data.clone());
+                            }
+                        }
+                        // variable_declaration = var, lexical_declaration = let/const
+                        if let Some(parent) = view.parent() {
+                            if parent.kind() == "variable_declaration" {
+                                self.scope_manager.current_mut().set_non_local(&var_name);
                             }
                         }
                     }
@@ -365,6 +369,30 @@ mod tests {
         assert_eq!(
             deobfuscate("{ let x = 10; console.log(x); } console.log(x);"),
             "{ let x = 10; console.log(10); } console.log(x);"
+        );
+    }
+
+    #[test]
+    fn test_var_hoists_out_of_block() {
+        assert_eq!(
+            deobfuscate("{ var x = 10; } console.log(x);"),
+            "{ var x = 10; } console.log(10);"
+        );
+    }
+
+    #[test]
+    fn test_let_does_not_hoist_out_of_block() {
+        assert_eq!(
+            deobfuscate("{ let x = 10; } console.log(x);"),
+            "{ let x = 10; } console.log(x);"
+        );
+    }
+
+    #[test]
+    fn test_const_does_not_hoist_out_of_block() {
+        assert_eq!(
+            deobfuscate("{ const x = 10; } console.log(x);"),
+            "{ const x = 10; } console.log(x);"
         );
     }
 }
