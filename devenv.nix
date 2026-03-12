@@ -25,6 +25,7 @@
         "rustc"
         "rust-analyzer"
         "clippy"
+        "miri"
       ];
       targets = [
         "wasm32-wasip1"

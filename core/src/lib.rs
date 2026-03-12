@@ -1,6 +1,7 @@
 #![feature(macro_metavar_expr)]
 
 extern crate base64;
+extern crate colored;
 extern crate core;
 extern crate log;
 extern crate num;

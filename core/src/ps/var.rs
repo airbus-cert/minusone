@@ -95,10 +95,14 @@ impl Var {
         .for_each(|s| {
             self.scope_manager
                 .current_mut()
-                .assign(s, Powershell::Unknown)
+                .assign(s, Powershell::Unknown, false)
         });
     }
-    fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
+    fn forget_assigned_var<T>(
+        &mut self,
+        node: &Node<T>,
+        is_ongoing_transaction: bool,
+    ) -> MinusOneResult<()> {
         for child in node.iter() {
             if child.kind() == "variable" {
                 if child
@@ -112,11 +116,13 @@ impl Var {
                     .is_some()
                 {
                     if let Some(var_name) = Var::extract(child.text()?) {
-                        self.scope_manager.current_mut().forget(&var_name);
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, is_ongoing_transaction);
                     }
                 }
             } else {
-                self.forget_assigned_var(&child)?;
+                self.forget_assigned_var(&child, is_ongoing_transaction)?;
             }
         }
 
@@ -216,6 +222,10 @@ impl<'a> RuleMut<'a> for Var {
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
+        if !node.is_ongoing_transaction() {
+            self.scope_manager.flush_transaction();
+        }
+
         let view = node.view();
         match view.kind() {
             "program" => self.reset_scope_manager(),
@@ -233,7 +243,7 @@ impl<'a> RuleMut<'a> for Var {
                 // record var block during new statement blocks
                 self.scope_manager.enter();
                 if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
-                    self.forget_assigned_var(&view)?;
+                    self.forget_assigned_var(&view, node.is_ongoing_transaction())?;
                 }
             }
 
@@ -250,7 +260,9 @@ impl<'a> RuleMut<'a> for Var {
                                 *v -= 1;
                             }
                         } else {
-                            self.scope_manager.current_mut().forget(&var_name)
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction())
                         }
                     }
                 }
@@ -265,6 +277,10 @@ impl<'a> RuleMut<'a> for Var {
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
+        if !node.is_ongoing_transaction() {
+            self.scope_manager.flush_transaction();
+        }
+
         let view = node.view();
         match view.kind() {
             "assignment_expression" => {
@@ -284,8 +300,12 @@ impl<'a> RuleMut<'a> for Var {
                                     || is_local
                                 {
                                     match assign_handler(current_value, operator, new_value) {
-                                        Some(assign_value) => scope.assign(&var_name, assign_value),
-                                        _ => scope.forget(&var_name),
+                                        Some(assign_value) => scope.assign(
+                                            &var_name,
+                                            assign_value,
+                                            node.is_ongoing_transaction(),
+                                        ),
+                                        _ => scope.forget(&var_name, node.is_ongoing_transaction()),
                                     }
                                 }
                             }
@@ -300,7 +320,9 @@ impl<'a> RuleMut<'a> for Var {
                     {
                         if let Some(Type(typename)) = cast_expression.child(0).unwrap().data() {
                             if typename.to_lowercase() == "ref" {
-                                self.scope_manager.current_mut().forget(&var_name)
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&var_name, node.is_ongoing_transaction())
                             }
                         }
                     }
@@ -316,7 +338,9 @@ impl<'a> RuleMut<'a> for Var {
                             trace!("Var (L): Setting node with variable value: {:?}", data);
                             node.set(data.clone());
                         } else {
-                            self.scope_manager.current_mut().in_use(&var_name);
+                            self.scope_manager
+                                .current_mut()
+                                .in_use(&var_name, node.is_ongoing_transaction());
                         }
                     }
                 }
@@ -344,7 +368,10 @@ impl<'a> RuleMut<'a> for Var {
                         {
                             // we set the variable before ...
                             if let Some(variable_data) = variable.data() {
-                                trace!("Var (L): Setting node with post-increment/decrement value: {:?}", variable_data);
+                                trace!(
+                                    "Var (L): Setting node with post-increment/decrement value: {:?}",
+                                    variable_data
+                                );
                                 node.set(variable_data.clone())
                             }
                             // ... assign it
@@ -354,7 +381,9 @@ impl<'a> RuleMut<'a> for Var {
                                 *v -= 1;
                             }
                         } else {
-                            self.scope_manager.current_mut().forget(&var_name)
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction())
                         }
                     }
                 }
@@ -398,7 +427,9 @@ impl<'a> RuleMut<'a> for Var {
                                         if let Some(Array(_)) =
                                             self.scope_manager.current_mut().get_var(&var_name)
                                         {
-                                            self.scope_manager.current_mut().forget(&var_name);
+                                            self.scope_manager
+                                                .current_mut()
+                                                .forget(&var_name, node.is_ongoing_transaction());
                                         }
                                     }
                                 }
@@ -425,7 +456,10 @@ impl<'a> RuleMut<'a> for Var {
                                             );
                                             node.set(Var::hashmap(variable_name, data));
                                         } else {
-                                            self.scope_manager.current_mut().in_use(&variable_name);
+                                            self.scope_manager.current_mut().in_use(
+                                                &variable_name,
+                                                node.is_ongoing_transaction(),
+                                            );
                                         }
                                     }
                                 }
@@ -454,10 +488,16 @@ impl<'a> RuleMut<'a> for Var {
                                                 });
 
                                             if value_param {
-                                                trace!("Var (L): Setting node with raw variable value: {:?}", data);
+                                                trace!(
+                                                    "Var (L): Setting node with raw variable value: {:?}",
+                                                    data
+                                                );
                                                 node.set(Raw(data.clone()));
                                             } else {
-                                                trace!("Var (L): Setting node with variable hashmap: {:?}", Var::hashmap(variable_name.clone(), &data));
+                                                trace!(
+                                                    "Var (L): Setting node with variable hashmap: {:?}",
+                                                    Var::hashmap(variable_name.clone(), &data)
+                                                );
                                                 node.set(Var::hashmap(variable_name, data));
                                             }
                                         }
@@ -488,6 +528,7 @@ impl<'a> RuleMut<'a> for Var {
                                                 self.scope_manager.current_mut().assign(
                                                     &variable_name,
                                                     Powershell::Raw(variable_value.clone()),
+                                                    node.is_ongoing_transaction(),
                                                 );
                                             }
                                         }
@@ -509,7 +550,10 @@ impl<'a> RuleMut<'a> for Var {
                                             if let Some(Raw(data)) =
                                                 self.scope_manager.current().get_var(&variable_name)
                                             {
-                                                trace!("Var (L): Setting node with variable hashmap from get-childitem: {:?}", Var::hashmap(variable_name.clone(), &data));
+                                                trace!(
+                                                    "Var (L): Setting node with variable hashmap from get-childitem: {:?}",
+                                                    Var::hashmap(variable_name.clone(), &data)
+                                                );
                                                 node.set(Var::hashmap(variable_name, data));
                                             }
                                         }
@@ -534,6 +578,7 @@ impl<'a> RuleMut<'a> for Var {
                                                 self.scope_manager.current_mut().assign(
                                                     &variable_name,
                                                     Powershell::Raw(item_value.clone()),
+                                                    node.is_ongoing_transaction(),
                                                 );
                                             }
                                         }

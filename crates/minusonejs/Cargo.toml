@@ -1,14 +1,10 @@
 [package]
+edition = "2024"
 name = "minusonejs"
 version = "0.4.2"
-edition = "2021"
 
 [package.metadata.component]
 package = "airbus-cert:minusone"
-
-[profile.release]
-lto = false
-panic = "abort"
 
 [lib]
 crate-type = ["cdylib"]

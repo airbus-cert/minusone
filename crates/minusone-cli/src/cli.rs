@@ -14,7 +14,7 @@ minusone (-1) is a deobfuscation tool that uses tree-sitter to parse and transfo
 It supports multiple languages and allows users to apply custom rules for deobfuscation.
 ";
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[clap(
     name = APPLICATION_NAME,
     author,
@@ -40,7 +40,23 @@ pub struct Cli {
     #[arg(long, short)]
     pub debug: bool,
 
-    /// Language of the script (default: powershell)
+    /// Debug indent size for the debug mode
+    #[arg(long, default_value_t = 2, value_name = "INT")]
+    pub debug_indent: u32,
+
+    /// Disable text in debug nodes
+    #[arg(long)]
+    pub debug_no_text: bool,
+
+    /// Disable child count in debug nodes
+    #[arg(long)]
+    pub debug_no_count: bool,
+
+    /// Disable colors in debug nodes
+    #[arg(long)]
+    pub debug_no_colors: bool,
+
+    /// Language of the script
     #[arg(long, short, value_enum)]
     pub lang: Option<Language>,
 
@@ -48,12 +64,12 @@ pub struct Cli {
     #[arg(long, short = 'L', alias = "ls")]
     pub list: bool,
 
-    /// Custom comma separated list of rules to apply for the deobfuscation (optional)
+    /// Custom comma separated list of rules to apply for the deobfuscation
     #[arg(long, short, value_delimiter = ',')]
     pub rules: Option<Vec<String>>,
 
-    /// Custom comma separated list of rules to skip for the deobfuscation (optional)
-    #[arg(long, short = 'R', value_delimiter = ',')]
+    /// Custom comma separated list of rules to skip for the deobfuscation
+    #[arg(long, short = 'R', value_delimiter = ',', value_name = "RULES")]
     pub skip_rules: Option<Vec<String>>,
 
     /// Show computation time for the deobfuscation process
@@ -100,3 +116,47 @@ impl From<LogLevel> for log::LevelFilter {
         }
     }
 }
+
+pub struct Example {
+    pub title: &'static str,
+    pub cmd: &'static str,
+}
+
+pub static EXAMPLES_TEMPLATE: &str = "
+**Examples:**
+
+${examples
+*${example-number})* ${example-title}: `${example-cmd}`
+}
+";
+
+pub static EXAMPLES: &[Example] = &[
+    Example {
+        title: "List available rules for a language",
+        cmd: "minusone -l powershell -L",
+    },
+    Example {
+        title: "Deobfuscate with all rules",
+        cmd: "minusone -l powershell --path obf_scr.ps1",
+    },
+    Example {
+        title: "Deobfuscate with a custom ruleset",
+        cmd: "minusone -l powershell --path obf_scr.ps1 --rules rule1,rule2,rule3",
+    },
+    Example {
+        title: "Deobfuscate skipping some rules",
+        cmd: "minusone -l powershell --path obf_scr.ps1 --skip-rules rule1,rule2,rule3",
+    },
+    Example {
+        title: "Deobfuscate with the maximum debug information",
+        cmd: "minusone -l powershell --path obf_scr.ps1 --debug --log-level trace",
+    },
+];
+
+pub static LANGUAGES_LIST_TEMPLATE: &str = "
+**Available languages:**
+
+${languages
+* ${language}
+}
+";

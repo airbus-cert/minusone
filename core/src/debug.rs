@@ -1,19 +1,41 @@
 use crate::error::MinusOneResult;
 use crate::rule::Rule;
 use crate::tree::Node;
+use colored::Colorize;
 use std::fmt::Debug;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type
 pub struct DebugView<T> {
-    tab_space: u32,
+    tab_depth: u32,
+    tab_size: u32,
+    with_text: bool,
+    with_childs_count: bool,
+    with_colors: bool,
     _use: Option<T>,
 }
 
 impl<T> Default for DebugView<T> {
     fn default() -> Self {
         Self {
-            tab_space: 0,
+            tab_depth: 0,
+            tab_size: 2,
+            with_text: true,
+            with_childs_count: true,
+            with_colors: true,
+            _use: None,
+        }
+    }
+}
+
+impl<T> DebugView<T> {
+    pub fn new(tab_size: u32, with_text: bool, with_childs_count: bool, with_colors: bool) -> Self {
+        Self {
+            tab_depth: 0,
+            tab_size,
+            with_text,
+            with_childs_count,
+            with_colors,
             _use: None,
         }
     }
@@ -31,8 +53,8 @@ impl<T> Default for DebugView<T> {
 /// use minusone::debug::DebugView;
 ///
 /// let mut tree = build_powershell_tree("4").unwrap();
-/// let mut debub_view = DebugView::default();
-/// tree.apply(&mut debub_view).unwrap(); // it will print you the tree over the console
+/// let mut debug_view = DebugView::default();
+/// tree.apply(&mut debug_view).unwrap(); // it will print you the tree over the console
 ///
 /// ```
 impl<'a, T> Rule<'a> for DebugView<T>
@@ -46,20 +68,52 @@ where
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         println!();
 
-        for _ in 0..self.tab_space {
+        for _ in 0..self.tab_depth * self.tab_size {
             print!(" ");
         }
 
-        print!("({} inferred_type: {:?}", node.kind(), node.data());
+        //print!("{}", "(".green());
+        if self.with_colors {
+            match self.tab_depth % 6 {
+                0 => print!("{}", "(".green()),
+                1 => print!("{}", "(".yellow()),
+                2 => print!("{}", "(".blue()),
+                3 => print!("{}", "(".red()),
+                4 => print!("{}", "(".cyan()),
+                _ => print!("{}", "(".magenta()),
+            }
+        } else {
+            print!("(");
+        }
 
-        self.tab_space += 1;
+        //print!("({} inferred_type: {:?} | childs : {} | text: {:?}", node.kind(), node.data(), node.child_count(), node.text());
+        print!("{} inferred_type: {:?}", node.kind(), node.data());
+        if self.with_childs_count {
+            print!(" | childs : {}", node.child_count());
+        }
+        if self.with_text {
+            print!(" | text: {:?}", node.text());
+        }
+
+        self.tab_depth += 1;
         Ok(true)
     }
 
     /// During the down to top travel we will manage the tab decrement
     fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-        print!(")");
-        self.tab_space -= 1;
+        if self.with_colors {
+            match self.tab_depth % 6 {
+                0 => print!("{}", ")".green()),
+                1 => print!("{}", ")".yellow()),
+                2 => print!("{}", ")".blue()),
+                3 => print!("{}", ")".red()),
+                4 => print!("{}", ")".cyan()),
+                _ => print!("{}", ")".magenta()),
+            }
+        } else {
+            print!(")");
+        }
+        self.tab_depth -= 1;
         Ok(())
     }
 }
