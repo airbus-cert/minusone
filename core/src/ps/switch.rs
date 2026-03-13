@@ -177,7 +177,11 @@ mod test {
     use crate::ps::forward::Forward;
     use crate::ps::integer::{AddInt, ParseInt};
     use crate::ps::switch::Switch;
-    use crate::ps::{Powershell::Raw, Value::Num, build_powershell_tree};
+    use crate::ps::{
+        Powershell::{DeadCode, Raw},
+        Value::Num,
+        build_powershell_tree,
+    };
 
     #[test]
     fn test_predictible_switch() {
@@ -200,8 +204,29 @@ mod test {
     }
 
     #[test]
+    fn test_predictible_switch_with_unpredictable_clause() {
+        let mut tree =
+            build_powershell_tree("switch (2) {\n$a {1}\n2 {2}\ndefault {3}\n}").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Switch::default()))
+            .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Num(2))
+        );
+    }
+
+    #[test]
     fn test_default_switch() {
-        let mut tree = build_powershell_tree("switch (4)\n{1 {1}\n2 {2}\ndefault {3}\n}").unwrap();
+        let mut tree = build_powershell_tree("switch (4) {\n1 {1}\n2 {2}\ndefault {3}\n}").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Switch::default()))
             .unwrap();
 
@@ -221,7 +246,8 @@ mod test {
 
     #[test]
     fn test_unpredictible_condition_switch() {
-        let mut tree = build_powershell_tree("switch ($a)\n{1 {1}\n2 {2}\ndefault {3}\n}").unwrap();
+        let mut tree =
+            build_powershell_tree("switch ($a) {\n1 {1}\n2 {2}\ndefault {3}\n}").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Switch::default()))
             .unwrap();
 
@@ -239,7 +265,8 @@ mod test {
 
     #[test]
     fn test_unpredictible_clause_switch() {
-        let mut tree = build_powershell_tree("switch (1)\n{${$a + 1} {1}\ndefault {3}\n}").unwrap();
+        let mut tree =
+            build_powershell_tree("switch (1) {\n${$a + 1} {1}\ndefault {3}\n}").unwrap();
         tree.apply_mut(&mut (ParseInt::default(), Forward::default(), Switch::default()))
             .unwrap();
 
@@ -257,7 +284,7 @@ mod test {
 
     #[test]
     fn test_predictible_complex_clause_switch() {
-        let mut tree = build_powershell_tree("switch (1)\n{(1+1) {2}\ndefault {3}\n}").unwrap();
+        let mut tree = build_powershell_tree("switch (1) {\n(1+1) {2}\ndefault {3}\n}").unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             AddInt::default(),
@@ -277,6 +304,49 @@ mod test {
                 .data()
                 .expect("Inferred type"),
             Raw(Num(3))
+        );
+    }
+
+    #[test]
+    fn test_unpredictible_clause_switch_simplify() {
+        let mut tree =
+            build_powershell_tree("switch (1) {\n$a {2}\n4 {666}\ndefault {3}\n}").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            AddInt::default(),
+            Forward::default(),
+            Switch::default(),
+        ))
+        .unwrap();
+
+        assert!(
+            tree.root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .is_none()
+        );
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(2)
+                .unwrap()
+                .child(1)
+                .unwrap()
+                .child(1)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            DeadCode
         );
     }
 }
