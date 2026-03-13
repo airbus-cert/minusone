@@ -6,6 +6,7 @@ pub const APPLICATION_NAME: &str = env!("CARGO_PKG_NAME");
 #[derive(Debug, Clone, ValueEnum, Copy)]
 pub enum Language {
     Powershell,
+    Javascript,
 }
 
 pub static INTRO: &str = "
@@ -87,6 +88,7 @@ impl Display for Language {
             "{}",
             match self {
                 Language::Powershell => "powershell".to_string(),
+                Language::Javascript => "javascript".to_string(),
             }
         )
     }

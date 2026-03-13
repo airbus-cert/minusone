@@ -7,11 +7,14 @@ extern crate log;
 extern crate num;
 extern crate regex;
 extern crate tree_sitter;
+extern crate tree_sitter_javascript;
 extern crate tree_sitter_powershell;
 extern crate tree_sitter_traversal2;
 
 #[macro_use]
 pub mod ps;
+#[macro_use]
+pub mod js;
 pub mod debug;
 pub mod engine;
 pub mod error;
