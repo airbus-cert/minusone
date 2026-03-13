@@ -163,7 +163,8 @@ impl_javascript_ruleset!(
     B64,              // Infer atob & btoa calls and reduce them to string literals
     Var,              // Track variable assignments and propagate known values to usage sites
     FnCall,           // Resolve predictable function calls to their return values
-    StrictEq          // Infer strict equality === and !==
+    StrictEq,         // Infer strict equality === and !==
+    LooseEq           // Infer strict equality == and !=
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
