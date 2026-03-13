@@ -46,10 +46,10 @@ impl<'a> RuleMut<'a> for Forward {
 
 #[cfg(test)]
 pub mod tests_forward {
+    use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use js::build_javascript_tree;
-    use js::integer::{AddInt, ParseInt};
-    use js::linter::Linter;
+    use crate::js::integer::{AddInt, ParseInt};
+    use crate::js::linter::Linter;
 
     #[test]
     fn test_forward() {

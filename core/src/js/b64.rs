@@ -5,7 +5,7 @@ use crate::js::Value::*;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
-use base64::{alphabet, Engine};
+use base64::{Engine, alphabet};
 use log::{trace, warn};
 
 /// Base64 encoding and decoding
@@ -72,8 +72,7 @@ impl<'a> RuleMut<'a> for B64 {
 
                                 trace!(
                                     "ParseB64: decoded base64 string '{}' to '{}'",
-                                    encoded,
-                                    decoded_string
+                                    encoded, decoded_string
                                 );
                                 node.reduce(Raw(Str(decoded_string)));
                             }
@@ -96,8 +95,7 @@ impl<'a> RuleMut<'a> for B64 {
 
                                 trace!(
                                     "ParseB64: encoded string '{}' to base64 '{}'",
-                                    decoded,
-                                    encoded_string
+                                    decoded, encoded_string
                                 );
                                 node.reduce(Raw(Str(encoded_string)));
                             }
@@ -149,10 +147,10 @@ pub fn js_bytes_to_string(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests_jc_b64 {
     use crate::js::b64::B64;
+    use crate::js::b64::js_bytes_to_string;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
-    use js::b64::js_bytes_to_string;
 
     #[test]
     fn test_parse_b64() {
@@ -186,6 +184,9 @@ mod tests_jc_b64 {
         }
         let decoded_string = js_bytes_to_string(&bytes);
         println!("{}", decoded_string);
-        assert_eq!(decoded_string, "\\x00\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\b\\t\\n\\v\\f\\r\\x0E\\x0F\\x10\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1A\\x1B\\x1C\\x1D\\x1E\\x1F !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\\x7F\\x80\\x81\\x82\\x83\\x84\\x85\\x86\\x87\\x88\\x89\\x8A\\x8B\\x8C\\x8D\\x8E\\x8F\\x90\\x91\\x92\\x93\\x94\\x95\\x96\\x97\\x98\\x99\\x9A\\x9B\\x9C\\x9D\\x9E\\x9F ¡¢£¤¥¦§¨©ª«¬­®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ");
+        assert_eq!(
+            decoded_string,
+            "\\x00\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\b\\t\\n\\v\\f\\r\\x0E\\x0F\\x10\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1A\\x1B\\x1C\\x1D\\x1E\\x1F !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\\x7F\\x80\\x81\\x82\\x83\\x84\\x85\\x86\\x87\\x88\\x89\\x8A\\x8B\\x8C\\x8D\\x8E\\x8F\\x90\\x91\\x92\\x93\\x94\\x95\\x96\\x97\\x98\\x99\\x9A\\x9B\\x9C\\x9D\\x9E\\x9F ¡¢£¤¥¦§¨©ª«¬­®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ"
+        );
     }
 }

@@ -1,11 +1,11 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Raw};
+use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::Bool;
+use crate::js::Value::{Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::JavaScript::{NaN, Undefined};
-use js::Value::{Num, Str};
 use log::{debug, trace, warn};
 
 /// Parses JavaScript array literals into `Array(_)`.
@@ -184,8 +184,7 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                 return if (*index as usize) < arr.len() {
                     trace!(
                         "GetArrayElement: accessing index {} of array {:?}",
-                        index,
-                        arr
+                        index, arr
                     );
                     node.reduce(arr[*index as usize].clone());
                     Ok(())
@@ -205,9 +204,7 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     if index < arr.len() {
                         trace!(
                             "GetArrayElement: accessing index '{}' of array {:?} => index {}",
-                            index_str,
-                            arr,
-                            index
+                            index_str, arr, index
                         );
                         node.reduce(arr[index].clone());
                     } else {
@@ -314,11 +311,16 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
                             trace!("ArrayPlusMinus: reducing + {:?} to {}", arr, num);
                             node.reduce(Raw(Num(num)));
                         } else {
-                            trace!("ArrayPlusMinus: Cannot extract number from array {:?}, setting to NaN", arr);
+                            trace!(
+                                "ArrayPlusMinus: Cannot extract number from array {:?}, setting to NaN",
+                                arr
+                            );
                             node.reduce(NaN);
                         }
                     } else {
-                        trace!("ArrayPlusMinus: Cannot apply unary plus to array with multiple elements, setting to NaN");
+                        trace!(
+                            "ArrayPlusMinus: Cannot apply unary plus to array with multiple elements, setting to NaN"
+                        );
                         node.reduce(NaN);
                     }
                 }
@@ -348,10 +350,10 @@ fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<i64> {
 mod tests_js_array {
     use super::*;
     use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
-    use js::forward::Forward;
-    use js::string::ParseString;
+    use crate::js::string::ParseString;
 
     #[test]
     fn test_array_parsing() {

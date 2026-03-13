@@ -111,7 +111,7 @@ fn main() {
             run_deobf::<PowershellBackend>(&source, cli_clone, rule_set, skip_rule_set)
         }
         Language::Javascript => {
-            run_deobf::<JavaScriptBackend>(&source, debug, rule_set, skip_rule_set)
+            run_deobf::<JavaScriptBackend>(&source, cli_clone, rule_set, skip_rule_set)
         }
     };
 

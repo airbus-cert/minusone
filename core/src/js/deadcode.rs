@@ -156,13 +156,10 @@ impl RemoveUnusedVar {
 
         match node.kind() {
             k if k == kind => true,
-            "parenthesized_expression" => {
-                node.iter().any(|child| child.kind() == kind)
-            }
+            "parenthesized_expression" => node.iter().any(|child| child.kind() == kind),
             _ => false,
         }
     }
-
 
     fn has_else_clause(node: &Node<()>) -> bool {
         for child in node.iter() {
@@ -273,8 +270,11 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                                 if child.kind() == "else_clause" {
                                     for else_child in child.iter() {
                                         if else_child.kind() == "statement_block" {
-                                            if let Some(inner) = Self::block_inner_text(&else_child) {
-                                                trace!("RemoveUnusedVar: replacing if (false) ... else with else body");
+                                            if let Some(inner) = Self::block_inner_text(&else_child)
+                                            {
+                                                trace!(
+                                                    "RemoveUnusedVar: replacing if (false) ... else with else body"
+                                                );
                                                 self.replace_node_with_text(node, &inner)?;
                                                 return Ok(false);
                                             }
@@ -400,18 +400,12 @@ mod tests {
 
     #[test]
     fn test_remove_bare_number() {
-        assert_eq!(
-            clean("1; console.log('ok');"),
-            "console.log('ok');"
-        );
+        assert_eq!(clean("1; console.log('ok');"), "console.log('ok');");
     }
 
     #[test]
     fn test_remove_bare_string() {
-        assert_eq!(
-            clean("'hello'; console.log('ok');"),
-            "console.log('ok');"
-        );
+        assert_eq!(clean("'hello'; console.log('ok');"), "console.log('ok');");
     }
 
     #[test]
@@ -424,10 +418,7 @@ mod tests {
 
     #[test]
     fn test_remove_bare_literal_after_fncall_inlining() {
-        assert_eq!(
-            clean("1; console.log('world');"),
-            "console.log('world');"
-        );
+        assert_eq!(clean("1; console.log('world');"), "console.log('world');");
     }
 
     #[test]

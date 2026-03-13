@@ -2,9 +2,9 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
+use crate::js::Value::{Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::Value::{Num, Str};
 use log::trace;
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.

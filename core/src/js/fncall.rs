@@ -48,11 +48,7 @@ impl FnCall {
 
         Self::walk_for_returns(body, &mut return_value, &mut found_count);
 
-        if found_count == 1 {
-            return_value
-        } else {
-            None
-        }
+        if found_count == 1 { return_value } else { None }
     }
 
     fn walk_for_returns<'a>(
@@ -78,8 +74,11 @@ impl FnCall {
                         }
                     }
                 }
-                "function_declaration" | "function" | "arrow_function"
-                | "generator_function_declaration" | "generator_function" => {
+                "function_declaration"
+                | "function"
+                | "arrow_function"
+                | "generator_function_declaration"
+                | "generator_function" => {
                     // skip nested fn having their own returns
                 }
                 // skip loops and conditionals
@@ -104,8 +103,11 @@ impl FnCall {
                 "return_statement" => {
                     *count += 1;
                 }
-                "function_declaration" | "function" | "arrow_function"
-                | "generator_function_declaration" | "generator_function" => {
+                "function_declaration"
+                | "function"
+                | "arrow_function"
+                | "generator_function_declaration"
+                | "generator_function" => {
                     // skip nested fn
                 }
                 _ => {
@@ -114,7 +116,6 @@ impl FnCall {
             }
         }
     }
-
 }
 
 impl<'a> RuleMut<'a> for FnCall {
@@ -148,8 +149,7 @@ impl<'a> RuleMut<'a> for FnCall {
                             if let Some(return_data) = Self::find_single_return_value(&body) {
                                 trace!(
                                     "FnCall (L): Recorded function '{}' with return value: {:?}",
-                                    fn_name,
-                                    return_data
+                                    fn_name, return_data
                                 );
                                 self.functions.insert(fn_name, return_data);
                             }
@@ -166,8 +166,7 @@ impl<'a> RuleMut<'a> for FnCall {
                         if let Some(return_data) = self.functions.get(&fn_name) {
                             trace!(
                                 "FnCall (L): Resolving call to '{}' with: {:?}",
-                                fn_name,
-                                return_data
+                                fn_name, return_data
                             );
                             node.reduce(return_data.clone());
                         }
@@ -230,9 +229,7 @@ mod tests {
     #[test]
     fn test_fncall_with_var_inside() {
         assert_eq!(
-            deobfuscate(
-                "function test() { var a = 'hello'; return a; } console.log(test());"
-            ),
+            deobfuscate("function test() { var a = 'hello'; return a; } console.log(test());"),
             "function test() { var a = 'hello'; return 'hello'; } console.log('hello');"
         );
     }
@@ -305,12 +302,3 @@ mod tests {
         );
     }
 }
-
-
-
-
-
-
-
-
-

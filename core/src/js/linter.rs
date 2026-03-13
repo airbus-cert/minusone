@@ -111,8 +111,8 @@ impl<'a> Rule<'a> for Linter {
             if node.kind() == "parenthesized_expression" {
                 if let Some(parent) = node.parent() {
                     match parent.kind() {
-                        "if_statement" | "while_statement" | "do_statement"
-                        | "for_statement" | "switch_statement" => {
+                        "if_statement" | "while_statement" | "do_statement" | "for_statement"
+                        | "switch_statement" => {
                             self.output += &format!("({})", data);
                             self.skip_until(node.end_abs());
                             return Ok(false);

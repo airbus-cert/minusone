@@ -2,10 +2,10 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
+use crate::js::Value::{Num, Str};
+use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::array::flatten_array;
-use js::Value::{Num, Str};
 use log::trace;
 
 /// Parse specials
@@ -217,16 +217,14 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                     (Some(Undefined), Some(Raw(Str(s)))) => {
                         trace!(
                             "AddSubSpecials (R): undefined + '{}' => 'undefined{}'",
-                            s,
-                            s
+                            s, s
                         );
                         node.reduce(Raw(Str(format!("undefined{}", s))));
                     }
                     (Some(Raw(Str(s))), Some(Undefined)) => {
                         trace!(
                             "AddSubSpecials (L): '{}' + undefined => '{}undefined'",
-                            s,
-                            s
+                            s, s
                         );
                         node.reduce(Raw(Str(format!("{}undefined", s))));
                     }
@@ -316,8 +314,7 @@ impl<'a> RuleMut<'a> for AtTrick {
                             .join(",");
                         trace!(
                             "AtTrick: []['at'] + [{}] => 'function at() {{ [native code] }}[{}]'",
-                            array_join,
-                            array_join
+                            array_join, array_join
                         );
                         node.reduce(Raw(Str(format!(
                             "function at() {{ [native code] }}{}",
@@ -333,8 +330,7 @@ impl<'a> RuleMut<'a> for AtTrick {
                             .join(",");
                         trace!(
                             "AtTrick: [{}] + []['at'] => '[{}]function at() {{ [native code] }}'",
-                            array_join,
-                            array_join
+                            array_join, array_join
                         );
                         node.reduce(Raw(Str(format!(
                             "{}function at() {{ [native code] }}",
@@ -344,16 +340,14 @@ impl<'a> RuleMut<'a> for AtTrick {
                     (Some(At), Some(Raw(Bool(b)))) => {
                         trace!(
                             "AtTrick: []['at'] + {} => 'function at() {{ [native code] }}{}'",
-                            b,
-                            b
+                            b, b
                         );
                         node.reduce(Raw(Str(format!("function at() {{ [native code] }}{}", b))));
                     }
                     (Some(Raw(Bool(b))), Some(At)) => {
                         trace!(
                             "AtTrick: {} + []['at'] => '{}function at() {{ [native code] }}'",
-                            b,
-                            b
+                            b, b
                         );
                         node.reduce(Raw(Str(format!("{}function at() {{ [native code] }}", b))));
                     }
@@ -577,15 +571,15 @@ impl<'a> RuleMut<'a> for ConstructorAccessTrick {
 #[cfg(test)]
 mod tests_js_specials {
     use crate::js::array::{CombineArrays, GetArrayElement, ParseArray};
+    use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
+    use crate::js::lint;
     use crate::js::specials::{
         AddSubSpecials, AtTrick, ConstructorAccessTrick, ConstructorTrick, ParseSpecials,
     };
     use crate::js::string::ParseString;
-    use js::bool::ParseBool;
-    use js::lint;
 
     #[test]
     fn test_parse_specials() {

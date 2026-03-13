@@ -1,16 +1,18 @@
-use engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
-use error::MinusOneResult;
-use js;
-use js::deadcode::{RemoveUnusedVar, UnusedVar};
-use js::{build_javascript_tree_for_storage, remove_javascript_extra};
+use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
+use crate::error::MinusOneResult;
+use crate::js::deadcode::{RemoveUnusedVar, UnusedVar};
+use crate::js::strategy::JavaScriptStrategy;
+use crate::js::{
+    JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
+};
+use crate::rule::RuleSetBuilderType;
+use crate::tree::{EmptyStorage, HashMapStorage, Tree};
 use log::error;
-use rule::RuleSetBuilderType;
-use tree::{EmptyStorage, HashMapStorage, Tree};
 
 pub struct JavaScriptBackend;
 
 impl DeobfuscationBackend for JavaScriptBackend {
-    type Language = js::JavaScript;
+    type Language = JavaScript;
 
     fn remove_extra(src: &str) -> MinusOneResult<String> {
         remove_javascript_extra(src)
@@ -24,8 +26,8 @@ impl DeobfuscationBackend for JavaScriptBackend {
 
     fn deobfuscate_tree(root: &mut Tree<HashMapStorage<Self::Language>>) -> MinusOneResult<()> {
         root.apply_mut_with_strategy(
-            &mut js::JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-            js::strategy::JavaScriptStrategy,
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
         )?;
         Ok(())
     }
@@ -35,8 +37,8 @@ impl DeobfuscationBackend for JavaScriptBackend {
         ruleset: Vec<&str>,
     ) -> MinusOneResult<()> {
         root.apply_mut_with_strategy(
-            &mut js::JavaScriptRuleSet::new(RuleSetBuilderType::WithRules(ruleset)),
-            js::strategy::JavaScriptStrategy,
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithRules(ruleset)),
+            JavaScriptStrategy,
         )?;
         Ok(())
     }
@@ -46,8 +48,8 @@ impl DeobfuscationBackend for JavaScriptBackend {
         ruleset: Vec<&str>,
     ) -> MinusOneResult<()> {
         root.apply_mut_with_strategy(
-            &mut js::JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(ruleset)),
-            js::strategy::JavaScriptStrategy,
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(ruleset)),
+            JavaScriptStrategy,
         )?;
         Ok(())
     }
@@ -56,7 +58,7 @@ impl DeobfuscationBackend for JavaScriptBackend {
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         _tab_chr: &str,
     ) -> MinusOneResult<String> {
-        let mut linter = js::linter::Linter::default();
+        let mut linter = crate::js::linter::Linter::default();
         root.apply(&mut linter)?;
 
         // fallback to returning the linted output without cleaning if the clean pass fails
@@ -65,14 +67,17 @@ impl DeobfuscationBackend for JavaScriptBackend {
         {
             Ok(cleaned) => Ok(cleaned),
             Err(e) => {
-                error!("Clean pass failed during linting: {:?}. Returning linted output without cleaning.", e);
+                error!(
+                    "Clean pass failed during linting: {:?}. Returning linted output without cleaning.",
+                    e
+                );
                 Ok(linter.output)
             }
         }
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {
-        js::JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])).names()
+        JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])).names()
     }
 }
 

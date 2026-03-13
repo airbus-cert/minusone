@@ -1,12 +1,12 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::JavaScript::Undefined;
 use crate::js::JavaScript::{Array, Raw};
 use crate::js::Value::Bool;
+use crate::js::Value::{Num, Str};
+use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::array::flatten_array;
-use js::JavaScript::Undefined;
-use js::Value::{Num, Str};
 use log::{trace, warn};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
@@ -184,7 +184,7 @@ impl<'a> RuleMut<'a> for CharAt {
                         );
                         node.reduce(Undefined);
                         Ok(())
-                    }
+                    };
                 }
                 (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
                     if let Ok(i) = i.parse::<i64>() {
@@ -469,11 +469,16 @@ impl<'a> RuleMut<'a> for ToString {
                                     if let Ok(radix) = radix_str.parse::<i64>() {
                                         radix
                                     } else {
-                                        warn!("ToString: cannot parse radix argument '{}' as number, defaulting to 10", radix_str);
+                                        warn!(
+                                            "ToString: cannot parse radix argument '{}' as number, defaulting to 10",
+                                            radix_str
+                                        );
                                         10
                                     }
                                 } else {
-                                    warn!("ToString: unsupported radix argument type, defaulting to 10");
+                                    warn!(
+                                        "ToString: unsupported radix argument type, defaulting to 10"
+                                    );
                                     10
                                 }
                             } else {
@@ -539,9 +544,9 @@ impl<'a> RuleMut<'a> for ToString {
 
 #[cfg(test)]
 mod tests_js_string {
+    use crate::js::integer::ParseInt;
+    use crate::js::string::{CharAt, Concat, ParseString, StringPlusMinus};
     use crate::js::string::{escape_js_string, unescaped_js_string};
-    use js::integer::ParseInt;
-    use js::string::{CharAt, Concat, ParseString, StringPlusMinus};
 
     #[test]
     fn test_unescaped_js_string() {
@@ -550,7 +555,12 @@ mod tests_js_string {
         assert_eq!(unescaped_js_string(r#"'Quote: \"'"#), "Quote: \"");
         assert_eq!(unescaped_js_string(r#"'Backslash: \\'"#), "Backslash: \\");
         assert_eq!(unescaped_js_string(r#"'Unicode: \u0041'"#), "Unicode: A");
-        assert_eq!(unescaped_js_string(r#"'Unicode: \u0030 \u{00030} \u{000030} \u{0000000000000030} \u{30}'"#), "Unicode: 0 0 0 0 0");
+        assert_eq!(
+            unescaped_js_string(
+                r#"'Unicode: \u0030 \u{00030} \u{000030} \u{0000000000000030} \u{30}'"#
+            ),
+            "Unicode: 0 0 0 0 0"
+        );
         assert_eq!(unescaped_js_string(r#"'Hex: \x41'"#), "Hex: A");
     }
 

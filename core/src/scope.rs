@@ -168,17 +168,31 @@ impl<T: Clone> ScopeManager<T> {
     /// it prevents `var` declarations from leaking past function boundaries
     pub fn leave_function(&mut self) {
         let last = self.scopes.pop().unwrap();
+
+        // we will merge the pending scope of transcation
+        for (name, value) in last.pending.iter() {
+            if self.current().get_var(&name).is_some() || self.current().is_local(&name).is_some() {
+                if let Some(inferred_type) = &value.inferred_type {
+                    self.current_mut().assign(name, inferred_type.clone(), true);
+                } else {
+                    self.current_mut().forget(name, true);
+                }
+            }
+        }
+
+        // we will merge the vars scope
         for (name, value) in last.vars.iter() {
             if self.current().get_var(&name).is_some() || self.current().is_local(&name).is_some() {
                 if let Some(inferred_type) = &value.inferred_type {
-                    self.current_mut().assign(name, inferred_type.clone());
+                    self.current_mut()
+                        .assign(name, inferred_type.clone(), false);
                 } else {
-                    self.current_mut().forget(name);
+                    self.current_mut().forget(name, false);
                 }
             }
         }
     }
-  
+
     pub fn flush_transaction(&mut self) {
         let pending = &mut self.current_mut().pending;
         if !pending.is_empty() {

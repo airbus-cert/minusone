@@ -1,12 +1,12 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::JavaScript::Array;
 use crate::js::JavaScript::Raw;
 use crate::js::Value::Num;
+use crate::js::Value::Str;
+use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use js::array::flatten_array;
-use js::JavaScript::Array;
-use js::Value::Str;
 use log::{trace, warn};
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
@@ -471,7 +471,7 @@ impl<'a> RuleMut<'a> for BitwiseInt {
 mod tests_js_integer {
     use super::*;
     use crate::js::build_javascript_tree;
-    use js::lint;
+    use crate::js::lint;
 
     #[test]
     fn test_parse_int() {

@@ -22,12 +22,12 @@ use self::linter::RemoveComment;
 use self::specials::*;
 use self::string::*;
 use self::var::*;
-use error::{Error, MinusOneResult};
+use crate::error::{Error, MinusOneResult};
 #[cfg(test)]
-use js::linter::Linter;
-use rule::{RuleMut, RuleSet, RuleSetBuilderType};
+use crate::js::linter::Linter;
+use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
+use crate::tree::{HashMapStorage, Storage, Tree};
 use std::fmt::Display;
-use tree::{HashMapStorage, Storage, Tree};
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]

@@ -63,7 +63,9 @@ impl Var {
                         .is_some()
                     {
                         let var_name = child.text()?.to_string();
-                        self.scope_manager.current_mut().forget(&var_name);
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, node.is_ongoing_transaction());
                     }
                 }
                 "variable_declarator" => {
@@ -71,7 +73,9 @@ impl Var {
                     if let Some(name_node) = child.named_child("name") {
                         if name_node.kind() == "identifier" {
                             let var_name = name_node.text()?.to_string();
-                            self.scope_manager.current_mut().forget(&var_name);
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
                         }
                     }
                 }
@@ -204,9 +208,11 @@ impl<'a> RuleMut<'a> for Var {
                         if let Some(value_node) = view.named_child("value") {
                             if let Some(data) = value_node.data() {
                                 trace!("Var (L): Assigning variable '{}' = {:?}", var_name, data);
-                                self.scope_manager
-                                    .current_mut()
-                                    .assign(&var_name, data.clone());
+                                self.scope_manager.current_mut().assign(
+                                    &var_name,
+                                    data.clone(),
+                                    node.is_ongoing_transaction(),
+                                );
                             }
                         }
                         // variable_declaration = var, lexical_declaration = let/const
@@ -225,12 +231,16 @@ impl<'a> RuleMut<'a> for Var {
                         let var_name = left.text()?.to_string();
                         if let Some(data) = right.data() {
                             trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
-                            self.scope_manager
-                                .current_mut()
-                                .assign(&var_name, data.clone());
+                            self.scope_manager.current_mut().assign(
+                                &var_name,
+                                data.clone(),
+                                node.is_ongoing_transaction(),
+                            );
                         } else {
                             // unknown, forget the variable
-                            self.scope_manager.current_mut().forget(&var_name);
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
                         }
                     }
                 }
@@ -241,7 +251,9 @@ impl<'a> RuleMut<'a> for Var {
                     if let Some(child) = view.child(i) {
                         if child.kind() == "identifier" {
                             let var_name = child.text()?.to_string();
-                            self.scope_manager.current_mut().forget(&var_name);
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
                             break;
                         }
                     }
