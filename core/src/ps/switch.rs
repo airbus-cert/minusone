@@ -63,21 +63,19 @@ impl<'a> RuleMut<'a> for Switch {
         match view.kind() {
             "switch_statement" => {
                 let ctx = self.ctx.pop().unwrap();
-                if ctx.predictable {
-                    if let Some(data) = ctx.matching.or(ctx.default) {
-                        trace!(
-                            "SwitchCtx (L): Setting predictable switch statement {} as {:?}",
-                            node.id(),
-                            data
-                        );
-                        node.set(data)
-                    } else {
-                        trace!(
-                            "SwitchCtx (L): Setting predictable switch statement {} as DeadCode",
-                            node.id(),
-                        );
-                        node.set(Powershell::DeadCode)
-                    }
+                if let Some(data) = ctx.matching.or(ctx.default.filter(|_| ctx.predictable)) {
+                    trace!(
+                        "SwitchCtx (L): Setting predictable switch statement {} as {:?}",
+                        node.id(),
+                        data
+                    );
+                    node.set(data)
+                } else if ctx.predictable {
+                    trace!(
+                        "SwitchCtx (L): Setting predictable switch statement {} as DeadCode",
+                        node.id(),
+                    );
+                    node.set(Powershell::DeadCode)
                 }
             }
 
