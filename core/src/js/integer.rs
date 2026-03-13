@@ -280,7 +280,7 @@ impl<'a> RuleMut<'a> for MultInt {
     }
 }
 
-/// Infer ** operations on integers if both operands are known integers (exponentiation operator)
+/// Infer `**` operations on integers if both operands are known integers (exponentiation operator)
 ///
 /// # Example
 /// ```
@@ -336,7 +336,7 @@ impl<'a> RuleMut<'a> for PowInt {
     }
 }
 
-/// infer << >> and >>> operations on integers if both operands are known integers (bitwise shift operators)
+/// infer `<<` `>>` and `>>>` operations on integers if both operands are known integers (bitwise shift operators)
 ///
 /// # Example
 /// ```
@@ -401,7 +401,7 @@ impl<'a> RuleMut<'a> for ShiftInt {
     }
 }
 
-/// Infers bitwise operators on integers if both operands are known integers (bitwise AND, OR, XOR, NOT)
+/// Infers bitwise operators `&`, `|`, `^`, and `~` operations on integers if both operands are known integers
 ///
 /// # Example
 /// ```

@@ -39,7 +39,7 @@ impl<'a> RuleMut<'a> for ParseBool {
     }
 }
 
-/// This rule will infer unary ! operations on booleans.
+/// This rule will infer unary `!` operations on booleans.
 ///
 /// # Example
 /// ```
@@ -104,7 +104,7 @@ impl<'a> RuleMut<'a> for NotBool {
     }
 }
 
-/// This rule will infer boolean algebra operations (&&, ||).
+/// This rule will infer boolean algebra operations `&&` and `||`.
 ///
 /// # Example
 /// ```
@@ -162,7 +162,7 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
     }
 }
 
-/// This rule will infer + and - operations on booleans
+/// This rule will infer `+` and `-` operations on booleans
 ///
 /// # Example
 /// ```

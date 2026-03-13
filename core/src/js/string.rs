@@ -228,7 +228,7 @@ pub fn escape_js_string(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
-/// Infers unary plus and minus on string literals
+/// Infers unary `+` and `-` on string literals
 ///
 /// # Example
 /// ```
@@ -292,7 +292,7 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
     }
 }
 
-/// Infers string concatenation with + operator and reduces them to single string literals
+/// Infers string concatenation with `+` and reduces them to single string literals
 ///
 /// # Example
 /// ```
@@ -412,26 +412,6 @@ impl<'a> RuleMut<'a> for Concat {
 /// ```
 #[derive(Default)]
 pub struct ToString;
-
-/*(program inferred_type: None
- (expression_statement inferred_type: None
-  (call_expression inferred_type: None
-   (subscript_expression inferred_type: None
-    (number inferred_type: Some(Raw(Num(31))))
-    ([ inferred_type: None)
-    (string inferred_type: Some(Raw(Str("toString")))
-     (' inferred_type: None)
-     (string_fragment inferred_type: None)
-     (' inferred_type: None))
-    (] inferred_type: None))
-   (arguments inferred_type: None
-    (( inferred_type: None)
-    (string inferred_type: Some(Raw(Str("32")))
-     (' inferred_type: None)
-     (string_fragment inferred_type: None)
-     (' inferred_type: None))
-    () inferred_type: None)))))
-*/
 
 impl<'a> RuleMut<'a> for ToString {
     type Language = JavaScript;

@@ -164,7 +164,8 @@ impl_javascript_ruleset!(
     Var,              // Track variable assignments and propagate known values to usage sites
     FnCall,           // Resolve predictable function calls to their return values
     StrictEq,         // Infer strict equality === and !==
-    LooseEq           // Infer strict equality == and !=
+    LooseEq,          // Infer strict equality == and !=
+    CmpOrd            // Infer comparison operators <, >, <= and >=
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

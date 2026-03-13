@@ -381,6 +381,205 @@ impl<'a> RuleMut<'a> for LooseEq {
     }
 }
 
+/// Infers comp operators (`<`, `>`, `<=`, `>=`) for all known types.
+///
+/// Rules applied:
+/// - `Bool` -> `Num`
+/// - `Str`  -> `Num` when compared with a numeric operand (unparseable -> false)
+/// - `Str` x `Str` -> lexicographic (UTF-16 code-unit order)
+/// - `NaN` op anything -> false
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::comparator::CmpOrd;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 3 < 5;").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), CmpOrd::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = true;");
+/// ```
+#[derive(Default)]
+pub struct CmpOrd;
+
+impl<'a> RuleMut<'a> for CmpOrd {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            let op_str = op.text()?;
+            if op_str != "<" && op_str != ">" && op_str != "<=" && op_str != ">=" {
+                return Ok(());
+            }
+
+            // TODO: check if this system can be unified with other operations
+            let cmp_num = |l: i64, r: i64| match op_str {
+                "<" => l < r,
+                ">" => l > r,
+                "<=" => l <= r,
+                ">=" => l >= r,
+                _ => unreachable!(),
+            };
+
+            let cmp_str = |l: &str, r: &str| match op_str {
+                "<" => l < r,
+                ">" => l > r,
+                "<=" => l <= r,
+                ">=" => l >= r,
+                _ => unreachable!(),
+            };
+
+            let result: Option<bool> = match (left.data(), right.data()) {
+                // NaN comparisons are always false
+                (Some(NaN), _) | (_, Some(NaN)) => {
+                    trace!("CmpOrd (L): NaN {} _ = false", op_str);
+                    Some(false)
+                }
+
+                // Num x Num
+                (Some(Raw(Num(l))), Some(Raw(Num(r)))) => {
+                    let res = cmp_num(*l, *r);
+                    trace!("CmpOrd (L): {} {} {} = {}", l, op_str, r, res);
+                    Some(res)
+                }
+
+                // Str x Str: lexicographic
+                (Some(Raw(Str(l))), Some(Raw(Str(r)))) => {
+                    let res = cmp_str(l, r);
+                    trace!("CmpOrd (L): {:?} {} {:?} = {}", l, op_str, r, res);
+                    Some(res)
+                }
+
+                // Bool x Bool: convert to number
+                (Some(Raw(Bool(l))), Some(Raw(Bool(r)))) => {
+                    let res = cmp_num(*l as i64, *r as i64);
+                    trace!(
+                        "CmpOrd (L): {} (->{}) {} {} (->{}) = {}",
+                        l, *l as i64, op_str, r, *r as i64, res
+                    );
+                    Some(res)
+                }
+
+                // Bool x Num
+                (Some(Raw(Bool(b))), Some(Raw(Num(n)))) => {
+                    let bnum = *b as i64;
+                    let res = cmp_num(bnum, *n);
+                    trace!("CmpOrd (L): {} (->{}) {} {} = {}", b, bnum, op_str, n, res);
+                    Some(res)
+                }
+                (Some(Raw(Num(n))), Some(Raw(Bool(b)))) => {
+                    let bnum = *b as i64;
+                    let res = cmp_num(*n, bnum);
+                    trace!("CmpOrd (L): {} {} {} (->{}) = {}", n, op_str, b, bnum, res);
+                    Some(res)
+                }
+
+                // Str x Num: parse string
+                (Some(Raw(Str(s))), Some(Raw(Num(n)))) => match js_str_to_num(s) {
+                    Some(snum) => {
+                        let res = cmp_num(snum, *n);
+                        trace!(
+                            "CmpOrd (L): {:?} (->{}) {} {} = {}",
+                            s, snum, op_str, n, res
+                        );
+                        Some(res)
+                    }
+                    None => {
+                        trace!("CmpOrd (L): {:?} (->NaN) {} {} = false", s, op_str, n);
+                        Some(false)
+                    }
+                },
+                (Some(Raw(Num(n))), Some(Raw(Str(s)))) => match js_str_to_num(s) {
+                    Some(snum) => {
+                        let res = cmp_num(*n, snum);
+                        trace!(
+                            "CmpOrd (L): {} {} {:?} (->{}) = {}",
+                            n, op_str, s, snum, res
+                        );
+                        Some(res)
+                    }
+                    None => {
+                        trace!("CmpOrd (L): {} {} {:?} (->NaN) = false", n, op_str, s);
+                        Some(false)
+                    }
+                },
+
+                // Bool x Str: bool -> num, str -> num
+                (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
+                    let bnum = *b as i64;
+                    match js_str_to_num(s) {
+                        Some(snum) => {
+                            let res = cmp_num(bnum, snum);
+                            trace!(
+                                "CmpOrd (L): {} (->{}) {} {:?} (->{}) = {}",
+                                b, bnum, op_str, s, snum, res
+                            );
+                            Some(res)
+                        }
+                        None => {
+                            trace!(
+                                "CmpOrd (L): {} (->{}) {} {:?} (->NaN) = false",
+                                b, bnum, op_str, s
+                            );
+                            Some(false)
+                        }
+                    }
+                }
+                (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
+                    let bnum = *b as i64;
+                    match js_str_to_num(s) {
+                        Some(snum) => {
+                            let res = cmp_num(snum, bnum);
+                            trace!(
+                                "CmpOrd (L): {:?} (->{}) {} {} (->{}) = {}",
+                                s, snum, op_str, b, bnum, res
+                            );
+                            Some(res)
+                        }
+                        None => {
+                            trace!(
+                                "CmpOrd (L): {:?} (->NaN) {} {} (->{}) = false",
+                                s, op_str, b, bnum
+                            );
+                            Some(false)
+                        }
+                    }
+                }
+
+                _ => None,
+            };
+
+            if let Some(res) = result {
+                node.reduce(Raw(Bool(res)));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 fn js_str_to_num(s: &str) -> Option<i64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -508,5 +707,65 @@ mod tests_comparator {
         tree.apply_mut(&mut (ParseInt::default(), LooseEq::default()))
             .unwrap();
         assert_eq!(lint(&tree), "var x = true;");
+    }
+
+    #[test]
+    fn test_cmp_num() {
+        let mut tree = build_javascript_tree("var x = 3 < 5;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), CmpOrd::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = true;");
+
+        let mut tree = build_javascript_tree("var x = 5 > 3;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), CmpOrd::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = true;");
+
+        let mut tree = build_javascript_tree("var x = 3 <= 3;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), CmpOrd::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = true;");
+
+        let mut tree = build_javascript_tree("var x = 4 >= 5;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), CmpOrd::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = false;");
+    }
+
+    #[test]
+    fn test_cmp_str_lex() {
+        let mut tree = build_javascript_tree("var x = \"abc\" < \"abd\";").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), CmpOrd::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = true;");
+    }
+
+    #[test]
+    fn test_cmp_bool_num() {
+        let mut tree = build_javascript_tree("var x = true > 0;").unwrap();
+        tree.apply_mut(&mut (ParseInt::default(), ParseBool::default(), CmpOrd::default()))
+            .unwrap();
+        assert_eq!(lint(&tree), "var x = true;");
+    }
+
+    #[test]
+    fn test_cmp_str_num() {
+        let mut tree = build_javascript_tree("var x = \"10\" > 9;").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            CmpOrd::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = true;");
+
+        let mut tree = build_javascript_tree("var x = \"abc\" < 5;").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            CmpOrd::default(),
+        ))
+        .unwrap();
+        assert_eq!(lint(&tree), "var x = false;");
     }
 }

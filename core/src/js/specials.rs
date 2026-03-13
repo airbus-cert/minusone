@@ -77,7 +77,7 @@ impl<'a> RuleMut<'a> for ParseSpecials {
     }
 }
 
-/// This rule will infer add and sub on Undefined and NaN.
+/// Infer `+` and `-` on Undefined and NaN.
 ///
 /// # Example
 /// ```
@@ -245,7 +245,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
     }
 }
 
-/// This rule will infer add on At.
+/// Infer `-` on At.
 ///
 /// # Example
 /// ```
@@ -368,7 +368,7 @@ impl<'a> RuleMut<'a> for AtTrick {
     }
 }
 
-/// This rule will infer add on Constructor.
+/// Infer `+` on Constructor.
 ///
 /// # Example
 /// ```
