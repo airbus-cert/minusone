@@ -524,9 +524,27 @@ impl<'a> RuleMut<'a> for ToString {
 
 #[cfg(test)]
 mod tests_js_string {
+    use crate::js::build_javascript_tree;
     use crate::js::integer::ParseInt;
+    use crate::js::linter::Linter;
     use crate::js::string::{CharAt, Concat, ParseString, StringPlusMinus};
     use crate::js::string::{escape_js_string, unescaped_js_string};
+
+    fn deobfuscate_string(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            StringPlusMinus::default(),
+            CharAt::default(),
+            Concat::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
 
     #[test]
     fn test_unescaped_js_string() {
@@ -554,70 +572,36 @@ mod tests_js_string {
 
     #[test]
     fn test_concat() {
-        let mut tree =
-            crate::js::build_javascript_tree("var x = 'Hello, ' + 'world!' + 1;").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseInt::default(),
-            StringPlusMinus::default(),
-            Concat::default(),
-        ))
-        .unwrap();
-        let mut linter = crate::js::linter::Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = 'Hello, world!1';");
+        assert_eq!(
+            deobfuscate_string("var x = 'Hello, ' + 'world!' + 1;"),
+            "var x = 'Hello, world!1';"
+        );
     }
 
     #[test]
     fn test_charat() {
-        let mut tree = crate::js::build_javascript_tree("var x = 'test'[1];").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseInt::default(),
-            CharAt::default(),
-        ))
-        .unwrap();
-        let mut linter = crate::js::linter::Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = 'e';");
-
-        // OOB
-        let mut tree = crate::js::build_javascript_tree("var x = 'test'[10];").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseInt::default(),
-            CharAt::default(),
-        ))
-        .unwrap();
-        let mut linter = crate::js::linter::Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = undefined;");
+        assert_eq!(deobfuscate_string("var x = 'test'[1];"), "var x = 'e';");
+        assert_eq!(
+            deobfuscate_string("var x = 'test'[10];"),
+            "var x = undefined;"
+        );
     }
 
     #[test]
     fn test_charat_concat() {
-        let mut tree = crate::js::build_javascript_tree(
-            "var x = 'minusone'[0] + 'minusone'[1] + 'minusone'[2] + 'minusone'[3] + 'minusone'[4] + 'minusone'[5] + 'minusone'[6] + 'minusone'[7];"
-        ).unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseInt::default(),
-            CharAt::default(),
-            Concat::default(),
-        ))
-        .unwrap();
-        let mut linter = crate::js::linter::Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = 'minusone';");
+        assert_eq!(
+            deobfuscate_string(
+                "var x = 'minusone'[0] + 'minusone'[1] + 'minusone'[2] + 'minusone'[3] + 'minusone'[4] + 'minusone'[5] + 'minusone'[6] + 'minusone'[7];"
+            ),
+            "var x = 'minusone';"
+        );
     }
 
     #[test]
     fn test_string_plus_minus() {
-        let mut tree = crate::js::build_javascript_tree("var x = +'42'; var y = -'42';").unwrap();
-        tree.apply_mut(&mut (ParseString::default(), StringPlusMinus::default()))
-            .unwrap();
-        let mut linter = crate::js::linter::Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = 42; var y = -42;");
+        assert_eq!(
+            deobfuscate_string("var x = +'42'; var y = -'42';"),
+            "var x = 42; var y = -42;"
+        );
     }
 }

@@ -145,35 +145,37 @@ pub fn js_bytes_to_string(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
-mod tests_jc_b64 {
+mod tests_js_b64 {
     use crate::js::b64::B64;
     use crate::js::b64::js_bytes_to_string;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
 
-    #[test]
-    fn test_parse_b64() {
-        let mut tree = build_javascript_tree("var x = atob('bWludXNvbmU=');").unwrap();
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (ParseString::default(), B64::default()))
             .unwrap();
 
         let mut linter = Linter::default();
         tree.apply(&mut linter).unwrap();
+        linter.output
+    }
 
-        assert_eq!(linter.output, "var x = 'minusone';");
+    #[test]
+    fn test_parse_b64() {
+        assert_eq!(
+            deobfuscate("var x = atob('bWludXNvbmU=');"),
+            "var x = 'minusone';",
+        );
     }
 
     #[test]
     fn test_parse_b64_encode() {
-        let mut tree = build_javascript_tree("var x = btoa('minusone');").unwrap();
-        tree.apply_mut(&mut (ParseString::default(), B64::default()))
-            .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = 'bWludXNvbmU=';");
+        assert_eq!(
+            deobfuscate("var x = btoa('minusone');"),
+            "var x = 'bWludXNvbmU=';",
+        );
     }
 
     #[test]

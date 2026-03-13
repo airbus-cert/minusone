@@ -355,83 +355,52 @@ mod tests_js_array {
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
 
-    #[test]
-    fn test_array_parsing() {
-        let mut tree = build_javascript_tree("var x = [1, 2, [3, '4']]").unwrap();
-        tree.apply_mut(&mut (
-            ParseInt::default(),
-            ParseString::default(),
-            ParseArray::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = [1, 2, [3, '4']]");
-    }
-
-    #[test]
-    fn test_combine_arrays() {
-        let mut tree = build_javascript_tree("var x = [0, 1,7] + [3, [7, '2', [88]]]").unwrap();
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
             ParseArray::default(),
             CombineArrays::default(),
+            Forward::default(),
+            GetArrayElement::default(),
+            ArrayPlusMinus::default(),
         ))
         .unwrap();
 
         let mut linter = Linter::default();
         tree.apply(&mut linter).unwrap();
+        linter.output
+    }
 
-        assert_eq!(linter.output, "var x = '0,1,73,7,2,88'");
+    #[test]
+    fn test_array_parsing() {
+        assert_eq!(
+            deobfuscate("var x = [1, 2, [3, '4']]"),
+            "var x = [1, 2, [3, '4']]",
+        );
+    }
+
+    #[test]
+    fn test_combine_arrays() {
+        assert_eq!(
+            deobfuscate("var x = [0, 1,7] + [3, [7, '2', [88]]]"),
+            "var x = '0,1,73,7,2,88'",
+        );
     }
 
     #[test]
     fn test_get_array_element() {
-        let mut tree = build_javascript_tree("var x = ([1, [2, '3'], 4][1])[0];").unwrap();
-        tree.apply_mut(&mut (
-            ParseInt::default(),
-            ParseString::default(),
-            ParseArray::default(),
-            Forward::default(),
-            GetArrayElement::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = 2;");
+        assert_eq!(
+            deobfuscate("var x = ([1, [2, '3'], 4][1])[0];"),
+            "var x = 2;",
+        );
     }
 
     #[test]
     fn test_array_plus_minus() {
-        let mut tree = build_javascript_tree("var x = +[['455']];").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseArray::default(),
-            ArrayPlusMinus::default(),
-        ))
-        .unwrap();
+        assert_eq!(deobfuscate("var x = +[['455']];"), "var x = 455;",);
 
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = 455;");
-
-        let mut tree = build_javascript_tree("var x = +['a'];").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseArray::default(),
-            ArrayPlusMinus::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = NaN;");
+        assert_eq!(deobfuscate("var x = +['a'];"), "var x = NaN;",);
     }
 }

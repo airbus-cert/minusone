@@ -312,59 +312,53 @@ mod tests_js_bool {
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
 
-    #[test]
-    fn test_parse_bool() {
-        let mut tree = build_javascript_tree("var x = true; var y = false;").unwrap();
-        tree.apply_mut(&mut ParseBool::default()).unwrap();
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
+        tree.apply_mut(&mut (
+            ParseBool::default(),
+            NotBool::default(),
+            BoolAlgebra::default(),
+            BoolPlusMinus::default(),
+            AddBool::default(),
+        ))
+        .unwrap();
 
         let mut linter = Linter::default();
         tree.apply(&mut linter).unwrap();
+        linter.output
+    }
 
-        assert_eq!(linter.output, "var x = true; var y = false;");
+    #[test]
+    fn test_parse_bool() {
+        assert_eq!(
+            deobfuscate("var x = true; var y = false;"),
+            "var x = true; var y = false;",
+        );
     }
 
     #[test]
     fn test_not_bool() {
-        let mut tree = build_javascript_tree("var x = !true;").unwrap();
-        tree.apply_mut(&mut (ParseBool::default(), NotBool::default()))
-            .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = false;");
+        assert_eq!(deobfuscate("var x = !true;"), "var x = false;",);
     }
 
     #[test]
     fn test_bool_algebra() {
-        let mut tree = build_javascript_tree("var x = true && false || true;").unwrap();
-        tree.apply_mut(&mut (ParseBool::default(), BoolAlgebra::default()))
-            .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-
-        assert_eq!(linter.output, "var x = true;");
+        assert_eq!(
+            deobfuscate("var x = true && false || true;"),
+            "var x = true;",
+        );
     }
 
     #[test]
     fn test_add_bool() {
-        let mut tree = build_javascript_tree("var x = true + false - true;").unwrap();
-        tree.apply_mut(&mut (ParseBool::default(), AddBool::default()))
-            .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = 0;");
+        assert_eq!(deobfuscate("var x = true + false - true;"), "var x = 0;",);
     }
 
     #[test]
     fn test_bool_plus_minus() {
-        let mut tree = build_javascript_tree("var x = +true; var y = -false;").unwrap();
-        tree.apply_mut(&mut (ParseBool::default(), BoolPlusMinus::default()))
-            .unwrap();
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "var x = 1; var y = 0;");
+        assert_eq!(
+            deobfuscate("var x = +true; var y = -false;"),
+            "var x = 1; var y = 0;",
+        );
     }
 }

@@ -310,7 +310,7 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_js_deadcode {
     use super::*;
     use crate::js::build_javascript_tree_for_storage;
     use crate::tree::EmptyStorage;
