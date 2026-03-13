@@ -95,9 +95,7 @@ impl<'a> RuleMut<'a> for Switch {
             }
 
             "switch_clause" => {
-                if let Some(ctx) = self.ctx.last_mut()
-                    && ctx.predictable
-                {
+                if let Some(ctx) = self.ctx.last_mut() {
                     if let Some(switch_clause_condition) = view
                         .child(0)
                         .filter(|n| n.kind() == "switch_clause_condition")
