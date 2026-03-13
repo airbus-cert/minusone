@@ -2,6 +2,7 @@ pub mod array;
 pub mod b64;
 pub mod backend;
 pub mod bool;
+pub mod comparator;
 pub mod deadcode;
 pub mod fncall;
 pub mod forward;
@@ -15,6 +16,7 @@ pub mod var;
 use self::array::*;
 use self::b64::*;
 use self::bool::*;
+use self::comparator::*;
 use self::fncall::*;
 use self::forward::*;
 use self::integer::*;
@@ -160,7 +162,8 @@ impl_javascript_ruleset!(
     ToString,         // Infer toString calls
     B64,              // Infer atob & btoa calls and reduce them to string literals
     Var,              // Track variable assignments and propagate known values to usage sites
-    FnCall            // Resolve predictable function calls to their return values
+    FnCall,           // Resolve predictable function calls to their return values
+    StrictEq          // Infer strict equality === and !==
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
