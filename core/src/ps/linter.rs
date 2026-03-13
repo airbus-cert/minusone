@@ -1,8 +1,8 @@
 use crate::error::MinusOneResult;
-use crate::ps::tool::StringTool;
-use crate::ps::var::{find_variable_node, UnusedVar, Var};
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::{Bool, Num, Str};
+use crate::ps::tool::StringTool;
+use crate::ps::var::{UnusedVar, Var, find_variable_node};
 use crate::ps::{LoopStatus, Powershell};
 use crate::regex::Regex;
 use crate::rule::Rule;
@@ -74,7 +74,8 @@ impl<'a> Rule<'a> for Linter {
                 return Ok(false);
             }
             // add a new line space before special statement
-            "while_statement" | "if_statement" | "function_statement" => {
+            "while_statement" | "if_statement" | "function_statement" | "switch_statement"
+            | "switch_clause" => {
                 self.enter();
             }
             "param_block" => self.is_param_block = true,
@@ -134,6 +135,19 @@ impl<'a> Rule<'a> for Linter {
                     "{" => self.write(" "),
                     _ => (),
                 },
+                "switch_body" => match node.kind() {
+                    "}" => self.untab(),
+                    "{" => {
+                        self.write(" ");
+                        self.tab()
+                    }
+                    _ => (),
+                },
+                "switch_clause" => {
+                    if node.kind() == "statement_block" {
+                        self.write(" ")
+                    }
+                }
                 "statement_block" => {
                     if let Some(grand_parent) = parent.parent() {
                         if grand_parent.kind() == "for_statement"
