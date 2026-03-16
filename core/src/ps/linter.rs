@@ -78,6 +78,16 @@ impl<'a> Rule<'a> for Linter {
             | "switch_clause" => {
                 self.enter();
             }
+            "flow_control_statement" => {
+                if node
+                    .get_parent_of_types(vec!["while_statement", "for_statement"])
+                    .and_then(|n| n.data().cloned())
+                    == Some(Powershell::Loop(LoopStatus::OneTurn))
+                    && node.smallest_child().kind() == "break"
+                {
+                    return Ok(false);
+                }
+            }
             "param_block" => self.is_param_block = true,
             "attribute" | "variable" => {
                 if self.is_param_block {
