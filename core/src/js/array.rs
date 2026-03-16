@@ -1,12 +1,12 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Raw};
-use crate::js::JavaScript::{NaN, Undefined};
+use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
+use crate::js::b64::js_bytes_to_string;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::{debug, trace, warn};
+use log::{trace, warn};
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -94,12 +94,8 @@ impl<'a> RuleMut<'a> for CombineArrays {
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Array(left_values)), "+", Some(Array(right_values))) => {
-                    debug!(
-                        "CombineArrays (L): combining arrays => left: {:?}, right: {:?}",
-                        left_values, right_values
-                    );
                     let combined = combine_arrays(left_values, right_values);
-                    trace!("CombineArrays (L): combining arrays => '{}'", combined);
+                    trace!("CombineArrays (L): combining arrays {:?} and {:?} => '{}'", left_values, right_values, combined);
                     node.reduce(Raw(Str(combined)));
                     return Ok(());
                 }
@@ -139,33 +135,27 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     }
                 }
                 (Some(Array(left_values)), "+", Some(Raw(raw))) => {
-                    debug!(
-                        "CombineArrays (L): combining array and raw => left: {:?}, right: {:?}",
-                        left_values, raw
-                    );
                     let combined = format!(
                         "{}{}",
                         flatten_array(left_values),
                         flatten_value(&Raw(raw.clone()))
                     );
                     trace!(
-                        "CombineArrays (L): combining array and raw => '{}'",
+                        "CombineArrays (L): combining array and raw => left: {:?}, right: {:?} => '{}'",
+                        left_values, raw,
                         combined
                     );
                     node.reduce(Raw(Str(combined)));
                 }
                 (Some(Raw(raw)), "+", Some(Array(right_values))) => {
-                    debug!(
-                        "CombineArrays (L): combining raw and array => left: {:?}, right: {:?}",
-                        raw, right_values
-                    );
                     let combined = format!(
                         "{}{}",
                         flatten_value(&Raw(raw.clone())),
                         flatten_array(right_values)
                     );
                     trace!(
-                        "CombineArrays (L): combining raw and array => '{}'",
+                        "CombineArrays (L): combining raw and array => left: {:?}, right: {:?} => '{}'",
+                        raw, right_values,
                         combined
                     );
                     node.reduce(Raw(Str(combined)));
@@ -300,6 +290,10 @@ fn flatten_value(value: &JavaScript) -> String {
         Raw(Num(n)) => n.to_string(),
         Raw(Str(s)) => s.clone(),
         Raw(Bool(b)) => b.to_string(),
+
+        Undefined => String::new(),
+        NaN => "NaN".to_string(),
+        Bytes(bytes) => js_bytes_to_string(bytes),
         _ => {
             warn!("CombineArrays: Unsupported value type");
             String::new()
