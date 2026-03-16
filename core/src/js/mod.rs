@@ -25,18 +25,18 @@ use self::specials::*;
 use self::string::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
+use crate::js::JavaScript::{Array, NaN, Raw, Undefined};
+use crate::js::Value::{Bool, Num, Str};
 #[cfg(test)]
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
-use crate::js::JavaScript::{Array, NaN, Raw, Undefined};
-use crate::js::Value::{Bool, Num, Str};
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
-    Num(i64),
+    Num(f64),
     Str(String),
     Bool(bool),
 }

@@ -88,8 +88,8 @@ impl<'a> RuleMut<'a> for NotBool {
                         node.reduce(Raw(Bool(!*b)));
                     }
                     Some(Raw(Num(n))) => {
-                        trace!("NotBool (L): !{} => {}", n, *n == 0);
-                        node.reduce(Raw(Bool(*n == 0)));
+                        trace!("NotBool (L): !{} => {}", n, *n == 0.0);
+                        node.reduce(Raw(Bool(*n == 0.0)));
                     }
                     Some(Array(_)) => {
                         trace!("NotBool (L): !array => false");
@@ -207,32 +207,32 @@ impl<'a> RuleMut<'a> for AddBool {
                 (Some(Raw(Bool(l))), "+", Some(Raw(Bool(r)))) => {
                     let result = (*l as i32) + (*r as i32);
                     trace!("AddBool (L): {} + {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as i64)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Bool(l))), "-", Some(Raw(Bool(r)))) => {
                     let result = (*l as i32) - (*r as i32);
                     trace!("AddBool (L): {} - {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as i64)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Bool(l))), "+", Some(Raw(Num(r)))) => {
                     let result = (*l as i32) + (*r as i32);
                     trace!("AddBool (L): {} + {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as i64)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Bool(l))), "-", Some(Raw(Num(r)))) => {
                     let result = (*l as i32) - (*r as i32);
                     trace!("AddBool (L): {} - {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as i64)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Num(l))), "+", Some(Raw(Bool(r)))) => {
                     let result = (*l as i32) + (*r as i32);
                     trace!("AddBool (L): {} + {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as i64)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Num(l))), "-", Some(Raw(Bool(r)))) => {
                     let result = (*l as i32) - (*r as i32);
                     trace!("AddBool (L): {} - {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as i64)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Bool(l))), "+", Some(Array(_))) => {
                     trace!("AddBool (L): {} + array => '{}'", l, l);
@@ -242,14 +242,14 @@ impl<'a> RuleMut<'a> for AddBool {
                     trace!("AddBool (L): array + {} => '{}'", r, r);
                     node.reduce(Raw(Str(r.to_string())));
                 }
-                (Some(NaN), "+", Some(Raw(Bool(_)))) |
-                (Some(NaN), "-", Some(Raw(Bool(_)))) |
-                (Some(Raw(Bool(_))), "+", Some(NaN)) |
-                (Some(Raw(Bool(_))), "-", Some(NaN)) |
-                (Some(Undefined), "+", Some(Raw(Bool(_)))) |
-                (Some(Undefined), "-", Some(Raw(Bool(_)))) |
-                (Some(Raw(Bool(_))), "+", Some(Undefined)) |
-                (Some(Raw(Bool(_))), "-", Some(Undefined)) => {
+                (Some(NaN), "+", Some(Raw(Bool(_))))
+                | (Some(NaN), "-", Some(Raw(Bool(_))))
+                | (Some(Raw(Bool(_))), "+", Some(NaN))
+                | (Some(Raw(Bool(_))), "-", Some(NaN))
+                | (Some(Undefined), "+", Some(Raw(Bool(_))))
+                | (Some(Undefined), "-", Some(Raw(Bool(_))))
+                | (Some(Raw(Bool(_))), "+", Some(Undefined))
+                | (Some(Raw(Bool(_))), "-", Some(Undefined)) => {
                     trace!("AddBool (L): Any bool +/- NaN or undefined => NaN");
                     node.reduce(NaN);
                 }
@@ -303,11 +303,12 @@ impl<'a> RuleMut<'a> for BoolPlusMinus {
             match (operator.text()?, operand.data()) {
                 ("+", Some(Raw(Bool(b)))) => {
                     trace!("BoolPlusMinus: reducing + {} to {}", b, *b as i32);
-                    node.reduce(Raw(Num(*b as i64)));
+                    node.reduce(Raw(Num(*b as u8 as f64)));
                 }
                 ("-", Some(Raw(Bool(b)))) => {
-                    trace!("BoolPlusMinus: reducing - {} to {}", b, -(*b as i32));
-                    node.reduce(Raw(Num(-(*b as i64))));
+                    let result = (*b as i32) - (*b as i32);
+                    trace!("BoolPlusMinus: reducing - {} to {}", b, result);
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 _ => {}
             }

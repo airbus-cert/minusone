@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::JavaScript::{Array, Raw};
+use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
@@ -172,7 +172,7 @@ impl<'a> RuleMut<'a> for CharAt {
         if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
             match (string.data(), index.data()) {
                 (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
-                    return if *i >= 0 && (*i as usize) < s.len() {
+                    return if *i >= 0.0 && (*i as usize) < s.len() {
                         let ch = s.chars().nth(*i as usize).unwrap();
                         trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
                         node.reduce(Raw(Str(ch.to_string())));
@@ -187,8 +187,8 @@ impl<'a> RuleMut<'a> for CharAt {
                     };
                 }
                 (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
-                    if let Ok(i) = i.parse::<i64>() {
-                        return if i >= 0 && (i as usize) < s.len() {
+                    if let Ok(i) = i.parse::<f64>() {
+                        return if i >= 0.0 && (i as usize) < s.len() {
                             let ch = s.chars().nth(i as usize).unwrap();
                             trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
                             node.reduce(Raw(Str(ch.to_string())));
@@ -269,7 +269,7 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
         if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
             match (operator.text()?, operand.data()) {
                 ("+", Some(Raw(Str(s)))) => {
-                    if let Ok(num) = s.parse::<i64>() {
+                    if let Ok(num) = s.parse::<f64>() {
                         trace!("StringPlusMinus: reducing + '{}' to {}", s, num);
                         node.reduce(Raw(Num(num)));
                     } else {
@@ -277,11 +277,14 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
                     }
                 }
                 ("-", Some(Raw(Str(s)))) => {
-                    if let Ok(num) = s.parse::<i64>() {
+                    if let Ok(num) = s.parse::<f64>() {
                         trace!("StringPlusMinus: reducing - '{}' to {}", s, -num);
                         node.reduce(Raw(Num(-num)));
                     } else {
-                        trace!("StringPlusMinus: cannot parse -'{}' as number, falling back to NaN", s);
+                        trace!(
+                            "StringPlusMinus: cannot parse -'{}' as number, falling back to NaN",
+                            s
+                        );
                         node.reduce(NaN);
                     }
                 }
@@ -445,7 +448,7 @@ impl<'a> RuleMut<'a> for ToString {
                         let radix = if arguments.child_count() > 2 {
                             if let Some(arg) = arguments.child(1) {
                                 if let Some(Raw(Num(radix))) = arg.data() {
-                                    *radix
+                                    *radix as i64
                                 } else if let Some(Raw(Str(radix_str))) = arg.data() {
                                     if let Ok(radix) = radix_str.parse::<i64>() {
                                         radix

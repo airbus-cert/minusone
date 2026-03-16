@@ -51,19 +51,19 @@ impl<'a> RuleMut<'a> for ParseInt {
         if token.len() > 2 && (token.starts_with("0x") || token.starts_with("0X")) {
             if let Ok(n) = u64::from_str_radix(&token[2..], 16) {
                 trace!("ParseInt (L): hex {} => {}", token, n);
-                node.reduce(Raw(Num(n as i64)));
+                node.reduce(Raw(Num(n as f64)));
             }
         } else if token.len() > 2 && (token.starts_with("0o") || token.starts_with("0O")) {
             if let Ok(n) = u64::from_str_radix(&token[2..], 8) {
                 trace!("ParseInt (L): octal {} => {}", token, n);
-                node.reduce(Raw(Num(n as i64)));
+                node.reduce(Raw(Num(n as f64)));
             }
         } else if token.len() > 2 && (token.starts_with("0b") || token.starts_with("0B")) {
             if let Ok(n) = u64::from_str_radix(&token[2..], 2) {
                 trace!("ParseInt (L): binary {} => {}", token, n);
-                node.reduce(Raw(Num(n as i64)));
+                node.reduce(Raw(Num(n as f64)));
             }
-        } else if let Ok(n) = token.parse::<i64>() {
+        } else if let Ok(n) = token.parse::<f64>() {
             trace!("ParseInt (L): decimal {} => {}", token, n);
             node.reduce(Raw(Num(n)));
         } else {
@@ -116,12 +116,9 @@ impl<'a> RuleMut<'a> for NegInt {
         if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
             if op.text()? == "-" {
                 if let Some(Raw(Num(n))) = operand.data() {
-                    if let Some(result) = n.checked_neg() {
-                        trace!("NegInt (L): -{} = {}", n, result);
-                        node.reduce(Raw(Num(result)));
-                    } else {
-                        warn!("NegInt (L): overflow -{}", n);
-                    }
+                    let result = -n;
+                    trace!("NegInt (L): -{} = {}", n, result);
+                    node.reduce(Raw(Num(result)));
                 }
             } else if op.text()? == "+" {
                 if let Some(Raw(Num(n))) = operand.data() {
@@ -176,20 +173,14 @@ impl<'a> RuleMut<'a> for SubAddInt {
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Raw(Num(l))), "+", Some(Raw(Num(r)))) => {
-                    if let Some(result) = l.checked_add(*r) {
-                        trace!("AddInt (L): {} + {} = {}", l, r, result);
-                        node.reduce(Raw(Num(result)));
-                    } else {
-                        warn!("AddInt (L): overflow {} + {}", l, r);
-                    }
+                    let result = l + r;
+                    trace!("AddInt (L): {} + {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), "-", Some(Raw(Num(r)))) => {
-                    if let Some(result) = l.checked_sub(*r) {
-                        trace!("AddInt (L): {} - {} = {}", l, r, result);
-                        node.reduce(Raw(Num(result)));
-                    } else {
-                        warn!("AddInt (L): overflow {} - {}", l, r);
-                    }
+                    let result = l - r;
+                    trace!("AddInt (L): {} - {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result)));
                 }
                 _ => {}
             }
@@ -240,23 +231,17 @@ impl<'a> RuleMut<'a> for MultInt {
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Raw(Num(l))), "*", Some(Raw(Num(r)))) => {
-                    if let Some(result) = l.checked_mul(*r) {
-                        trace!("MultInt (L): {} * {} = {}", l, r, result);
-                        node.reduce(Raw(Num(result)));
-                    } else {
-                        warn!("MultInt (L): overflow {} * {}", l, r);
-                    }
+                    let result = l * r;
+                    trace!("MultInt (L): {} * {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), "/", Some(Raw(Num(r)))) => {
-                    if let Some(result) = l.checked_div(*r) {
-                        trace!("MultInt (L): {} / {} = {}", l, r, result);
-                        node.reduce(Raw(Num(result)));
-                    } else {
-                        warn!("MultInt (L): division by zero {} / {}", l, r);
-                    }
+                    let result = l / r;
+                    trace!("MultInt (L): {} / {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), "%", Some(Raw(Num(r)))) => {
-                    if *r != 0 {
+                    if *r != 0.0 {
                         trace!("MultInt (L): {} % {} = {}", l, r, l % r);
                         node.reduce(Raw(Num(l % r)));
                     } else {
@@ -312,12 +297,9 @@ impl<'a> RuleMut<'a> for PowInt {
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Raw(Num(l))), "**", Some(Raw(Num(r)))) => {
-                    if let Some(result) = l.checked_pow(*r as u32) {
-                        trace!("PowInt (L): {} ** {} = {}", l, r, result);
-                        node.reduce(Raw(Num(result)));
-                    } else {
-                        warn!("PowInt (L): overflow {} ** {}", l, r);
-                    }
+                    let result = l.powi(*r as i32);
+                    trace!("PowInt (L): {} ** {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result)));
                 }
                 _ => {}
             }
@@ -369,25 +351,33 @@ impl<'a> RuleMut<'a> for ShiftInt {
                 // JS always truncate to 32 bits to do shifts
                 (Some(Raw(Num(l))), ">>", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
-                    let result = (*l as i32).wrapping_shr(shift) as i64;
+                    let result = (*l as i32).wrapping_shr(shift);
                     trace!(
                         "ShiftInt (L): 0X{:x} >> 0x{:x} = 0X{:x}",
-                        *l as i32, r, result
+                        *l as i32, *r as i64, result
                     );
-                    node.reduce(Raw(Num(result)));
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Num(l))), "<<", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
-                    let result = (*l as i32).wrapping_shl(shift) as i64;
-                    trace!("ShiftInt (L): 0X{:x} << 0X{:x} = 0X{:x}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    let result = (*l as i32).wrapping_shl(shift);
+                    trace!(
+                        "ShiftInt (L): 0X{:x} << 0X{:x} = 0X{:x}",
+                        *l as i32, *r as i64, result
+                    );
+                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Num(l))), ">>>", Some(Raw(Num(r)))) => {
+                    // f64 -> u32 then u32 -> i32 is required to avoid saturating the cast
                     let shift = (*r as i32 as u32) % 32;
-                    let result = (*l as u32).wrapping_shr(shift) as i64;
-                    trace!("ShiftInt (L): 0X{:x} >>> 0X{:x} = 0X{:x}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    let result = (*l as i32 as u32).wrapping_shr(shift);
+                    trace!(
+                        "ShiftInt (L): 0X{:x} >>> 0X{:x} = 0X{:x}",
+                        *l as i32, *r as i64, result
+                    );
+                    node.reduce(Raw(Num(result as f64)));
                 }
+
                 _ => {}
             }
         }
@@ -438,16 +428,22 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                 {
                     match (left.data(), op.text()?, right.data()) {
                         (Some(Raw(Num(l))), "&", Some(Raw(Num(r)))) => {
+                            let l = *l as i64;
+                            let r = *r as i64;
                             trace!("BitwiseInt (L): {} & {} = {}", l, r, l & r);
-                            node.reduce(Raw(Num(l & r)));
+                            node.reduce(Raw(Num((l & r) as f64)));
                         }
                         (Some(Raw(Num(l))), "|", Some(Raw(Num(r)))) => {
+                            let l = *l as i64;
+                            let r = *r as i64;
                             trace!("BitwiseInt (L): {} | {} = {}", l, r, l | r);
-                            node.reduce(Raw(Num(l | r)));
+                            node.reduce(Raw(Num((l | r) as f64)));
                         }
                         (Some(Raw(Num(l))), "^", Some(Raw(Num(r)))) => {
+                            let l = *l as i64;
+                            let r = *r as i64;
                             trace!("BitwiseInt (L): {} ^ {} = {}", l, r, l ^ r);
-                            node.reduce(Raw(Num(l ^ r)));
+                            node.reduce(Raw(Num((l ^ r) as f64)));
                         }
                         _ => {}
                     }
@@ -457,8 +453,9 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                 if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
                     if op.text()? == "~" {
                         if let Some(Raw(Num(n))) = operand.data() {
+                            let n = *n as i64;
                             trace!("BitwiseInt (L): ~{} = {}", n, !n);
-                            node.reduce(Raw(Num(!n)));
+                            node.reduce(Raw(Num((!n) as f64)));
                         }
                     }
                 }
@@ -540,7 +537,7 @@ mod tests_js_integer {
     fn test_shift_int() {
         assert_eq!(deobfuscate("var x = 1 << 3;"), "var x = 8;");
         assert_eq!(deobfuscate("var x = 16 >> 2;"), "var x = 4;");
-        assert_eq!(deobfuscate("let x = -16 >>> 2;"), "let x = 1073741820;");
+        assert_eq!(deobfuscate("let x = -16 >>> 2;"), "let x = 1073741820;"); // test fails
         assert_eq!(deobfuscate("var x = 1 << 3 >> 2;"), "var x = 2;");
         assert_eq!(deobfuscate("var x = 2 >> 31;"), "var x = 0;");
         assert_eq!(deobfuscate("var x = 2 >> 32;"), "var x = 2;");

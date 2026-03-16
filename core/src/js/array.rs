@@ -7,7 +7,6 @@ use crate::js::b64::js_bytes_to_string;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
-use std::cmp::PartialEq;
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -107,14 +106,12 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     let l = flatten_array(l);
                     trace!("Flatten : {}", l);
                     if !l.contains(",") {
-                        if let Some(l_num) = l.parse::<i64>().ok() {
-                            if let Some(result) = l_num.checked_sub(*r) {
-                                trace!("AddInt (L): {} - {} = {}", l, r, result);
-                                node.reduce(Raw(Num(result)));
-                            } else {
-                                trace!("AddInt (L): {} - {} = NaN", l, r);
-                                node.reduce(NaN);
-                            }
+                        if let Some(l_num) = l.parse::<f64>().ok() {
+                            let result = l_num - *r;
+                            trace!("AddInt (L): {} - {} = {}", l, r, result);
+                            node.reduce(Raw(Num(result)));
+                        } else {
+                            node.reduce(NaN);
                         }
                     } else {
                         trace!("AddInt (L): {} - {} = NaN", l, r);
@@ -124,14 +121,13 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 (Some(Raw(Num(l))), "-", Some(Array(r))) => {
                     let r = flatten_array(r);
                     if !r.contains(",") {
-                        if let Some(r_num) = r.parse::<i64>().ok() {
-                            if let Some(result) = l.checked_sub(r_num) {
-                                trace!("AddInt (L): {} - {} = {}", l, r, result);
-                                node.reduce(Raw(Num(result)));
-                            } else {
-                                trace!("AddInt (L): {} - {} = NaN", l, r);
-                                node.reduce(NaN);
-                            }
+                        if let Some(r_num) = r.parse::<f64>().ok() {
+                            let result = l - r_num;
+                            trace!("AddInt (L): {} - {} = {}", l, r, result);
+                            node.reduce(Raw(Num(result)));
+                        } else {
+                            trace!("AddInt (L): {} - {} = NaN", l, r);
+                            node.reduce(NaN);
                         }
                     } else {
                         trace!("AddInt (L): {} - {} = NaN", l, r);
@@ -361,7 +357,7 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
             match (operator.text()?, operand.data()) {
                 ("+", Some(Array(arr))) => {
                     if arr.is_empty() {
-                        node.reduce(Raw(Num(0)));
+                        node.reduce(Raw(Num(0.0)));
                     } else if arr.len() == 1 {
                         if let Some(num) = recursive_array_number_extraction(arr) {
                             trace!("ArrayPlusMinus: reducing + {:?} to {}", arr, num);
@@ -389,11 +385,11 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
     }
 }
 
-fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<i64> {
+fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
     if arr.len() == 1 {
         match &arr[0] {
             Raw(Num(n)) => Some(*n),
-            Raw(Str(s)) => s.parse::<i64>().ok(),
+            Raw(Str(s)) => s.parse::<f64>().ok(),
             Array(inner) => recursive_array_number_extraction(inner),
             _ => None,
         }

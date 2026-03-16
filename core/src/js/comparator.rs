@@ -193,7 +193,7 @@ impl<'a> RuleMut<'a> for LooseEq {
 
                 // Bool == Num
                 (Some(Raw(Bool(b))), Some(Raw(Num(n)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     trace!(
                         "LooseEq (L): {} (->{}) {} {} = {}",
                         b,
@@ -205,7 +205,7 @@ impl<'a> RuleMut<'a> for LooseEq {
                     Some(bnum == *n)
                 }
                 (Some(Raw(Num(n))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     trace!(
                         "LooseEq (L): {} {} {} (->{}) = {}",
                         n,
@@ -255,7 +255,7 @@ impl<'a> RuleMut<'a> for LooseEq {
 
                 // bool == Str: bool -> num, str -> num
                 (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     match js_str_to_num(s) {
                         Some(snum) => {
                             trace!(
@@ -279,7 +279,7 @@ impl<'a> RuleMut<'a> for LooseEq {
                     }
                 }
                 (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     match js_str_to_num(s) {
                         Some(snum) => {
                             trace!(
@@ -434,8 +434,7 @@ impl<'a> RuleMut<'a> for CmpOrd {
                 return Ok(());
             }
 
-            // TODO: check if this system can be unified with other operations
-            let cmp_num = |l: i64, r: i64| match op_str {
+            let cmp_num = |l: f64, r: f64| match op_str {
                 "<" => l < r,
                 ">" => l > r,
                 "<=" => l <= r,
@@ -474,23 +473,23 @@ impl<'a> RuleMut<'a> for CmpOrd {
 
                 // Bool x Bool: convert to number
                 (Some(Raw(Bool(l))), Some(Raw(Bool(r)))) => {
-                    let res = cmp_num(*l as i64, *r as i64);
+                    let res = cmp_num(*l as u8 as f64, *r as u8 as f64);
                     trace!(
                         "CmpOrd (L): {} (->{}) {} {} (->{}) = {}",
-                        l, *l as i64, op_str, r, *r as i64, res
+                        l, *l as u8 as f64, op_str, r, *r as u8 as f64, res
                     );
                     Some(res)
                 }
 
                 // Bool x Num
                 (Some(Raw(Bool(b))), Some(Raw(Num(n)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     let res = cmp_num(bnum, *n);
                     trace!("CmpOrd (L): {} (->{}) {} {} = {}", b, bnum, op_str, n, res);
                     Some(res)
                 }
                 (Some(Raw(Num(n))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     let res = cmp_num(*n, bnum);
                     trace!("CmpOrd (L): {} {} {} (->{}) = {}", n, op_str, b, bnum, res);
                     Some(res)
@@ -528,7 +527,7 @@ impl<'a> RuleMut<'a> for CmpOrd {
 
                 // Bool x Str: bool -> num, str -> num
                 (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     match js_str_to_num(s) {
                         Some(snum) => {
                             let res = cmp_num(bnum, snum);
@@ -548,7 +547,7 @@ impl<'a> RuleMut<'a> for CmpOrd {
                     }
                 }
                 (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as i64;
+                    let bnum = *b as u8 as f64;
                     match js_str_to_num(s) {
                         Some(snum) => {
                             let res = cmp_num(snum, bnum);
@@ -580,12 +579,12 @@ impl<'a> RuleMut<'a> for CmpOrd {
     }
 }
 
-fn js_str_to_num(s: &str) -> Option<i64> {
+fn js_str_to_num(s: &str) -> Option<f64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
-        Some(0)
+        Some(0.0)
     } else {
-        trimmed.parse::<i64>().ok()
+        trimmed.parse::<f64>().ok()
     }
 }
 
