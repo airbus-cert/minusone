@@ -47,10 +47,16 @@ impl Display for Value {
             f,
             "{}",
             match self {
-                Value::Num(e) => e.to_string(),
-                Value::Str(s) => escape_js_string(s),
-                Value::Bool(true) => "true".to_string(),
-                Value::Bool(false) => "false".to_string(),
+                Num(n) => {
+                    match *n {
+                        f64::INFINITY => "Infinity".to_string(),
+                        f64::NEG_INFINITY => "-Infinity".to_string(),
+                        n => n.to_string(),
+                    }
+                }
+                Str(s) => escape_js_string(s),
+                Bool(true) => "true".to_string(),
+                Bool(false) => "false".to_string(),
             }
         )
     }

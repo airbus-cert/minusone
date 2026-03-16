@@ -5,7 +5,7 @@ use crate::js::Value::Num;
 
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::{trace, warn};
+use log::{debug, trace, warn};
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 ///
@@ -43,31 +43,42 @@ impl<'a> RuleMut<'a> for ParseInt {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "number" {
+        if view.kind() != "number" && view.kind() != "identifier" {
             return Ok(());
         }
         let token = view.text()?;
 
-        if token.len() > 2 && (token.starts_with("0x") || token.starts_with("0X")) {
-            if let Ok(n) = u64::from_str_radix(&token[2..], 16) {
-                trace!("ParseInt (L): hex {} => {}", token, n);
-                node.reduce(Raw(Num(n as f64)));
+        match view.kind() {
+            "number" => {
+                if token.len() > 2 && (token.starts_with("0x") || token.starts_with("0X")) {
+                    if let Ok(n) = u64::from_str_radix(&token[2..], 16) {
+                        trace!("ParseInt (L): hex {} => {}", token, n);
+                        node.reduce(Raw(Num(n as f64)));
+                    }
+                } else if token.len() > 2 && (token.starts_with("0o") || token.starts_with("0O")) {
+                    if let Ok(n) = u64::from_str_radix(&token[2..], 8) {
+                        trace!("ParseInt (L): octal {} => {}", token, n);
+                        node.reduce(Raw(Num(n as f64)));
+                    }
+                } else if token.len() > 2 && (token.starts_with("0b") || token.starts_with("0B")) {
+                    if let Ok(n) = u64::from_str_radix(&token[2..], 2) {
+                        trace!("ParseInt (L): binary {} => {}", token, n);
+                        node.reduce(Raw(Num(n as f64)));
+                    }
+                } else if let Ok(n) = token.parse::<f64>() {
+                    trace!("ParseInt (L): decimal {} => {}", token, n);
+                    node.reduce(Raw(Num(n)));
+                } else {
+                    warn!("ParseInt (L): Unable to parse {}", token);
+                }
             }
-        } else if token.len() > 2 && (token.starts_with("0o") || token.starts_with("0O")) {
-            if let Ok(n) = u64::from_str_radix(&token[2..], 8) {
-                trace!("ParseInt (L): octal {} => {}", token, n);
-                node.reduce(Raw(Num(n as f64)));
+            "identifier" => {
+                if view.text()? == "Infinity" {
+                    trace!("ParseInt (L): Infinity");
+                    node.reduce(Raw(Num(f64::INFINITY)));
+                }
             }
-        } else if token.len() > 2 && (token.starts_with("0b") || token.starts_with("0B")) {
-            if let Ok(n) = u64::from_str_radix(&token[2..], 2) {
-                trace!("ParseInt (L): binary {} => {}", token, n);
-                node.reduce(Raw(Num(n as f64)));
-            }
-        } else if let Ok(n) = token.parse::<f64>() {
-            trace!("ParseInt (L): decimal {} => {}", token, n);
-            node.reduce(Raw(Num(n)));
-        } else {
-            warn!("ParseInt (L): Unable to parse {}", token);
+            _ => {}
         }
 
         Ok(())
@@ -116,6 +127,17 @@ impl<'a> RuleMut<'a> for NegInt {
         if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
             if op.text()? == "-" {
                 if let Some(Raw(Num(n))) = operand.data() {
+                    if *n == f64::INFINITY {
+                        trace!("NegInt (L): -Infinity = -Infinity");
+                        node.reduce(Raw(Num(f64::NEG_INFINITY)));
+                        return Ok(());
+                    }
+                    if *n == f64::NEG_INFINITY {
+                        trace!("NegInt (L): -Infinity = -Infinity");
+                        node.reduce(Raw(Num(f64::INFINITY)));
+                        return Ok(());
+                    }
+
                     let result = -n;
                     trace!("NegInt (L): -{} = {}", n, result);
                     node.reduce(Raw(Num(result)));
