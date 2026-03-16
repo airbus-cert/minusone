@@ -376,22 +376,26 @@ impl<'a> RuleMut<'a> for ShiftInt {
         }
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
+                // JS always truncate to 32 bits to do shifts
                 (Some(Raw(Num(l))), ">>", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as i32).wrapping_shr(shift) as i64;
-                    trace!("ShiftInt (L): {} >> {} = {}", l, r, result);
+                    trace!(
+                        "ShiftInt (L): 0X{:x} >> 0x{:x} = 0X{:x}",
+                        *l as i32, r, result
+                    );
                     node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), "<<", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as i32).wrapping_shl(shift) as i64;
-                    trace!("ShiftInt (L): {} << {} = {}", l, r, result);
+                    trace!("ShiftInt (L): 0X{:x} << 0X{:x} = 0X{:x}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
                 (Some(Raw(Num(l))), ">>>", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as u32).wrapping_shr(shift) as i64;
-                    trace!("ShiftInt (L): {} >>> {} = {}", l, r, result);
+                    trace!("ShiftInt (L): 0X{:x} >>> 0X{:x} = 0X{:x}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
                 _ => {}
@@ -436,32 +440,40 @@ impl<'a> RuleMut<'a> for BitwiseInt {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "binary_expression" && view.kind() != "unary_expression" {
-            return Ok(());
-        }
-        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-            match (left.data(), op.text()?, right.data()) {
-                (Some(Raw(Num(l))), "&", Some(Raw(Num(r)))) => {
-                    trace!("BitwiseInt (L): {} & {} = {}", l, r, l & r);
-                    node.reduce(Raw(Num(l & r)));
-                }
-                (Some(Raw(Num(l))), "|", Some(Raw(Num(r)))) => {
-                    trace!("BitwiseInt (L): {} | {} = {}", l, r, l | r);
-                    node.reduce(Raw(Num(l | r)));
-                }
-                (Some(Raw(Num(l))), "^", Some(Raw(Num(r)))) => {
-                    trace!("BitwiseInt (L): {} ^ {} = {}", l, r, l ^ r);
-                    node.reduce(Raw(Num(l ^ r)));
-                }
-                _ => {}
-            }
-        } else if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
-            if op.text()? == "~" {
-                if let Some(Raw(Num(n))) = operand.data() {
-                    trace!("BitwiseInt (L): ~{} = {}", n, !n);
-                    node.reduce(Raw(Num(!n)));
+
+        match view.kind() {
+            "binary_expression" => {
+                if let (Some(left), Some(op), Some(right)) =
+                    (view.child(0), view.child(1), view.child(2))
+                {
+                    match (left.data(), op.text()?, right.data()) {
+                        (Some(Raw(Num(l))), "&", Some(Raw(Num(r)))) => {
+                            trace!("BitwiseInt (L): {} & {} = {}", l, r, l & r);
+                            node.reduce(Raw(Num(l & r)));
+                        }
+                        (Some(Raw(Num(l))), "|", Some(Raw(Num(r)))) => {
+                            trace!("BitwiseInt (L): {} | {} = {}", l, r, l | r);
+                            node.reduce(Raw(Num(l | r)));
+                        }
+                        (Some(Raw(Num(l))), "^", Some(Raw(Num(r)))) => {
+                            trace!("BitwiseInt (L): {} ^ {} = {}", l, r, l ^ r);
+                            node.reduce(Raw(Num(l ^ r)));
+                        }
+                        _ => {}
+                    }
                 }
             }
+            "unary_expression" => {
+                if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
+                    if op.text()? == "~" {
+                        if let Some(Raw(Num(n))) = operand.data() {
+                            trace!("BitwiseInt (L): ~{} = {}", n, !n);
+                            node.reduce(Raw(Num(!n)));
+                        }
+                    }
+                }
+            }
+            _ => (),
         }
         Ok(())
     }
