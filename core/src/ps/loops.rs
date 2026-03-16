@@ -10,7 +10,8 @@ use log::trace;
 
 struct IteratorVariable {
     name: String,
-    value: Option<Value>,
+    value: Value,
+    known: bool,
     pub references: Vec<usize>,
 }
 
@@ -18,7 +19,8 @@ impl IteratorVariable {
     fn new(name: String, value: Value) -> Self {
         Self {
             name,
-            value: Some(value),
+            value,
+            known: true,
             references: vec![],
         }
     }
@@ -227,11 +229,23 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                 {
                     match view.get_parent_of_types(vec!["left_assignment_expression"]) {
                         None => {
-                            if iterator_variable.value.is_some() {
+                            if iterator_variable.known {
+                                trace!(
+                                    "ForStatementFlowControl (L): Found predictable iterator variable {} reference, id: {}",
+                                    view.text()?,
+                                    view.id()
+                                );
                                 iterator_variable.references.push(node.id())
                             }
                         }
-                        Some(_) => iterator_variable.value = None, // Forget iterator variable as it was modified
+                        Some(_) => {
+                            trace!(
+                                "ForStatementFlowControl (L): Forget iterator variable {} as it was modified, id: {}",
+                                view.text()?,
+                                view.id()
+                            );
+                            iterator_variable.known = false;
+                        }
                     }
                 }
             }
@@ -256,12 +270,11 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                                 node.set_by_node_id(parent.id(), Loop(OneTurn));
 
                                 self.iterators.iter().for_each(|it| {
-                                    if let Some(value) = it.value.clone() {
-                                        it.references.iter().for_each(|&id| {
-                                            trace!("ForStatementFlowControl (L): Setting node with id {} as raw with value {}", id, value);
-                                            node.set_by_node_id(id, Raw(value.clone()))
-                                        })
-                                    }
+                                    it.references.iter().for_each(|&id| {
+                                        let value = it.value.clone();
+                                        trace!("ForStatementFlowControl (L): Setting node with id {} as raw with value {}", id, value);
+                                        node.set_by_node_id(id, Raw(value))
+                                    })
                                 });
                             }
                             Some("continue") => {
