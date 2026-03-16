@@ -7,6 +7,7 @@ use crate::js::b64::js_bytes_to_string;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
+use std::cmp::PartialEq;
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -95,7 +96,10 @@ impl<'a> RuleMut<'a> for CombineArrays {
             match (left.data(), op.text()?, right.data()) {
                 (Some(Array(left_values)), "+", Some(Array(right_values))) => {
                     let combined = combine_arrays(left_values, right_values);
-                    trace!("CombineArrays (L): combining arrays {:?} and {:?} => '{}'", left_values, right_values, combined);
+                    trace!(
+                        "CombineArrays (L): combining arrays {:?} and {:?} => '{}'",
+                        left_values, right_values, combined
+                    );
                     node.reduce(Raw(Str(combined)));
                     return Ok(());
                 }
@@ -142,8 +146,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     );
                     trace!(
                         "CombineArrays (L): combining array and raw => left: {:?}, right: {:?} => '{}'",
-                        left_values, raw,
-                        combined
+                        left_values, raw, combined
                     );
                     node.reduce(Raw(Str(combined)));
                 }
@@ -155,8 +158,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     );
                     trace!(
                         "CombineArrays (L): combining raw and array => left: {:?}, right: {:?} => '{}'",
-                        raw, right_values,
-                        combined
+                        raw, right_values, combined
                     );
                     node.reduce(Raw(Str(combined)));
                 }
@@ -207,6 +209,17 @@ impl<'a> RuleMut<'a> for GetArrayElement {
         let view = node.view();
         if view.kind() != "subscript_expression" {
             return Ok(());
+        }
+
+        // This bypass empty arrays rules
+        if let (Some(n), Some(index_node)) = (view.child(0), view.child(2)) {
+            if let (Some(_), Some(index)) = (n.data(), index_node.data()) {
+                if index == NaN || index == Undefined {
+                    trace!("GetArrayElement: accessing {} index => undefined", index);
+                    node.reduce(Undefined);
+                    return Ok(());
+                }
+            }
         }
 
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {

@@ -31,6 +31,8 @@ use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
+use crate::js::JavaScript::{Array, NaN, Raw, Undefined};
+use crate::js::Value::{Bool, Num, Str};
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Value {
@@ -63,6 +65,20 @@ pub enum JavaScript {
     At, // This is a special value that represents ƒ -> at() { [native code] }
     Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
     Bytes(Vec<u8>),
+}
+
+impl PartialEq<JavaScript> for &JavaScript {
+    fn eq(&self, other: &JavaScript) -> bool {
+        match (self, other) {
+            (Undefined, Undefined) => true,
+            (NaN, NaN) => true,
+            (Array(arr1), Array(arr2)) => arr1 == arr2,
+            (Raw(Num(n1)), Raw(Num(n2))) => n1 == n2,
+            (Raw(Str(s1)), Raw(Str(s2))) => s1 == s2,
+            (Raw(Bool(b1)), Raw(Bool(b2))) => b1 == b2,
+            _ => false,
+        }
+    }
 }
 
 impl Display for JavaScript {

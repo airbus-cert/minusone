@@ -246,7 +246,6 @@ impl<'a> RuleMut<'a> for AddBool {
                 (Some(NaN), "-", Some(Raw(Bool(_)))) |
                 (Some(Raw(Bool(_))), "+", Some(NaN)) |
                 (Some(Raw(Bool(_))), "-", Some(NaN)) |
-
                 (Some(Undefined), "+", Some(Raw(Bool(_)))) |
                 (Some(Undefined), "-", Some(Raw(Bool(_)))) |
                 (Some(Raw(Bool(_))), "+", Some(Undefined)) |
