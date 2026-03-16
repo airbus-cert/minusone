@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::Undefined;
+use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::JavaScript::{Array, Raw};
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
@@ -281,7 +281,8 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
                         trace!("StringPlusMinus: reducing - '{}' to {}", s, -num);
                         node.reduce(Raw(Num(-num)));
                     } else {
-                        warn!("StringPlusMinus: cannot parse '{}' as number", s);
+                        trace!("StringPlusMinus: cannot parse -'{}' as number, falling back to NaN", s);
+                        node.reduce(NaN);
                     }
                 }
                 _ => {}
