@@ -139,7 +139,7 @@ impl_javascript_ruleset!(
     ParseArray,             // Parse arrays
     ParseSpecials,          // Parse specials (undefined, NaN, At, ...)
     NegInt,                 // Infer unary - operations on integers
-    AddInt,                 // Infer + and - operations on integers
+    SubAddInt,              // Infer + and - operations on integers
     MultInt,                // Infer *, / and % operations on integers
     PowInt,                 // Infer ** operations on integers
     ShiftInt,               // Infer <<, >> and >>> operations on integers

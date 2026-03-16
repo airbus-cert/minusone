@@ -92,38 +92,87 @@ impl<'a> RuleMut<'a> for CombineArrays {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-            if let (Some(Array(left_values)), "+", Some(Array(right_values))) =
-                (left.data(), op.text()?, right.data())
-            {
-                debug!(
-                    "CombineArrays (L): combining arrays => left: {:?}, right: {:?}",
-                    left_values, right_values
-                );
-                let combined = combine_arrays(left_values, right_values);
-                trace!("CombineArrays (L): combining arrays => '{}'", combined);
-                node.reduce(Raw(Str(combined)));
-                return Ok(());
-            }
-            if let (Some(Array(left_values)), "+", Some(Raw(raw))) =
-                (left.data(), op.text()?, right.data())
-            {
-                debug!(
-                    "CombineArrays (L): combining array and raw => left: {:?}, right: {:?}",
-                    left_values, raw
-                );
-                let combined = format!(
-                    "{}{}",
-                    flatten_array(left_values),
-                    flatten_value(&Raw(raw.clone()))
-                );
-                trace!(
-                    "CombineArrays (L): combining array and raw => '{}'",
-                    combined
-                );
-                node.reduce(Raw(Str(combined)));
+            match (left.data(), op.text()?, right.data()) {
+                (Some(Array(left_values)), "+", Some(Array(right_values))) => {
+                    debug!(
+                        "CombineArrays (L): combining arrays => left: {:?}, right: {:?}",
+                        left_values, right_values
+                    );
+                    let combined = combine_arrays(left_values, right_values);
+                    trace!("CombineArrays (L): combining arrays => '{}'", combined);
+                    node.reduce(Raw(Str(combined)));
+                    return Ok(());
+                }
+                (Some(Array(l)), "-", Some(Raw(Num(r)))) => {
+                    let l = flatten_array(l);
+                    trace!("Flatten : {}", l);
+                    if !l.contains(",") {
+                        if let Some(l_num) = l.parse::<i64>().ok() {
+                            if let Some(result) = l_num.checked_sub(*r) {
+                                trace!("AddInt (L): {} - {} = {}", l, r, result);
+                                node.reduce(Raw(Num(result)));
+                            } else {
+                                trace!("AddInt (L): {} - {} = NaN", l, r);
+                                node.reduce(NaN);
+                            }
+                        }
+                    } else {
+                        trace!("AddInt (L): {} - {} = NaN", l, r);
+                        node.reduce(NaN);
+                    }
+                }
+                (Some(Raw(Num(l))), "-", Some(Array(r))) => {
+                    let r = flatten_array(r);
+                    if !r.contains(",") {
+                        if let Some(r_num) = r.parse::<i64>().ok() {
+                            if let Some(result) = l.checked_sub(r_num) {
+                                trace!("AddInt (L): {} - {} = {}", l, r, result);
+                                node.reduce(Raw(Num(result)));
+                            } else {
+                                trace!("AddInt (L): {} - {} = NaN", l, r);
+                                node.reduce(NaN);
+                            }
+                        }
+                    } else {
+                        trace!("AddInt (L): {} - {} = NaN", l, r);
+                        node.reduce(NaN);
+                    }
+                }
+                (Some(Array(left_values)), "+", Some(Raw(raw))) => {
+                    debug!(
+                        "CombineArrays (L): combining array and raw => left: {:?}, right: {:?}",
+                        left_values, raw
+                    );
+                    let combined = format!(
+                        "{}{}",
+                        flatten_array(left_values),
+                        flatten_value(&Raw(raw.clone()))
+                    );
+                    trace!(
+                        "CombineArrays (L): combining array and raw => '{}'",
+                        combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                (Some(Raw(raw)), "+", Some(Array(right_values))) => {
+                    debug!(
+                        "CombineArrays (L): combining raw and array => left: {:?}, right: {:?}",
+                        raw, right_values
+                    );
+                    let combined = format!(
+                        "{}{}",
+                        flatten_value(&Raw(raw.clone())),
+                        flatten_array(right_values)
+                    );
+                    trace!(
+                        "CombineArrays (L): combining raw and array => '{}'",
+                        combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                _ => {}
             }
         }
-
         Ok(())
     }
 }

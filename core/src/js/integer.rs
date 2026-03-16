@@ -1,10 +1,8 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::Array;
 use crate::js::JavaScript::Raw;
 use crate::js::Value::Num;
-use crate::js::Value::Str;
-use crate::js::array::flatten_array;
+
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
@@ -139,11 +137,11 @@ impl<'a> RuleMut<'a> for NegInt {
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, AddInt};
+/// use minusone::js::integer::{ParseInt, SubAddInt};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 1 + 1;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), AddInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), SubAddInt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -151,9 +149,9 @@ impl<'a> RuleMut<'a> for NegInt {
 /// assert_eq!(linter.output, "var x = 2;");
 /// ```
 #[derive(Default)]
-pub struct AddInt;
+pub struct SubAddInt;
 
-impl<'a> RuleMut<'a> for AddInt {
+impl<'a> RuleMut<'a> for SubAddInt {
     type Language = JavaScript;
 
     fn enter(
@@ -191,21 +189,6 @@ impl<'a> RuleMut<'a> for AddInt {
                         warn!("AddInt (L): overflow {} - {}", l, r);
                     }
                 }
-                (Some(Array(l)), "+", Some(Raw(Num(r)))) => {
-                    let r = r.to_string();
-                    let l = flatten_array(l);
-                    let result = l.clone() + &r;
-                    trace!("AddInt (L): {} + {} = {}", l, r, result);
-                    node.reduce(Raw(Str(result)));
-                }
-                (Some(Raw(Num(l))), "+", Some(Array(r))) => {
-                    let l = l.to_string();
-                    let r = flatten_array(r);
-                    let result = l.clone() + &r.clone();
-                    trace!("AddInt (L): {} + {} = {}", l, r, result);
-                    node.reduce(Raw(Str(result)));
-                }
-
                 _ => {}
             }
         }
@@ -495,7 +478,7 @@ mod tests_js_integer {
         tree.apply_mut(&mut (
             ParseInt::default(),
             NegInt::default(),
-            AddInt::default(),
+            SubAddInt::default(),
             MultInt::default(),
             PowInt::default(),
             ShiftInt::default(),
