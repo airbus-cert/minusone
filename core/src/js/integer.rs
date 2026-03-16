@@ -66,6 +66,8 @@ impl<'a> RuleMut<'a> for ParseInt {
         } else if let Ok(n) = token.parse::<i64>() {
             trace!("ParseInt (L): decimal {} => {}", token, n);
             node.reduce(Raw(Num(n)));
+        } else {
+            warn!("ParseInt (L): Unable to parse {}", token);
         }
 
         Ok(())

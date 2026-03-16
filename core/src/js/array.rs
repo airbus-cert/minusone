@@ -445,5 +445,7 @@ mod tests_js_array {
         assert_eq!(deobfuscate("var x = +[['455']];"), "var x = 455;",);
 
         assert_eq!(deobfuscate("var x = +['a'];"), "var x = NaN;",);
+
+        assert_eq!(deobfuscate("var x = [8] - 1;"), "var x = 7;",);
     }
 }

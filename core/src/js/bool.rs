@@ -242,6 +242,18 @@ impl<'a> RuleMut<'a> for AddBool {
                     trace!("AddBool (L): array + {} => '{}'", r, r);
                     node.reduce(Raw(Str(r.to_string())));
                 }
+                (Some(NaN), "+", Some(Raw(Bool(_)))) |
+                (Some(NaN), "-", Some(Raw(Bool(_)))) |
+                (Some(Raw(Bool(_))), "+", Some(NaN)) |
+                (Some(Raw(Bool(_))), "-", Some(NaN)) |
+
+                (Some(Undefined), "+", Some(Raw(Bool(_)))) |
+                (Some(Undefined), "-", Some(Raw(Bool(_)))) |
+                (Some(Raw(Bool(_))), "+", Some(Undefined)) |
+                (Some(Raw(Bool(_))), "-", Some(Undefined)) => {
+                    trace!("AddBool (L): Any bool +/- NaN or undefined => NaN");
+                    node.reduce(NaN);
+                }
                 _ => {}
             }
         }
