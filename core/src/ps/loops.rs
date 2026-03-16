@@ -191,6 +191,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .unwrap()
                     .iter()
                     .skip_while(|n| n.id() != view.id())
+                    .skip(1) // Keep the actual flow_control_statement
                     .map(|n| n.id())
                     .collect();
                 for id in following_children_ids {
@@ -239,7 +240,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                             .iter()
                             .skip_while(|n| n.kind() != "flow_control_statement");
 
-                        match iter.next().map(|n| n.smallest_child().kind()) {
+                        match iter.next().and_then(|n| n.child(0).map(|n| n.kind())) {
                             Some("break" | "return" | "exit" | "throw") => {
                                 trace!(
                                     "ForStatementFlowControl (L): Setting loop with id {} as one turn",
