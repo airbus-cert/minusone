@@ -74,7 +74,7 @@ impl<'a> RuleMut<'a> for ParseInt {
     }
 }
 
-/// Infers unary `-` expressions applied to a known integer, e.g. `-2` becomes `Raw(Num(-2))`.
+/// Infers unary `-` and `+` expressions applied to a known integer, e.g. `-2` becomes `Raw(Num(-2))`.
 ///
 /// # Example
 /// ```
@@ -122,6 +122,11 @@ impl<'a> RuleMut<'a> for NegInt {
                     } else {
                         warn!("NegInt (L): overflow -{}", n);
                     }
+                }
+            } else if op.text()? == "+" {
+                if let Some(Raw(Num(n))) = operand.data() {
+                    trace!("NegInt (L): +{} = {}", n, n);
+                    node.reduce(Raw(Num(*n)));
                 }
             }
         }
@@ -512,7 +517,8 @@ mod tests_js_integer {
     }
 
     #[test]
-    fn test_neg_int() {
+    fn test_pos_neg_int() {
+        assert_eq!(deobfuscate("var x = +42 + +5;"), "var x = 47;");
         assert_eq!(deobfuscate("var x = -42 - -5;"), "var x = -37;");
     }
 
