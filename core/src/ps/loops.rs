@@ -10,7 +10,7 @@ use log::trace;
 
 struct IteratorVariable {
     name: String,
-    value: Value,
+    value: Option<Value>,
     pub references: Vec<usize>,
 }
 
@@ -18,7 +18,7 @@ impl IteratorVariable {
     fn new(name: String, value: Value) -> Self {
         Self {
             name,
-            value,
+            value: Some(value),
             references: vec![],
         }
     }
@@ -225,7 +225,14 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     .iter_mut()
                     .find(|n| n.name == view.text().unwrap())
                 {
-                    iterator_variable.references.push(node.id());
+                    match view.get_parent_of_types(vec!["left_assignment_expression"]) {
+                        None => {
+                            if iterator_variable.value.is_some() {
+                                iterator_variable.references.push(node.id())
+                            }
+                        }
+                        Some(_) => iterator_variable.value = None, // Forget iterator variable as it was modified
+                    }
                 }
             }
             "statement_block" => {
@@ -249,10 +256,12 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                                 node.set_by_node_id(parent.id(), Loop(OneTurn));
 
                                 self.iterators.iter().for_each(|it| {
-                                    it.references.iter().for_each(|&id| {
-                                        trace!("ForStatementFlowControl (L): Setting node with id {} as raw with value {}", id, it.value);
-                                        node.set_by_node_id(id, Raw(it.value.clone()))
-                                    })
+                                    if let Some(value) = it.value.clone() {
+                                        it.references.iter().for_each(|&id| {
+                                            trace!("ForStatementFlowControl (L): Setting node with id {} as raw with value {}", id, value);
+                                            node.set_by_node_id(id, Raw(value.clone()))
+                                        })
+                                    }
                                 });
                             }
                             Some("continue") => {
