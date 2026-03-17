@@ -24,7 +24,7 @@ const FLEXIBLE_B64: GeneralPurpose = GeneralPurpose::new(
 );
 
 fn main() {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
     if cli.help {
         let mut printer = Printer::new(Cli::command())
             .with("introduction", INTRO)
@@ -54,6 +54,12 @@ fn main() {
         printer.print_help();
 
         return;
+    }
+
+    if cli.quiet {
+        cli.debug_level = DebugLevel::Off;
+        cli.list = false;
+        cli.time = false;
     }
 
     pretty_env_logger::formatted_builder()
