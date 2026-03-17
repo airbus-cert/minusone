@@ -107,17 +107,37 @@ impl RemoveUnusedVar {
     }
 
     pub fn clear(mut self) -> MinusOneResult<String> {
-        self.output += &self.source[self.last_index..];
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
         Ok(self.output)
     }
 
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
     fn remove_node<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
-        // skip newlines
-        while self.source.as_bytes().get(self.last_index) == Some(&b'\n') {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return Ok(());
+        }
+
+        // skip leading newlines before the removed node, but never past node start
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
             self.last_index += 1;
         }
-        self.output += &self.source[self.last_index..node.start_abs()];
-        self.last_index = node.end_abs();
+
+        self.copy_until(start);
+        self.last_index = end;
+
         // skip trailing whitespace
         while matches!(
             self.source.as_bytes().get(self.last_index),
@@ -182,16 +202,26 @@ impl RemoveUnusedVar {
     }
 
     fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
-        // skip leading newlines
-        while self.source.as_bytes().get(self.last_index) == Some(&b'\n') {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        // parent nodes can be replaced before children are visited.
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return Ok(());
+        }
+
+        // skip leading newlines, but never past node start
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
             self.last_index += 1;
         }
-        self.output += &self.source[self.last_index..node.start_abs()];
+
+        self.copy_until(start);
         self.output += replacement;
-        if self.source.as_bytes().get(node.end_abs()) == Some(&b'\n') {
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
             self.output += "\n";
         }
-        self.last_index = node.end_abs();
+        self.last_index = end;
         Ok(())
     }
 }
@@ -211,6 +241,7 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                     if self.rule.is_unused(&var_name) {
                         trace!("RemoveUnusedVar: removing declaration of '{}'", var_name);
                         self.remove_node(node)?;
+                        return Ok(false);
                     }
                 }
             }
@@ -229,6 +260,7 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                                             var_name
                                         );
                                         self.remove_node(node)?;
+                                        return Ok(false);
                                     }
                                 }
                             }
@@ -240,6 +272,7 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                                 child.text().unwrap_or("?")
                             );
                             self.remove_node(node)?;
+                            return Ok(false);
                         }
                         _ => {}
                     }
@@ -256,6 +289,7 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                                 fn_name
                             );
                             self.remove_node(node)?;
+                            return Ok(false);
                         }
                     }
                 }
@@ -286,6 +320,7 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                             // if (false) { ... } with no else -> remove entirely
                             trace!("RemoveUnusedVar: removing dead if (false) statement");
                             self.remove_node(node)?;
+                            return Ok(false);
                         }
                     } else if Self::is_literal_bool(&condition, true) {
                         // if (true) { BODY } ... -> keep BODY, discard else
@@ -459,5 +494,24 @@ mod test_js_deadcode {
             clean("if (x) { console.log('maybe'); }"),
             "if (x) { console.log('maybe'); }"
         );
+    }
+
+    #[test]
+    fn test_no_panic_when_parent_removed_before_children() {
+        assert_eq!(
+            clean("function drop() { var a = 1; a = 2; 1; } console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_stress_many_removals_no_slice_panic() {
+        let mut input = String::new();
+        for i in 0..200 {
+            input += &format!("function f{}() {{ var a = 1; a = 2; 1; }} ", i);
+        }
+        input += "console.log('ok');";
+
+        assert_eq!(clean(&input), "console.log('ok');");
     }
 }
