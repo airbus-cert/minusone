@@ -69,6 +69,11 @@ impl ParseInt {
     pub fn from_str(input: &str) -> JavaScript {
         let negate = input.starts_with("-");
         let input = if negate { &input[1..] } else { input };
+        let input = if !input.starts_with("_") && !input.ends_with("_") {
+            input.replace("_", "")
+        } else {
+            input.to_string()
+        };
 
         if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
             if let Ok(n) = u64::from_str_radix(&input[2..], 16) {
