@@ -273,7 +273,11 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
                         trace!("StringPlusMinus: reducing + '{}' to {}", s, num);
                         node.reduce(Raw(Num(num)));
                     } else {
-                        warn!("StringPlusMinus: cannot parse '{}' as number", s);
+                        trace!(
+                            "StringPlusMinus: cannot parse +'{}' as number, falling back to NaN",
+                            s
+                        );
+                        node.reduce(NaN);
                     }
                 }
                 ("-", Some(Raw(Str(s)))) => {
@@ -531,7 +535,8 @@ mod tests_js_string {
     use crate::js::build_javascript_tree;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
-    use crate::js::string::{CharAt, Concat, ParseString, StringPlusMinus};
+    use crate::js::specials::AddSubSpecials;
+    use crate::js::string::*;
     use crate::js::string::{escape_js_string, unescaped_js_string};
 
     fn deobfuscate_string(input: &str) -> String {
@@ -542,6 +547,8 @@ mod tests_js_string {
             StringPlusMinus::default(),
             CharAt::default(),
             Concat::default(),
+            ToString::default(),
+            AddSubSpecials::default(),
         ))
         .unwrap();
 
@@ -606,6 +613,10 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = +'42'; var y = -'42';"),
             "var x = 42; var y = -42;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
+            "var x = 'baNaNa'"
         );
     }
 }
