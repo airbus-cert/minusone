@@ -28,7 +28,10 @@ fn find_previous_expr<'a>(
 fn is_foreach_command<'a>(command: &Node<'a, Powershell>) -> bool {
     command.kind() == "command"
         && match command.named_child("command_name") {
-            Some(n) => matches!(n.text().unwrap(), "foreach-object" | "foreach" | "%"),
+            Some(n) => matches!(
+                n.text().unwrap().to_lowercase().as_str(),
+                "foreach-object" | "foreach" | "%"
+            ),
             _ => false,
         }
 }
@@ -432,6 +435,32 @@ mod test {
                 Str("z".to_string()),
                 Str("b".to_string())
             ])
+        );
+    }
+
+    #[test]
+    fn test_foreach_case_insensitive_transparent() {
+        let mut tree = build_powershell_tree("(1,2,3) | fOrEacH-ObjECT {$_}").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ParseArrayLiteral::default(),
+            PSItemInferrator::default(),
+            ForEach::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Array(vec![Num(1), Num(2), Num(3)])
         );
     }
 }
