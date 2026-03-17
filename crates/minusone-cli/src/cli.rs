@@ -79,6 +79,10 @@ pub struct Cli {
     /// Debug level for the deobfuscation process
     #[arg(long, short, value_enum, default_value_t = DebugLevel::Info, alias = "log")]
     pub debug_level: DebugLevel,
+
+    /// Only output the deobfuscated script
+    #[arg(long, short)]
+    pub quiet: bool,
 }
 
 impl Display for Language {
