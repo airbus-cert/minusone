@@ -101,11 +101,17 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
                             // the previous in the pipeline
                             match previous.data() {
                                 Some(Array(values)) => {
-                                    trace!("PSItemInferrator (L): Setting node with PSItem of values: {:?}", values);
+                                    trace!(
+                                        "PSItemInferrator (L): Setting node with PSItem of values: {:?}",
+                                        values
+                                    );
                                     node.set(PSItem(values.clone()));
                                 }
                                 Some(Raw(value)) => {
-                                    trace!("PSItemInferrator (L): Setting node with PSItem of value: {:?}", value);
+                                    trace!(
+                                        "PSItemInferrator (L): Setting node with PSItem of value: {:?}",
+                                        value
+                                    );
                                     node.set(PSItem(vec![value.clone()]));
                                 }
                                 _ => (),
@@ -246,6 +252,8 @@ impl<'a> RuleMut<'a> for ForEach {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::Powershell::Array;
+    use crate::ps::Value::{Num, Str};
     use crate::ps::array::ParseArrayLiteral;
     use crate::ps::build_powershell_tree;
     use crate::ps::cast::Cast;
@@ -254,8 +262,6 @@ mod test {
     use crate::ps::integer::ParseInt;
     use crate::ps::string::ParseString;
     use crate::ps::typing::ParseType;
-    use crate::ps::Powershell::Array;
-    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_foreach_transparent() {

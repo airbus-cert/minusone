@@ -509,8 +509,10 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
         Array(_) => "Array".to_string(),
         Constructor(inner) => constructor_to_name(inner),
         Bytes(_) => "String".to_string(),
-        Null =>  {
-            error!("Null constructor should crash the JS runtime, but we will return 'null' here for safety.");
+        Null => {
+            error!(
+                "Null constructor should crash the JS runtime, but we will return 'null' here for safety."
+            );
             "null".to_string()
         }
     }

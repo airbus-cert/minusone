@@ -2,10 +2,10 @@ use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationB
 use crate::error::MinusOneResult;
 use crate::init::Init;
 use crate::ps;
-use ps::linter::RemoveUnusedVar;
-use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
 use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
+use ps::linter::RemoveUnusedVar;
+use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
 
 pub struct PowershellBackend;
 

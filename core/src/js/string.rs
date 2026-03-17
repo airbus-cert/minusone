@@ -5,10 +5,10 @@ use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
+use crate::js::integer::ParseInt;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
-use crate::js::integer::ParseInt;
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -271,11 +271,7 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
             match (operator.text()?, operand.data()) {
                 ("+", Some(Raw(Str(s)))) => {
                     let result = ParseInt::from_str(s.as_str());
-                    trace!(
-                        "StringPlusMinus: reducing + '{}' to {}",
-                        s,
-                        result
-                    );
+                    trace!("StringPlusMinus: reducing + '{}' to {}", s, result);
                     node.reduce(result);
                 }
                 ("-", Some(Raw(Str(s)))) => {
@@ -614,18 +610,9 @@ mod tests_js_string {
             deobfuscate_string("var x = +'42'; var y = -'42';"),
             "var x = 42; var y = -42;"
         );
-        assert_eq!(
-            deobfuscate_string("var x = +'0xff';"),
-            "var x = 255;"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = +'-0x56';"),
-            "var x = NaN;"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = +'-56';"),
-            "var x = -56;"
-        );
+        assert_eq!(deobfuscate_string("var x = +'0xff';"), "var x = 255;");
+        assert_eq!(deobfuscate_string("var x = +'-0x56';"), "var x = NaN;");
+        assert_eq!(deobfuscate_string("var x = +'-56';"), "var x = -56;");
         assert_eq!(
             deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
             "var x = 'baNaNa'"

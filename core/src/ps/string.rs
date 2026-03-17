@@ -1,8 +1,8 @@
 use crate::error::MinusOneResult;
-use crate::ps::tool::StringTool;
 use crate::ps::Powershell;
 use crate::ps::Powershell::{Array, Raw};
 use crate::ps::Value::{Bool, Num, Str};
+use crate::ps::tool::StringTool;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
@@ -360,7 +360,10 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
                                         .iter()
                                         .map(|e| Str(e.to_string()))
                                         .collect();
-                                    trace!("StringSplitMethod (L): Setting node with split string: {:?} with separator: {:?}", array, separator);
+                                    trace!(
+                                        "StringSplitMethod (L): Setting node with split string: {:?} with separator: {:?}",
+                                        array, separator
+                                    );
                                     node.set(Array(array));
                                 }
                             }
@@ -376,12 +379,12 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::Powershell::Raw;
+    use crate::ps::Value::Str;
     use crate::ps::array::ParseArrayLiteral;
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::string::{ConcatString, FormatString, ParseString, StringReplaceOp};
-    use crate::ps::Powershell::Raw;
-    use crate::ps::Value::Str;
 
     #[test]
     fn test_concat_two_elements() {

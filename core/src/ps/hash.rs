@@ -34,8 +34,7 @@ impl<'a> RuleMut<'a> for ParseHash {
                     if let Some(Raw(key)) = key_expression.data() {
                         trace!(
                             "ParseHash: Setting node with key: {:?} and value: {:?}",
-                            key,
-                            value
+                            key, value
                         );
                         node.set(HashEntry(key.normalize(), value.clone()));
                     } else if let Some(key_child) = key_expression.child(0) {

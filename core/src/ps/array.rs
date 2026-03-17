@@ -144,11 +144,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 
                         while index != end {
                             result.push(Num(index));
-                            if from <= to {
-                                index += 1
-                            } else {
-                                index -= 1
-                            }
+                            if from <= to { index += 1 } else { index -= 1 }
                         }
 
                         trace!("ParseRange: Setting node with Array: {:?}", result);
@@ -455,6 +451,8 @@ impl<'a> RuleMut<'a> for NewObjectArray {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::Powershell::Array;
+    use crate::ps::Value::{Num, Str};
     use crate::ps::access::AccessString;
     use crate::ps::array::{
         AddArray, ComputeArrayExpr, NewObjectArray, ParseArrayLiteral, ParseRange,
@@ -463,8 +461,6 @@ mod test {
     use crate::ps::forward::Forward;
     use crate::ps::integer::{AddInt, ParseInt};
     use crate::ps::string::ParseString;
-    use crate::ps::Powershell::Array;
-    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_init_num_array() {

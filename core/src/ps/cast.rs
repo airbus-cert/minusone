@@ -268,6 +268,8 @@ impl<'a> RuleMut<'a> for CastNull {
 
 #[cfg(test)]
 mod test {
+    use crate::ps::Powershell::{Array, Raw};
+    use crate::ps::Value::{Num, Str};
     use crate::ps::array::ParseArrayLiteral;
     use crate::ps::build_powershell_tree;
     use crate::ps::cast::Cast;
@@ -276,8 +278,6 @@ mod test {
     use crate::ps::integer::{AddInt, ParseInt};
     use crate::ps::string::{ConcatString, ParseString};
     use crate::ps::typing::ParseType;
-    use crate::ps::Powershell::{Array, Raw};
-    use crate::ps::Value::{Num, Str};
 
     #[test]
     fn test_cast_int_to_char() {
