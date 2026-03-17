@@ -25,13 +25,14 @@ use self::specials::*;
 use self::string::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
-use crate::js::JavaScript::{Array, NaN, Raw, Undefined};
-use crate::js::Value::{Bool, Num, Str};
+use crate::js::JavaScript::*;
+use crate::js::Value::*;
 #[cfg(test)]
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::fmt::Display;
+use log::error;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -68,6 +69,7 @@ pub enum JavaScript {
     Array(Vec<JavaScript>),
     Undefined,
     NaN,
+    Null,
     At, // This is a special value that represents ƒ -> at() { [native code] }
     Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
     Bytes(Vec<u8>),
@@ -90,8 +92,8 @@ impl PartialEq<JavaScript> for &JavaScript {
 impl Display for JavaScript {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JavaScript::Raw(v) => write!(f, "{}", v),
-            JavaScript::Array(arr) => {
+            Raw(v) => write!(f, "{}", v),
+            Array(arr) => {
                 let arr_str = arr
                     .iter()
                     .map(|v| v.to_string())
@@ -99,27 +101,32 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "[{}]", arr_str)
             }
-            JavaScript::Undefined => write!(f, "undefined"),
-            JavaScript::NaN => write!(f, "NaN"),
-            JavaScript::At => write!(f, "[]['at']"),
-            JavaScript::Constructor(inner) => {
+            Undefined => write!(f, "undefined"),
+            NaN => write!(f, "NaN"),
+            At => write!(f, "[]['at']"),
+            Constructor(inner) => {
                 let value = match **inner {
-                    JavaScript::Undefined => "undefined".to_string(),
-                    JavaScript::NaN => "Number".to_string(),
-                    JavaScript::At => "[]['at']".to_string(),
-                    JavaScript::Raw(ref v) => match v {
-                        Value::Num(_) => "0".to_string(),
-                        Value::Str(_) => "''".to_string(),
-                        Value::Bool(_) => "true".to_string(),
+                    Undefined => "undefined".to_string(),
+                    NaN => "Number".to_string(),
+                    At => "[]['at']".to_string(),
+                    Raw(ref v) => match v {
+                        Num(_) => "0".to_string(),
+                        Str(_) => "''".to_string(),
+                        Bool(_) => "true".to_string(),
                     },
-                    JavaScript::Array(_) => "[]".to_string(),
-                    JavaScript::Constructor(_) => "['constructor']".to_string(),
-                    JavaScript::Bytes(_) => "''".to_string(),
+                    Array(_) => "[]".to_string(),
+                    Constructor(_) => "['constructor']".to_string(),
+                    Bytes(_) => "''".to_string(),
+                    Null => {
+                        error!("Null constructor should crash the JS runtime, but we will return 'null' here for safety.");
+                        "null".to_string()
+                    }
                 };
 
                 write!(f, "{}['constructor']", value)
             }
-            JavaScript::Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
+            Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
+            Null => write!(f, "null"),
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::trace;
+use log::{error, trace};
 
 /// Parse specials
 #[derive(Default)]
@@ -39,6 +39,11 @@ impl<'a> RuleMut<'a> for ParseSpecials {
                 if view.data() == None && view.text()? == "NaN" {
                     trace!("ParseSpecials (L): NaN");
                     node.reduce(NaN);
+                    return Ok(());
+                }
+                if view.data() == None && view.text()? == "null" {
+                    trace!("ParseSpecials (L): null");
+                    node.reduce(Null);
                     return Ok(());
                 }
             }
@@ -504,6 +509,10 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
         Array(_) => "Array".to_string(),
         Constructor(inner) => constructor_to_name(inner),
         Bytes(_) => "String".to_string(),
+        Null =>  {
+            error!("Null constructor should crash the JS runtime, but we will return 'null' here for safety.");
+            "null".to_string()
+        }
     }
 }
 
