@@ -31,8 +31,8 @@ use crate::js::Value::*;
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use std::fmt::Display;
 use log::error;
+use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -118,7 +118,9 @@ impl Display for JavaScript {
                     Constructor(_) => "['constructor']".to_string(),
                     Bytes(_) => "''".to_string(),
                     Null => {
-                        error!("Null constructor should crash the JS runtime, but we will return 'null' here for safety.");
+                        error!(
+                            "Null constructor should crash the JS runtime, but we will return 'null' here for safety."
+                        );
                         "null".to_string()
                     }
                 };
@@ -133,6 +135,38 @@ impl Display for JavaScript {
 
 pub struct JavaScriptRuleSet<'a> {
     ruleset: RuleSet<'a, JavaScript>,
+}
+
+impl JavaScript {
+    pub fn as_bool(&self) -> bool {
+        match self {
+            Raw(raw) => match raw {
+                Num(n) => *n != 0.0 && !n.is_nan(),
+                Str(s) => !s.is_empty(),
+                Bool(b) => *b,
+            },
+
+            Array(_) => true,
+            Undefined => false,
+            NaN => false,
+            Null => false,
+            At => true,
+            Constructor(_) => true,
+            Bytes(bytes) => {
+                if bytes.is_empty() {
+                    return false;
+                }
+
+                for byte in bytes {
+                    if *byte != 0 {
+                        return true;
+                    }
+                }
+
+                false
+            }
+        }
+    }
 }
 
 macro_rules! impl_javascript_ruleset {

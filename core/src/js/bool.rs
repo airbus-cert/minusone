@@ -146,13 +146,15 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
-                (Some(Raw(Bool(a))), "&&", Some(Raw(Bool(b)))) => {
-                    trace!("BoolAlgebra (L): {} && {} => {}", a, b, *a && *b);
-                    node.reduce(Raw(Bool(*a && *b)));
+                (Some(left), "&&", Some(right)) => {
+                    let result = if left.as_bool() { right } else { left };
+                    trace!("BoolAlgebra (L): {} && {} => {}", left, right, result);
+                    node.reduce(result.clone());
                 }
-                (Some(Raw(Bool(a))), "||", Some(Raw(Bool(b)))) => {
-                    trace!("BoolAlgebra (L): {} || {} => {}", a, b, *a || *b);
-                    node.reduce(Raw(Bool(*a || *b)));
+                (Some(left), "||", Some(right)) => {
+                    let result = if left.as_bool() { left } else { right };
+                    trace!("BoolAlgebra (L): {} && {} => {}", left, right, result);
+                    node.reduce(result.clone());
                 }
                 _ => {}
             }
@@ -322,12 +324,16 @@ impl<'a> RuleMut<'a> for BoolPlusMinus {
 mod tests_js_bool {
     use crate::js::bool::{AddBool, BoolAlgebra, BoolPlusMinus, NotBool, ParseBool};
     use crate::js::build_javascript_tree;
+    use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use crate::js::string::ParseString;
 
     fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseBool::default(),
+            ParseInt::default(),
+            ParseString::default(),
             NotBool::default(),
             BoolAlgebra::default(),
             BoolPlusMinus::default(),
@@ -359,6 +365,8 @@ mod tests_js_bool {
             deobfuscate("var x = true && false || true;"),
             "var x = true;",
         );
+        assert_eq!(deobfuscate("var x = '' && 555;"), "var x = '';",);
+        assert_eq!(deobfuscate("var x = '' || 555;"), "var x = 555;",);
     }
 
     #[test]
