@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::Raw;
+use crate::js::JavaScript::{NaN, Raw};
 use crate::js::Value::Num;
 
 use crate::rule::RuleMut;
@@ -50,27 +50,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 
         match view.kind() {
             "number" => {
-                if token.len() > 2 && (token.starts_with("0x") || token.starts_with("0X")) {
-                    if let Ok(n) = u64::from_str_radix(&token[2..], 16) {
-                        trace!("ParseInt (L): hex {} => {}", token, n);
-                        node.reduce(Raw(Num(n as f64)));
-                    }
-                } else if token.len() > 2 && (token.starts_with("0o") || token.starts_with("0O")) {
-                    if let Ok(n) = u64::from_str_radix(&token[2..], 8) {
-                        trace!("ParseInt (L): octal {} => {}", token, n);
-                        node.reduce(Raw(Num(n as f64)));
-                    }
-                } else if token.len() > 2 && (token.starts_with("0b") || token.starts_with("0B")) {
-                    if let Ok(n) = u64::from_str_radix(&token[2..], 2) {
-                        trace!("ParseInt (L): binary {} => {}", token, n);
-                        node.reduce(Raw(Num(n as f64)));
-                    }
-                } else if let Ok(n) = token.parse::<f64>() {
-                    trace!("ParseInt (L): decimal {} => {}", token, n);
-                    node.reduce(Raw(Num(n)));
-                } else {
-                    warn!("ParseInt (L): Unable to parse {}", token);
-                }
+                node.reduce(Self::from_str(token));
             }
             "identifier" => {
                 if view.text()? == "Infinity" {
@@ -82,6 +62,51 @@ impl<'a> RuleMut<'a> for ParseInt {
         }
 
         Ok(())
+    }
+}
+
+impl ParseInt {
+    pub fn from_str(input: &str) -> JavaScript {
+        let negate = input.starts_with("-");
+        let input = if negate { &input[1..] } else { input };
+
+        if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
+            if let Ok(n) = u64::from_str_radix(&input[2..], 16) {
+                trace!("ParseInt (L): hex {} => {}", input, n);
+                return if negate {
+                    NaN
+                } else {
+                    Raw(Num(n as f64))
+                }
+            }
+        } else if input.len() > 2 && (input.starts_with("0o") || input.starts_with("0O")) {
+            if let Ok(n) = u64::from_str_radix(&input[2..], 8) {
+                trace!("ParseInt (L): octal {} => {}", input, n);
+                return if negate {
+                    NaN
+                } else {
+                    Raw(Num(n as f64))
+                }
+            }
+        } else if input.len() > 2 && (input.starts_with("0b") || input.starts_with("0B")) {
+            if let Ok(n) = u64::from_str_radix(&input[2..], 2) {
+                trace!("ParseInt (L): binary {} => {}", input, n);
+                return if negate {
+                    NaN
+                } else {
+                    Raw(Num(n as f64))
+                }
+            }
+        } else if let Ok(n) = input.parse::<f64>() {
+            trace!("ParseInt (L): decimal {} => {}", input, n);
+            return Raw(Num(if negate {-n} else {n}));
+        }
+        warn!(
+            "ParseInt (L): Unable to parse {}{}, falling back to NaN",
+            if negate { "" } else { "-" },
+            input
+        );
+        NaN
     }
 }
 

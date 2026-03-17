@@ -8,6 +8,7 @@ use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
+use crate::js::integer::ParseInt;
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -269,27 +270,26 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
         if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
             match (operator.text()?, operand.data()) {
                 ("+", Some(Raw(Str(s)))) => {
-                    if let Ok(num) = s.parse::<f64>() {
-                        trace!("StringPlusMinus: reducing + '{}' to {}", s, num);
-                        node.reduce(Raw(Num(num)));
-                    } else {
-                        trace!(
-                            "StringPlusMinus: cannot parse +'{}' as number, falling back to NaN",
-                            s
-                        );
-                        node.reduce(NaN);
-                    }
+                    let result = ParseInt::from_str(s.as_str());
+                    trace!(
+                        "StringPlusMinus: reducing + '{}' to {}",
+                        s,
+                        result
+                    );
+                    node.reduce(result);
                 }
                 ("-", Some(Raw(Str(s)))) => {
-                    if let Ok(num) = s.parse::<f64>() {
-                        trace!("StringPlusMinus: reducing - '{}' to {}", s, -num);
-                        node.reduce(Raw(Num(-num)));
-                    } else {
-                        trace!(
-                            "StringPlusMinus: cannot parse -'{}' as number, falling back to NaN",
-                            s
-                        );
+                    let result = ParseInt::from_str(s.as_str());
+                    if result == NaN {
+                        trace!("StringPlusMinus: reducing NaN");
                         node.reduce(NaN);
+                        return Ok(());
+                    }
+                    if let Raw(Num(n)) = result {
+                        trace!("StringPlusMinus: reducing -{}", n);
+                        node.reduce(Raw(Num(-n)));
+                    } else {
+                        warn!("StringPlusMinus: cannot parse -{}", result);
                     }
                 }
                 _ => {}
@@ -613,6 +613,18 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = +'42'; var y = -'42';"),
             "var x = 42; var y = -42;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = +'0xff';"),
+            "var x = 255;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = +'-0x56';"),
+            "var x = NaN;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = +'-56';"),
+            "var x = -56;"
         );
         assert_eq!(
             deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
