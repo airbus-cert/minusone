@@ -58,7 +58,7 @@ fn main() {
 
     pretty_env_logger::formatted_builder()
         .filter(None, LevelFilter::Off)
-        .filter_module("minusone", LevelFilter::from(cli.log_level))
+        .filter_module("minusone", LevelFilter::from(cli.debug_level))
         .filter_module(APPLICATION_NAME, LevelFilter::Error)
         .init();
 
