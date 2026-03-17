@@ -73,33 +73,35 @@ impl ParseInt {
         if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
             if let Ok(n) = u64::from_str_radix(&input[2..], 16) {
                 trace!("ParseInt (L): hex {} => {}", input, n);
-                return if negate {
-                    NaN
-                } else {
-                    Raw(Num(n as f64))
-                }
+                return if negate { NaN } else { Raw(Num(n as f64)) };
             }
         } else if input.len() > 2 && (input.starts_with("0o") || input.starts_with("0O")) {
             if let Ok(n) = u64::from_str_radix(&input[2..], 8) {
                 trace!("ParseInt (L): octal {} => {}", input, n);
-                return if negate {
-                    NaN
-                } else {
-                    Raw(Num(n as f64))
-                }
+                return if negate { NaN } else { Raw(Num(n as f64)) };
             }
         } else if input.len() > 2 && (input.starts_with("0b") || input.starts_with("0B")) {
             if let Ok(n) = u64::from_str_radix(&input[2..], 2) {
                 trace!("ParseInt (L): binary {} => {}", input, n);
-                return if negate {
-                    NaN
-                } else {
-                    Raw(Num(n as f64))
+                return if negate { NaN } else { Raw(Num(n as f64)) };
+            }
+        } else {
+            if input.starts_with("0") {
+                if let Ok(n) = u64::from_str_radix(&input[1..], 8) {
+                    trace!("ParseInt (L): octal {} => {}", input, n);
+                    return if negate {
+                        Raw(Num(-(n as f64)))
+                    } else {
+                        Raw(Num(n as f64))
+                    };
                 }
             }
-        } else if let Ok(n) = input.parse::<f64>() {
-            trace!("ParseInt (L): decimal {} => {}", input, n);
-            return Raw(Num(if negate {-n} else {n}));
+
+            // JS fallback to decimal parsing on fail
+            if let Ok(n) = input.parse::<f64>() {
+                trace!("ParseInt (L): decimal {} => {}", input, n);
+                return Raw(Num(if negate { -n } else { n }));
+            }
         }
         warn!(
             "ParseInt (L): Unable to parse {}{}, falling back to NaN",
@@ -543,6 +545,9 @@ mod tests_js_integer {
         assert_eq!(deobfuscate("var x = 0x1F;"), "var x = 31;");
         assert_eq!(deobfuscate("var x = 0o37;"), "var x = 31;");
         assert_eq!(deobfuscate("var x = 0b11111;"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = 017;"), "var x = 15;");
+        assert_eq!(deobfuscate("var x = 0017;"), "var x = 15;");
+        assert_eq!(deobfuscate("var x = 019;"), "var x = 19;");
     }
 
     #[test]
