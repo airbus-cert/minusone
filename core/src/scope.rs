@@ -112,6 +112,12 @@ impl<T: Clone> Scope<T> {
         }
         None
     }
+
+    pub fn set_non_local(&mut self, var_name: &str) {
+        if let Some(var_value) = self.vars.get_mut(var_name) {
+            var_value.local = false;
+        }
+    }
 }
 
 pub struct ScopeManager<T: Clone> {
@@ -121,7 +127,7 @@ pub struct ScopeManager<T: Clone> {
 impl<T: Clone> Default for ScopeManager<T> {
     fn default() -> Self {
         ScopeManager {
-            scopes: vec![Scope::default()], // default scope
+            scopes: vec![Scope::default()],
         }
     }
 }
@@ -148,6 +154,35 @@ impl<T: Clone> ScopeManager<T> {
         // we will merge the vars scope
         for (name, value) in last.vars.iter_mut() {
             if !value.local {
+                if let Some(inferred_type) = &value.inferred_type {
+                    self.current_mut()
+                        .assign(name, inferred_type.clone(), false);
+                } else {
+                    self.current_mut().forget(name, false);
+                }
+            }
+        }
+    }
+
+    /// `leave_function()` != `leave()`, this only merges back variables that already existed in the parent scope before entering.
+    /// it prevents `var` declarations from leaking past function boundaries
+    pub fn leave_function(&mut self) {
+        let last = self.scopes.pop().unwrap();
+
+        // we will merge the pending scope of transcation
+        for (name, value) in last.pending.iter() {
+            if self.current().get_var(&name).is_some() || self.current().is_local(&name).is_some() {
+                if let Some(inferred_type) = &value.inferred_type {
+                    self.current_mut().assign(name, inferred_type.clone(), true);
+                } else {
+                    self.current_mut().forget(name, true);
+                }
+            }
+        }
+
+        // we will merge the vars scope
+        for (name, value) in last.vars.iter() {
+            if self.current().get_var(&name).is_some() || self.current().is_local(&name).is_some() {
                 if let Some(inferred_type) = &value.inferred_type {
                     self.current_mut()
                         .assign(name, inferred_type.clone(), false);

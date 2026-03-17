@@ -4,7 +4,7 @@ use crate::ps::Powershell::{Array, Raw};
 use crate::ps::Value::Num;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::trace;
+use log::{trace, warn};
 
 /// Parse array literal
 ///
@@ -62,6 +62,10 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
                 if let Some(Raw(value)) = child.data() {
                     range.push(value.clone());
                 } else if child.kind() != "," {
+                    warn!(
+                        "ParseArrayLiteral: unexpected non-raw value in array literal: {}",
+                        child.kind()
+                    );
                     return Ok(());
                 }
             }

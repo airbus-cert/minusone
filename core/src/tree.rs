@@ -952,6 +952,10 @@ impl<'a, T> Node<'a, T> {
         }
         Ok(())
     }
+
+    pub fn is_ongoing_transaction(&self) -> bool {
+        self.storage.is_ongoing_transaction()
+    }
 }
 
 pub struct NodeIterator<'a, T> {
