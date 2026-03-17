@@ -507,7 +507,7 @@ impl<'a, T> NodeMut<'a, T> {
                     node.kind(),
                     node.utf8_text(self.source).unwrap_or("<invalid utf8>")
                 ),
-                _ => trace!("Visiting node: kind: {}, id: {}", node.kind(), node.id()),
+                _ => trace!("Visiting node: kind: {}", node.kind()),
             }
             self.inner = node;
             // compute strategy
@@ -710,7 +710,7 @@ impl<'a, T> NodeMut<'a, T> {
                     node.kind(),
                     node.utf8_text(self.source).unwrap_or("<invalid utf8>")
                 ),
-                _ => trace!("Visiting node: kind: {}, id: {}", node.kind(), node.id()),
+                _ => trace!("Visiting node: kind: {}", node.kind()),
             }
 
             self.inner = node;
