@@ -14,4 +14,5 @@ clap-help = "1.4.0"
 minusone = { path = "../../core" }
 pretty_env_logger = "0.5.0"
 log = { workspace = true }
+base64 = { workspace = true }
 termimad = "0.34.1"
