@@ -36,6 +36,10 @@ pub struct Cli {
     #[arg(long, short)]
     pub path: Option<String>,
 
+    /// Script in Base64
+    #[arg(long, short, value_name = "BASE64")]
+    pub input: Option<String>,
+
     /// Debug mode: print the tree-sitter tree with inferred value on each node
     #[arg(long, short)]
     pub debug: bool,
@@ -150,6 +154,10 @@ pub static EXAMPLES: &[Example] = &[
     Example {
         title: "Deobfuscate with the maximum debug information",
         cmd: "minusone -l powershell --path obf_scr.ps1 --debug --log-level trace",
+    },
+    Example {
+        title: "Deobfuscate from b64 input",
+        cmd: "minusone -l javascript --input Y29uc29sZS5sb2coMDE3KQ",
     },
 ];
 
