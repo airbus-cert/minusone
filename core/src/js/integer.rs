@@ -290,7 +290,7 @@ impl<'a> RuleMut<'a> for SubAddInt {
                         let result = l + r;
                         trace!("AddInt (L): {}n + {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
-                    } else {
+                    } else if !r.is_string() {
                         error!(
                             "AddInt (L): tried to add BigInt and non-BigInt: {}n + {}. This should crash the Js engine",
                             l, r
@@ -302,7 +302,7 @@ impl<'a> RuleMut<'a> for SubAddInt {
                         let result = l + r;
                         trace!("AddInt (L): {}n + {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
-                    } else {
+                    } else if !l.is_string() {
                         error!(
                             "AddInt (L): tried to add non-BigInt and BigInt: {} + {}n. This should crash the Js engine",
                             l, r

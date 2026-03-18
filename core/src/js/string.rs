@@ -2,7 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Raw};
 use crate::js::JavaScript::{NaN, Undefined};
-use crate::js::Value::Bool;
+use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
@@ -385,6 +385,24 @@ impl<'a> RuleMut<'a> for Concat {
                             s.to_string() + array_str.as_str()
                         );
                         node.reduce(Raw(Str(s.to_string() + array_str.as_str())));
+                    }
+                    (Some(Raw(Str(s))), Some(Raw(BigInt(b)))) => {
+                        trace!(
+                            "Concat: reducing '{}' + {}n to '{}'",
+                            s,
+                            b,
+                            s.to_string() + b.to_string().as_str()
+                        );
+                        node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
+                    }
+                    (Some(Raw(BigInt(b))), Some(Raw(Str(s)))) => {
+                        trace!(
+                            "Concat: reducing {}n + '{}' to '{}'",
+                            b,
+                            s,
+                            b.to_string() + s.to_string().as_str()
+                        );
+                        node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
                     }
                     _ => {}
                 }
