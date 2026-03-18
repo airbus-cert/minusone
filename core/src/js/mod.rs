@@ -172,6 +172,10 @@ impl JavaScript {
             }
         }
     }
+
+    pub fn is_string(&self) -> bool {
+        matches!(self, Raw(Str(_)))
+    }
 }
 
 macro_rules! impl_javascript_ruleset {
