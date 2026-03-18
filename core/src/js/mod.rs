@@ -32,6 +32,7 @@ use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use log::error;
+use num::Zero;
 use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
@@ -40,6 +41,7 @@ pub enum Value {
     Num(f64),
     Str(String),
     Bool(bool),
+    BigInt(num_bigint::BigInt),
 }
 
 impl Display for Value {
@@ -58,6 +60,7 @@ impl Display for Value {
                 Str(s) => escape_js_string(s),
                 Bool(true) => "true".to_string(),
                 Bool(false) => "false".to_string(),
+                BigInt(n) => n.to_string(),
             }
         )
     }
@@ -113,6 +116,7 @@ impl Display for JavaScript {
                         Num(_) => "0".to_string(),
                         Str(_) => "''".to_string(),
                         Bool(_) => "true".to_string(),
+                        BigInt(_) => "0n".to_string(),
                     },
                     Array(_) => "[]".to_string(),
                     Constructor(_) => "['constructor']".to_string(),
@@ -144,6 +148,7 @@ impl JavaScript {
                 Num(n) => *n != 0.0 && !n.is_nan(),
                 Str(s) => !s.is_empty(),
                 Bool(b) => *b,
+                BigInt(b) => !b.is_zero(),
             },
 
             Array(_) => true,
