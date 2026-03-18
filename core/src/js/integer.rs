@@ -6,6 +6,7 @@ use crate::js::Value::{BigInt, Num};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
+use num::ToPrimitive;
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 ///
@@ -392,11 +393,11 @@ impl<'a> RuleMut<'a> for MultInt {
                 (Some(Raw(BigInt(l))), "*", Some(r)) => {
                     if let Raw(BigInt(r)) = r {
                         let result = l * r;
-                        trace!("AddInt (L): {}n * {}n = {}n", l, r, result);
+                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
                     } else {
                         error!(
-                            "AddInt (L): tried to multiply BigInt and non-BigInt: {}n * {}. This should crash the Js engine",
+                            "MultInt (L): tried to multiply BigInt and non-BigInt: {}n * {}. This should crash the Js engine",
                             l, r
                         );
                     }
@@ -404,11 +405,11 @@ impl<'a> RuleMut<'a> for MultInt {
                 (Some(l), "*", Some(Raw(BigInt(r)))) => {
                     if let Raw(BigInt(l)) = l {
                         let result = l * r;
-                        trace!("AddInt (L): {}n * {}n = {}n", l, r, result);
+                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
                     } else {
                         error!(
-                            "AddInt (L): tried to multiply non-BigInt and BigInt: {} * {}n. This should crash the Js engine",
+                            "MultInt (L): tried to multiply non-BigInt and BigInt: {} * {}n. This should crash the Js engine",
                             l, r
                         );
                     }
@@ -421,11 +422,11 @@ impl<'a> RuleMut<'a> for MultInt {
                 (Some(Raw(BigInt(l))), "/", Some(r)) => {
                     if let Raw(BigInt(r)) = r {
                         let result = l / r;
-                        trace!("AddInt (L): {}n / {}n = {}n", l, r, result);
+                        trace!("MultInt (L): {}n / {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
                     } else {
                         error!(
-                            "AddInt (L): tried to divide BigInt and non-BigInt: {}n / {}. This should crash the Js engine",
+                            "MultInt (L): tried to divide BigInt and non-BigInt: {}n / {}. This should crash the Js engine",
                             l, r
                         );
                     }
@@ -433,11 +434,11 @@ impl<'a> RuleMut<'a> for MultInt {
                 (Some(l), "/", Some(Raw(BigInt(r)))) => {
                     if let Raw(BigInt(l)) = l {
                         let result = l / r;
-                        trace!("AddInt (L): {}n / {}n = {}n", l, r, result);
+                        trace!("MultInt (L): {}n / {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
                     } else {
                         error!(
-                            "AddInt (L): tried to divide non-BigInt and BigInt: {} / {}n. This should crash the Js engine",
+                            "MultInt (L): tried to divide non-BigInt and BigInt: {} / {}n. This should crash the Js engine",
                             l, r
                         );
                     }
@@ -453,11 +454,11 @@ impl<'a> RuleMut<'a> for MultInt {
                 (Some(Raw(BigInt(l))), "%", Some(r)) => {
                     if let Raw(BigInt(r)) = r {
                         let result = l % r;
-                        trace!("AddInt (L): {}n % {}n = {}n", l, r, result);
+                        trace!("MultInt (L): {}n % {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
                     } else {
                         error!(
-                            "AddInt (L): tried to apply mod on BigInt and non-BigInt: {}n % {}. This should crash the Js engine",
+                            "MultInt (L): tried to apply mod on BigInt and non-BigInt: {}n % {}. This should crash the Js engine",
                             l, r
                         );
                     }
@@ -465,11 +466,11 @@ impl<'a> RuleMut<'a> for MultInt {
                 (Some(l), "%", Some(Raw(BigInt(r)))) => {
                     if let Raw(BigInt(l)) = l {
                         let result = l % r;
-                        trace!("AddInt (L): {}n % {}n = {}n", l, r, result);
+                        trace!("MultInt (L): {}n % {}n = {}n", l, r, result);
                         node.reduce(Raw(BigInt(result)));
                     } else {
                         error!(
-                            "AddInt (L): tried to apply mod on non-BigInt and BigInt: {} % {}n. This should crash the Js engine",
+                            "MultInt (L): tried to apply mod on non-BigInt and BigInt: {} % {}n. This should crash the Js engine",
                             l, r
                         );
                     }
@@ -526,6 +527,38 @@ impl<'a> RuleMut<'a> for PowInt {
                     let result = l.powi(*r as i32);
                     trace!("PowInt (L): {} ** {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
+                }
+                (Some(Raw(BigInt(l))), "**", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        if let Some(exp) = r.to_u32() {
+                            let result = l.pow(exp);
+                            trace!("PowInt (L): {}n ** {}n = {}n", l, r, result);
+                            node.reduce(Raw(BigInt(result)));
+                        } else {
+                            warn!("PowInt (L): exponent too large: {}n", r);
+                        }
+                    } else {
+                        error!(
+                            "PowInt (L): tried to pow BigInt and non-BigInt: {}n ** {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "**", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        if let Some(exp) = r.to_u32() {
+                            let result = l.pow(exp);
+                            trace!("PowInt (L): {}n ** {}n = {}n", l, r, result);
+                            node.reduce(Raw(BigInt(result)));
+                        } else {
+                            warn!("PowInt (L): exponent too large: {}n", r);
+                        }
+                    } else {
+                        error!(
+                            "PowInt (L): tried to pow non-BigInt and BigInt: {} ** {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
                 }
                 _ => {}
             }
