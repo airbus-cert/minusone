@@ -45,6 +45,7 @@ By default, Cargo builds the minusone library and runs the minusone-cli binary.
 |               | --log-level _\<LOG_LEVEL>_ | Log level for the deobfuscation process                                 |
 |               |                            | Possible values: [`off`, `error`, `warn`, `info`, `debug`, `trace`]     |
 |               |                            | Default: `info`                                                         |
+|               | --utf                      | Toggle Base64 decoding utf8 <--> utf16le                                |
 
 ## Bindings
 
