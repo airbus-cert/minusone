@@ -48,14 +48,14 @@ impl<'a> RuleMut<'a> for Forward {
 pub mod tests_forward {
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::{ParseInt, SubAddInt};
+    use crate::js::integer::{ParseInt, AddSubInt};
     use crate::js::linter::Linter;
 
     fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
-            SubAddInt::default(),
+            AddSubInt::default(),
             Forward::default(),
         ))
         .unwrap();

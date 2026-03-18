@@ -190,11 +190,11 @@ impl<'a> RuleMut<'a> for NegInt {
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, SubAddInt};
+/// use minusone::js::integer::{ParseInt, AddSubInt};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 1 + 1;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), SubAddInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), AddSubInt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -202,9 +202,9 @@ impl<'a> RuleMut<'a> for NegInt {
 /// assert_eq!(linter.output, "var x = 2;");
 /// ```
 #[derive(Default)]
-pub struct SubAddInt;
+pub struct AddSubInt;
 
-impl<'a> RuleMut<'a> for SubAddInt {
+impl<'a> RuleMut<'a> for AddSubInt {
     type Language = JavaScript;
 
     fn enter(
@@ -531,7 +531,7 @@ mod tests_js_integer {
         tree.apply_mut(&mut (
             ParseInt::default(),
             NegInt::default(),
-            SubAddInt::default(),
+            AddSubInt::default(),
             MultInt::default(),
             PowInt::default(),
             ShiftInt::default(),
@@ -594,7 +594,7 @@ mod tests_js_integer {
     fn test_shift_int() {
         assert_eq!(deobfuscate("var x = 1 << 3;"), "var x = 8;");
         assert_eq!(deobfuscate("var x = 16 >> 2;"), "var x = 4;");
-        assert_eq!(deobfuscate("let x = -16 >>> 2;"), "let x = 1073741820;"); // test fails
+        assert_eq!(deobfuscate("let x = -16 >>> 2;"), "let x = 1073741820;");
         assert_eq!(deobfuscate("var x = 1 << 3 >> 2;"), "var x = 2;");
         assert_eq!(deobfuscate("var x = 2 >> 31;"), "var x = 0;");
         assert_eq!(deobfuscate("var x = 2 >> 32;"), "var x = 2;");

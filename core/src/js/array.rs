@@ -47,7 +47,7 @@ impl<'a> RuleMut<'a> for ParseArray {
     }
 }
 
-/// Infers `+` on two arrays
+/// Infers `+` and `-` on arrays
 ///
 /// # Example
 /// ```
