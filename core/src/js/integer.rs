@@ -283,10 +283,58 @@ impl<'a> RuleMut<'a> for SubAddInt {
                     trace!("AddInt (L): {} + {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
+                (Some(Raw(BigInt(l))), "+", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l + r;
+                        trace!("AddInt (L): {}n + {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to add BigInt and non-BigInt: {}n + {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "+", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l + r;
+                        trace!("AddInt (L): {}n + {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to add non-BigInt and BigInt: {} + {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
                 (Some(Raw(Num(l))), "-", Some(Raw(Num(r)))) => {
                     let result = l - r;
                     trace!("AddInt (L): {} - {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
+                }
+                (Some(Raw(BigInt(l))), "-", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l - r;
+                        trace!("AddInt (L): {}n - {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to subtract BigInt and non-BigInt: {}n - {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "-", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l - r;
+                        trace!("AddInt (L): {}n - {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to subtract non-BigInt and BigInt: {} - {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
                 }
                 _ => {}
             }
