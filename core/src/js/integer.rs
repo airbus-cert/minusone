@@ -389,10 +389,58 @@ impl<'a> RuleMut<'a> for MultInt {
                     trace!("MultInt (L): {} * {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
                 }
+                (Some(Raw(BigInt(l))), "*", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l * r;
+                        trace!("AddInt (L): {}n * {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to multiply BigInt and non-BigInt: {}n * {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "*", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l * r;
+                        trace!("AddInt (L): {}n * {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to multiply non-BigInt and BigInt: {} * {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
                 (Some(Raw(Num(l))), "/", Some(Raw(Num(r)))) => {
                     let result = l / r;
                     trace!("MultInt (L): {} / {} = {}", l, r, result);
                     node.reduce(Raw(Num(result)));
+                }
+                (Some(Raw(BigInt(l))), "/", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l / r;
+                        trace!("AddInt (L): {}n / {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to divide BigInt and non-BigInt: {}n / {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "/", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l / r;
+                        trace!("AddInt (L): {}n / {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to divide non-BigInt and BigInt: {} / {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
                 }
                 (Some(Raw(Num(l))), "%", Some(Raw(Num(r)))) => {
                     if *r != 0.0 {
@@ -400,6 +448,30 @@ impl<'a> RuleMut<'a> for MultInt {
                         node.reduce(Raw(Num(l % r)));
                     } else {
                         warn!("MultInt (L): modulo by zero {} % {}", l, r);
+                    }
+                }
+                (Some(Raw(BigInt(l))), "%", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l % r;
+                        trace!("AddInt (L): {}n % {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to apply mod on BigInt and non-BigInt: {}n % {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "%", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l % r;
+                        trace!("AddInt (L): {}n % {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "AddInt (L): tried to apply mod on non-BigInt and BigInt: {} % {}n. This should crash the Js engine",
+                            l, r
+                        );
                     }
                 }
                 _ => {}
