@@ -757,17 +757,89 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                             trace!("BitwiseInt (L): {} & {} = {}", l, r, l & r);
                             node.reduce(Raw(Num((l & r) as f64)));
                         }
+                        (Some(Raw(BigInt(l))), "&", Some(r)) => {
+                            if let Raw(BigInt(r)) = r {
+                                let result = l & r;
+                                trace!("BitwiseInt (L): {}n & {}n = {}n", l, r, result);
+                                node.reduce(Raw(BigInt(result)));
+                            } else {
+                                error!(
+                                    "BitwiseInt (L): tried to AND BigInt and non-BigInt: {}n & {}. This should crash the Js engine",
+                                    l, r
+                                );
+                            }
+                        }
+                        (Some(l), "&", Some(Raw(BigInt(r)))) => {
+                            if let Raw(BigInt(l)) = l {
+                                let result = l & r;
+                                trace!("BitwiseInt (L): {}n & {}n = {}n", l, r, result);
+                                node.reduce(Raw(BigInt(result)));
+                            } else {
+                                error!(
+                                    "BitwiseInt (L): tried to AND non-BigInt and BigInt: {} & {}n. This should crash the Js engine",
+                                    l, r
+                                );
+                            }
+                        }
                         (Some(Raw(Num(l))), "|", Some(Raw(Num(r)))) => {
                             let l = *l as i64;
                             let r = *r as i64;
                             trace!("BitwiseInt (L): {} | {} = {}", l, r, l | r);
                             node.reduce(Raw(Num((l | r) as f64)));
                         }
+                        (Some(Raw(BigInt(l))), "|", Some(r)) => {
+                            if let Raw(BigInt(r)) = r {
+                                let result = l | r;
+                                trace!("BitwiseInt (L): {}n | {}n = {}n", l, r, result);
+                                node.reduce(Raw(BigInt(result)));
+                            } else {
+                                error!(
+                                    "BitwiseInt (L): tried to OR BigInt and non-BigInt: {}n | {}. This should crash the Js engine",
+                                    l, r
+                                );
+                            }
+                        }
+                        (Some(l), "|", Some(Raw(BigInt(r)))) => {
+                            if let Raw(BigInt(l)) = l {
+                                let result = l | r;
+                                trace!("BitwiseInt (L): {}n | {}n = {}n", l, r, result);
+                                node.reduce(Raw(BigInt(result)));
+                            } else {
+                                error!(
+                                    "BitwiseInt (L): tried to OR non-BigInt and BigInt: {} | {}n. This should crash the Js engine",
+                                    l, r
+                                );
+                            }
+                        }
                         (Some(Raw(Num(l))), "^", Some(Raw(Num(r)))) => {
                             let l = *l as i64;
                             let r = *r as i64;
                             trace!("BitwiseInt (L): {} ^ {} = {}", l, r, l ^ r);
                             node.reduce(Raw(Num((l ^ r) as f64)));
+                        }
+                        (Some(Raw(BigInt(l))), "^", Some(r)) => {
+                            if let Raw(BigInt(r)) = r {
+                                let result = l ^ r;
+                                trace!("BitwiseInt (L): {}n ^ {}n = {}n", l, r, result);
+                                node.reduce(Raw(BigInt(result)));
+                            } else {
+                                error!(
+                                    "BitwiseInt (L): tried to XOR BigInt and non-BigInt: {}n ^ {}. This should crash the Js engine",
+                                    l, r
+                                );
+                            }
+                        }
+                        (Some(l), "^", Some(Raw(BigInt(r)))) => {
+                            if let Raw(BigInt(l)) = l {
+                                let result = l ^ r;
+                                trace!("BitwiseInt (L): {}n ^ {}n = {}n", l, r, result);
+                                node.reduce(Raw(BigInt(result)));
+                            } else {
+                                error!(
+                                    "BitwiseInt (L): tried to XOR non-BigInt and BigInt: {} ^ {}n. This should crash the Js engine",
+                                    l, r
+                                );
+                            }
                         }
                         _ => {}
                     }
@@ -780,6 +852,10 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                             let n = *n as i64;
                             trace!("BitwiseInt (L): ~{} = {}", n, !n);
                             node.reduce(Raw(Num((!n) as f64)));
+                        } else if let Some(Raw(BigInt(n))) = operand.data() {
+                            let result = !n;
+                            trace!("BitwiseInt (L): ~{}n = {}n", n, result);
+                            node.reduce(Raw(BigInt(result)));
                         }
                     }
                 }
