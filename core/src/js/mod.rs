@@ -60,7 +60,7 @@ impl Display for Value {
                 Str(s) => escape_js_string(s),
                 Bool(true) => "true".to_string(),
                 Bool(false) => "false".to_string(),
-                BigInt(n) => n.to_string(),
+                BigInt(n) => n.to_string() + "n",
             }
         )
     }

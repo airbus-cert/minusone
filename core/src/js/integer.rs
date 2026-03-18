@@ -1,11 +1,11 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{NaN, Raw};
-use crate::js::Value::Num;
+use crate::js::Value::{BigInt, Num};
 
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::{trace, warn};
+use log::{error, trace, warn};
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 ///
@@ -68,12 +68,23 @@ impl<'a> RuleMut<'a> for ParseInt {
 impl ParseInt {
     pub fn from_str(input: &str) -> JavaScript {
         let negate = input.starts_with("-");
+        let bigint = input.ends_with("n");
         let input = if negate { &input[1..] } else { input };
+        let input = if bigint {
+            trace!("ParseInt (L): found BigInt literal {}", input);
+            &input[..input.len() - 1]
+        } else {
+            input
+        };
         let input = if !input.starts_with("_") && !input.ends_with("_") {
             input.replace("_", "")
         } else {
             input.to_string()
         };
+
+        if bigint {
+            return Self::bigint_from_str(&input, negate);
+        }
 
         if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
             if let Ok(n) = u64::from_str_radix(&input[2..], 16) {
@@ -111,6 +122,40 @@ impl ParseInt {
         warn!(
             "ParseInt (L): Unable to parse {}{}, falling back to NaN",
             if negate { "" } else { "-" },
+            input
+        );
+        NaN
+    }
+
+    pub fn bigint_from_str(input: &str, negate: bool) -> JavaScript {
+        if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
+            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 16) {
+                trace!("ParseInt (L): hex BigInt {} => {}", input, n);
+                return Raw(BigInt(if negate { -n } else { n }));
+            }
+        } else if input.len() > 2 && (input.starts_with("0o") || input.starts_with("0O")) {
+            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 8) {
+                trace!("ParseInt (L): octal BigInt {} => {}", input, n);
+                return Raw(BigInt(if negate { -n } else { n }));
+            }
+        } else if input.len() > 2 && (input.starts_with("0b") || input.starts_with("0B")) {
+            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 2) {
+                trace!("ParseInt (L): binary BigInt {} => {}", input, n);
+                return Raw(BigInt(if negate { -n } else { n }));
+            }
+        } else if input.len() >= 2 && input.starts_with("0") {
+            error!(
+                "ParseInt (L): BigInt literals cannot start with 0, this will crash the JS engine but found {}n",
+                input
+            );
+        } else {
+            if let Some(n) = num::BigInt::parse_bytes(input.as_bytes(), 10) {
+                trace!("ParseInt (L): decimal BigInt {} => {}", input, n);
+                return Raw(BigInt(if negate { -n } else { n }));
+            }
+        }
+        warn!(
+            "ParseInt (L): Unable to parse BigInt {}, falling back to NaN",
             input
         );
         NaN
@@ -553,6 +598,14 @@ mod tests_js_integer {
         assert_eq!(deobfuscate("var x = 017;"), "var x = 15;");
         assert_eq!(deobfuscate("var x = 0017;"), "var x = 15;");
         assert_eq!(deobfuscate("var x = 019;"), "var x = 19;");
+    }
+
+    #[test]
+    fn test_parse_bigint() {
+        assert_eq!(deobfuscate("var x = 31n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0x1Fn;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0o37n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0b11111n;"), "var x = 31n;");
     }
 
     #[test]
