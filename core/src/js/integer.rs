@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{NaN, Raw};
 use crate::js::Value::{BigInt, Num};
+use std::ops::{Shl, Shr};
 
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
@@ -617,6 +618,38 @@ impl<'a> RuleMut<'a> for ShiftInt {
                     );
                     node.reduce(Raw(Num(result as f64)));
                 }
+                (Some(Raw(BigInt(l))), ">>", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        if let Some(shift) = r.to_u32() {
+                            let result = l.shr(shift);
+                            trace!("ShiftInt (L): {}n >> {}n = {}n", l, r, result);
+                            node.reduce(Raw(BigInt(result)));
+                        } else {
+                            warn!("ShiftInt (L): shift too large: {}n", r);
+                        }
+                    } else {
+                        error!(
+                            "ShiftInt (L): tried to shift right BigInt and non-BigInt: {}n >> {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), ">>", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        if let Some(shift) = r.to_u32() {
+                            let result = l.shr(shift);
+                            trace!("ShiftInt (L): {}n >> {}n = {}n", l, r, result);
+                            node.reduce(Raw(BigInt(result)));
+                        } else {
+                            warn!("ShiftInt (L): shift too large: {}n", r);
+                        }
+                    } else {
+                        error!(
+                            "ShiftInt (L): tried to shift right BigInt and non-BigInt: {}n >> {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
                 (Some(Raw(Num(l))), "<<", Some(Raw(Num(r)))) => {
                     let shift = (*r as i32 as u32) % 32;
                     let result = (*l as i32).wrapping_shl(shift);
@@ -625,6 +658,38 @@ impl<'a> RuleMut<'a> for ShiftInt {
                         *l as i32, *r as i64, result
                     );
                     node.reduce(Raw(Num(result as f64)));
+                }
+                (Some(Raw(BigInt(l))), "<<", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        if let Some(shift) = r.to_u32() {
+                            let result = l.shl(shift);
+                            trace!("ShiftInt (L): {}n << {}n = {}n", l, r, result);
+                            node.reduce(Raw(BigInt(result)));
+                        } else {
+                            warn!("ShiftInt (L): shift too large: {}n", r);
+                        }
+                    } else {
+                        error!(
+                            "ShiftInt (L): tried to shift left BigInt and non-BigInt: {}n << {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "<<", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        if let Some(shift) = r.to_u32() {
+                            let result = l.shl(shift);
+                            trace!("ShiftInt (L): {}n << {}n = {}n", l, r, result);
+                            node.reduce(Raw(BigInt(result)));
+                        } else {
+                            warn!("ShiftInt (L): shift too large: {}n", r);
+                        }
+                    } else {
+                        error!(
+                            "ShiftInt (L): tried to shift left BigInt and non-BigInt: {}n << {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
                 }
                 (Some(Raw(Num(l))), ">>>", Some(Raw(Num(r)))) => {
                     // f64 -> u32 then u32 -> i32 is required to avoid saturating the cast
