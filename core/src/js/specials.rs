@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
-use crate::js::Value::Bool;
+use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
@@ -505,6 +505,7 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
             Num(_) => "Number".to_string(),
             Str(_) => "String".to_string(),
             Bool(_) => "Boolean".to_string(),
+            BigInt(_) => "BigInt".to_string(),
         },
         Array(_) => "Array".to_string(),
         Constructor(inner) => constructor_to_name(inner),

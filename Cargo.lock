@@ -637,6 +637,7 @@ dependencies = [
  "colored",
  "log",
  "num",
+ "num-bigint",
  "regex",
  "tree-sitter",
  "tree-sitter-javascript",

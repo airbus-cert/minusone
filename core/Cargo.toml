@@ -27,3 +27,4 @@ tree-sitter-traversal2 = "0.2.1"
 log = { workspace = true }
 regex = "1.11.1"
 colored = "3"
+num-bigint = "0.4.6"
