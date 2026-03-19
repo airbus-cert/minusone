@@ -230,8 +230,10 @@ impl<'a> RuleMut<'a> for NegInt {
                     trace!("NegInt (L): +{} = {}", n, n);
                     node.reduce(Raw(Num(*n)));
                 } else if let Some(Raw(BigInt(n))) = operand.data() {
-                    trace!("NegInt (L): +{}n = {}n", n, n);
-                    node.reduce(Raw(BigInt(n.clone())));
+                    error!(
+                        "NegInt (L): unary + on BigInt is not allowed in JS, but found +{}n. This should crash the JS engine",
+                        n
+                    );
                 }
             }
         }
