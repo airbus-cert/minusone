@@ -1,3 +1,4 @@
+#![feature(str_from_utf16_endian)]
 extern crate clap;
 extern crate clap_help;
 extern crate minusone;
@@ -11,7 +12,7 @@ use base64::{Engine as _, alphabet};
 use clap::{CommandFactory, Parser, ValueEnum};
 use clap_help::Printer;
 use cli::{Cli, INTRO, Language};
-use log::{LevelFilter, error};
+use log::{LevelFilter, error, info};
 use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
@@ -115,6 +116,28 @@ fn main() {
             process::exit(1);
         })
     } else if let Some(input) = cli.input {
+        let use_utf_8 = match lang {
+            Language::Powershell => {
+                if cli.utf {
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => {
+                if cli.utf {
+                    false
+                } else {
+                    true
+                }
+            }
+        };
+
+        info!(
+            "Decoding base64 input using UTF-{} encoding",
+            if use_utf_8 { "8" } else { "16LE" }
+        );
+
         FLEXIBLE_B64
             .decode(input.as_bytes())
             .map_err(|e| {
@@ -122,10 +145,17 @@ fn main() {
                 process::exit(1);
             })
             .and_then(|bytes| {
-                String::from_utf8(bytes).map_err(|e| {
-                    error!("Decoded base64 is not valid UTF-8: {}", e);
-                    process::exit(1);
-                })
+                if use_utf_8 {
+                    String::from_utf8(bytes).map_err(|e| {
+                        error!("Decoded base64 is not valid UTF-8: {}", e);
+                        process::exit(1);
+                    })
+                } else {
+                    String::from_utf16le(bytes.as_slice()).map_err(|e| {
+                        error!("Decoded base64 is not valid UTF-16: {}", e);
+                        process::exit(1);
+                    })
+                }
             })
             .unwrap()
     } else {

@@ -83,6 +83,10 @@ pub struct Cli {
     /// Only output the deobfuscated script
     #[arg(long, short)]
     pub quiet: bool,
+
+    /// Toggle Base64 decoding utf8 <--> utf16le
+    #[arg(long)]
+    pub utf: bool,
 }
 
 impl Display for Language {
