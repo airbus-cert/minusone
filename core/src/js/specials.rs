@@ -515,6 +515,7 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
             );
             "null".to_string()
         }
+        Object(_) => "Object".to_string(),
     }
 }
 

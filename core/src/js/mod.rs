@@ -31,7 +31,8 @@ use crate::js::Value::*;
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use log::error;
+use log::{error, warn};
+use std::collections::HashMap;
 use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
@@ -73,6 +74,7 @@ pub enum JavaScript {
     At, // This is a special value that represents ƒ -> at() { [native code] }
     Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
     Bytes(Vec<u8>),
+    Object(HashMap<String, JavaScript>), // This is a special value that represents an object with known properties (e.g. { length: 1 })
 }
 
 impl PartialEq<JavaScript> for &JavaScript {
@@ -123,12 +125,21 @@ impl Display for JavaScript {
                         );
                         "null".to_string()
                     }
+                    Object(_) => "Object()".to_string(),
                 };
 
                 write!(f, "{}['constructor']", value)
             }
             Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
             Null => write!(f, "null"),
+            Object(obj) => {
+                let obj_str = obj
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "{{{}}}", obj_str)
+            }
         }
     }
 }
@@ -164,6 +175,10 @@ impl JavaScript {
                 }
 
                 false
+            }
+            Object(_) => {
+                warn!("Objects don't really have a boolean value in Js, falling back to true");
+                true
             }
         }
     }
