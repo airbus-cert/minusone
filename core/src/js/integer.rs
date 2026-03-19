@@ -87,7 +87,7 @@ impl<'a> RuleMut<'a> for ParseInt {
                                 }
                             }
                         }
-                    } else if func.text()? == "parseInt" {
+                    } else if func.text()? == "parseInt" || func.text()? == "Number" {
                         if let Some(args) = view.child(1) {
                             if let Some(value) = args.child(1) {
                                 let radix = args.child(2);
@@ -95,6 +95,7 @@ impl<'a> RuleMut<'a> for ParseInt {
                                 let result = Self::js_parse_int(
                                     value.data().cloned().unwrap_or(Undefined),
                                     radix.clone(),
+                                    func.text()? == "parseInt"
                                 );
 
                                 trace!(
@@ -212,7 +213,7 @@ impl ParseInt {
         NaN
     }
 
-    fn js_parse_int(value: JavaScript, radix: Option<JavaScript>) -> JavaScript {
+    fn js_parse_int(value: JavaScript, radix: Option<JavaScript>, safe: bool) -> JavaScript {
         let input_string = value.to_string();
 
         let s = match value {
@@ -229,6 +230,10 @@ impl ParseInt {
 
         let s = s.trim_start_matches(|c: char| c.is_whitespace());
         let s = s.trim_end_matches(|c: char| c.is_whitespace());
+
+        if s.is_empty() && !safe {
+            return Raw(Num(0.0));
+        }
 
         let (sign, s): (f64, &str) = match s.chars().next() {
             Some('-') => (-1.0, &s[1..]),
@@ -252,10 +257,16 @@ impl ParseInt {
                 s
             };
 
+        let before = s;
+
         let z: String = s
             .chars()
             .take_while(|&c| digit_value(c, radix_u32).is_some())
             .collect();
+
+        if !safe && before != z {
+            return NaN;
+        }
 
         if z.is_empty() {
             return NaN;
@@ -1056,6 +1067,11 @@ mod tests_js_integer {
             deobfuscate("var x = parseInt('    3     ', 10);"),
             "var x = 3;"
         );
+        assert_eq!(deobfuscate("var x = Number('10');"), "var x = 10;");
+        assert_eq!(deobfuscate("var x = Number('10*3');"), "var x = NaN;");
+        assert_eq!(deobfuscate("var x = Number('0x1f');"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = Number('');"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = parseInt('');"), "var x = NaN;");
     }
 
     #[test]
