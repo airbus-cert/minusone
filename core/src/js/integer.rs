@@ -913,11 +913,13 @@ mod tests_js_integer {
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
+    use crate::js::string::ParseString;
 
     fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
+            ParseString::default(),
             NegInt::default(),
             SubAddInt::default(),
             MultInt::default(),
@@ -949,6 +951,8 @@ mod tests_js_integer {
         assert_eq!(deobfuscate("var x = 0x1Fn;"), "var x = 31n;");
         assert_eq!(deobfuscate("var x = 0o37n;"), "var x = 31n;");
         assert_eq!(deobfuscate("var x = 0b11111n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0b1_1111n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = BigInt('0x1f');"), "var x = 31n;");
     }
 
     #[test]
@@ -968,11 +972,29 @@ mod tests_js_integer {
     }
 
     #[test]
+    fn test_add_sub_bigint() {
+        assert_eq!(deobfuscate("var x = 1n + 1n;"), "var x = 2n;");
+        assert_eq!(deobfuscate("var x = 5n - 2n;"), "var x = 3n;");
+        assert_eq!(
+            deobfuscate("var x = 1n - 25n + 47n - 6n - 2n -99n + 120n + 33n;"),
+            "var x = 69n;"
+        );
+    }
+
+    #[test]
     fn test_mult_div_mod_int() {
         assert_eq!(deobfuscate("var x = 3 * 4;"), "var x = 12;");
         assert_eq!(deobfuscate("var x = 10 / 2;"), "var x = 5;");
         assert_eq!(deobfuscate("var x = 10 % 3;"), "var x = 1;");
         assert_eq!(deobfuscate("var x = 10 * 2 / 5 % 2;"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_mult_div_mod_bigint() {
+        assert_eq!(deobfuscate("var x = 3n * 4n;"), "var x = 12n;");
+        assert_eq!(deobfuscate("var x = 10n / 2n;"), "var x = 5n;");
+        assert_eq!(deobfuscate("var x = 10n % 3n;"), "var x = 1n;");
+        assert_eq!(deobfuscate("var x = 10n * 2n / 5n % 2n;"), "var x = 0n;");
     }
 
     #[test]
@@ -984,6 +1006,19 @@ mod tests_js_integer {
     #[test]
     fn test_pow_int() {
         assert_eq!(deobfuscate("var x = 50 ** 8;"), "var x = 39062500000000;");
+    }
+
+    #[test]
+    fn test_pow_bigint() {
+        let mut excepted_value = String::from("1");
+        for _ in 0..1000 {
+            excepted_value = excepted_value + "0";
+        }
+
+        assert_eq!(
+            deobfuscate("var x = 10n ** 1000n;"),
+            format!("var x = {}n;", excepted_value)
+        );
     }
 
     #[test]
@@ -999,6 +1034,15 @@ mod tests_js_integer {
     }
 
     #[test]
+    fn test_shift_bigint() {
+        assert_eq!(deobfuscate("var x = 1n << 3n;"), "var x = 8n;");
+        assert_eq!(deobfuscate("var x = 16n >> 2n;"), "var x = 4n;");
+        assert_eq!(deobfuscate("var x = 1n << 3n >> 2n;"), "var x = 2n;");
+        assert_eq!(deobfuscate("var x = 2n >> 31n;"), "var x = 0n;");
+        assert_eq!(deobfuscate("let x = -16n >> 2n;"), "let x = -4n;");
+    }
+
+    #[test]
     fn test_bitwise_int() {
         assert_eq!(deobfuscate("var x = 0x4 & 0x8;"), "var x = 0;");
         assert_eq!(deobfuscate("var x = 0x4 | 0x8;"), "var x = 12;");
@@ -1007,6 +1051,18 @@ mod tests_js_integer {
         assert_eq!(
             deobfuscate("var x = 0x15487596 ^ 0x5216598 | 0x36598745 & ~0x21215487;"),
             "var x = 377066318;",
+        );
+    }
+
+    #[test]
+    fn test_bitwise_bigint() {
+        assert_eq!(deobfuscate("var x = 0x4n & 0x8n;"), "var x = 0n;");
+        assert_eq!(deobfuscate("var x = 0x4n | 0x8n;"), "var x = 12n;");
+        assert_eq!(deobfuscate("var x = 0x4n ^ 0x8n;"), "var x = 12n;");
+        assert_eq!(deobfuscate("var x = ~0x4n;"), "var x = -5n;");
+        assert_eq!(
+            deobfuscate("var x = 0x15487596n ^ 0x5216598n | 0x36598745n & ~0x21215487n;"),
+            "var x = 377066318n;",
         );
     }
 }
