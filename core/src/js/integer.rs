@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{NaN, Raw};
-use crate::js::Value::{BigInt, Num};
+use crate::js::Value::{BigInt, Num, Str};
 use std::ops::{Shl, Shr};
 
 use crate::rule::RuleMut;
@@ -39,13 +39,26 @@ impl<'a> RuleMut<'a> for ParseInt {
         Ok(())
     }
 
+    /*(call_expression inferred_type: None | childs : 2 | text: Ok("BigInt(\"1\")")
+            (identifier inferred_type: None | childs : 0 | text: Ok("BigInt"))
+            (arguments inferred_type: None | childs : 3 | text: Ok("(\"1\")")
+              (( inferred_type: None | childs : 0 | text: Ok("("))
+              (string inferred_type: Some(Raw(Str("1"))) | childs : 3 | text: Ok("\"1\"")
+                (" inferred_type: None | childs : 0 | text: Ok("\""))
+                (string_fragment inferred_type: None | childs : 0 | text: Ok("1"))
+                (" inferred_type: None | childs : 0 | text: Ok("\"")))
+             () inferred_type: None | childs : 0 | text: Ok(")"))))))
+    */
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "number" && view.kind() != "identifier" {
+        if view.kind() != "number"
+            && view.kind() != "identifier"
+            && view.kind() != "call_expression"
+        {
             return Ok(());
         }
         let token = view.text()?;
@@ -58,6 +71,33 @@ impl<'a> RuleMut<'a> for ParseInt {
                 if view.text()? == "Infinity" {
                     trace!("ParseInt (L): Infinity");
                     node.reduce(Raw(Num(f64::INFINITY)));
+                }
+            }
+            "call_expression" => {
+                if let Some(func) = view.child(0) {
+                    if func.text()? == "BigInt" {
+                        if let Some(args) = view.child(1) {
+                            if let Some(arg) = args.child(1) {
+                                if let Some(Raw(Str(s))) = arg.data() {
+                                    let negate;
+                                    let s = if s.starts_with("-") {
+                                        negate = true;
+                                        &s[1..]
+                                    } else {
+                                        negate = false;
+                                        s
+                                    };
+                                    let bigint = Self::bigint_from_str(s, negate);
+                                    trace!("ParseInt (L): BigInt {:?}", bigint);
+                                    node.reduce(bigint);
+                                } else if let Some(Raw(Num(n))) = arg.data() {
+                                    let bigint = num_bigint::BigInt::from(*n as u64);
+                                    trace!("ParseInt (L): BigInt from number {} => {}n", n, bigint);
+                                    node.reduce(Raw(BigInt(bigint)));
+                                }
+                            }
+                        }
+                    }
                 }
             }
             _ => {}
