@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{NaN, Raw};
-use crate::js::Value::{BigInt, Num, Str};
+use crate::js::JavaScript::*;
+use crate::js::Value::*;
 use std::ops::{Shl, Shr};
 
 use crate::rule::RuleMut;
@@ -39,16 +39,6 @@ impl<'a> RuleMut<'a> for ParseInt {
         Ok(())
     }
 
-    /*(call_expression inferred_type: None | childs : 2 | text: Ok("BigInt(\"1\")")
-            (identifier inferred_type: None | childs : 0 | text: Ok("BigInt"))
-            (arguments inferred_type: None | childs : 3 | text: Ok("(\"1\")")
-              (( inferred_type: None | childs : 0 | text: Ok("("))
-              (string inferred_type: Some(Raw(Str("1"))) | childs : 3 | text: Ok("\"1\"")
-                (" inferred_type: None | childs : 0 | text: Ok("\""))
-                (string_fragment inferred_type: None | childs : 0 | text: Ok("1"))
-                (" inferred_type: None | childs : 0 | text: Ok("\"")))
-             () inferred_type: None | childs : 0 | text: Ok(")"))))))
-    */
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
@@ -95,6 +85,25 @@ impl<'a> RuleMut<'a> for ParseInt {
                                     trace!("ParseInt (L): BigInt from number {} => {}n", n, bigint);
                                     node.reduce(Raw(BigInt(bigint)));
                                 }
+                            }
+                        }
+                    } else if func.text()? == "parseInt" {
+                        if let Some(args) = view.child(1) {
+                            if let Some(value) = args.child(1) {
+                                let radix = args.child(2);
+                                let radix = radix.and_then(|r| r.data().cloned());
+                                let result = Self::js_parse_int(
+                                    value.data().cloned().unwrap_or(Undefined),
+                                    radix.clone(),
+                                );
+
+                                trace!(
+                                    "ParseInt (L): parseInt({:?}, {:?}) = {:?}",
+                                    value.data(),
+                                    radix,
+                                    result
+                                );
+                                node.reduce(result);
                             }
                         }
                     }
@@ -201,6 +210,104 @@ impl ParseInt {
             input
         );
         NaN
+    }
+
+    fn js_parse_int(value: JavaScript, radix: Option<JavaScript>) -> JavaScript {
+        let input_string = value.to_string();
+
+        let s = match value {
+            Raw(Str(s)) => {
+                let s = s.clone();
+                s.strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .or_else(|| s.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                    .unwrap_or(&s)
+                    .to_string()
+            }
+            _ => input_string.to_string(),
+        };
+
+        let s = s.trim_start_matches(|c: char| c.is_whitespace());
+        let s = s.trim_end_matches(|c: char| c.is_whitespace());
+
+        let (sign, s): (f64, &str) = match s.chars().next() {
+            Some('-') => (-1.0, &s[1..]),
+            Some('+') => (1.0, &s[1..]),
+            _ => (1.0, &*s),
+        };
+
+        let r_raw = radix.as_ref().map(to_int32).unwrap_or(0);
+
+        let (mut radix_u32, strip_prefix): (u32, bool) = match r_raw {
+            0 => (10, true),
+            2..=36 => (r_raw as u32, r_raw == 16),
+            _ => return NaN,
+        };
+
+        let s: &str =
+            if strip_prefix && s.len() >= 2 && (s.starts_with("0x") || s.starts_with("0X")) {
+                radix_u32 = 16;
+                &s[2..]
+            } else {
+                s
+            };
+
+        let z: String = s
+            .chars()
+            .take_while(|&c| digit_value(c, radix_u32).is_some())
+            .collect();
+
+        if z.is_empty() {
+            return NaN;
+        }
+
+        let math_int: f64 = z.chars().fold(0.0f64, |acc, c| {
+            acc * radix_u32 as f64 + digit_value(c, radix_u32).unwrap() as f64
+        });
+
+        Raw(Num(sign * math_int))
+    }
+}
+
+fn to_int32(value: &JavaScript) -> i32 {
+    let n = js_to_f64(value);
+    if !n.is_finite() || n == 0.0 {
+        return 0;
+    }
+    n.trunc() as i64 as i32
+}
+
+fn digit_value(c: char, radix: u32) -> Option<u32> {
+    let d = c.to_digit(36)?;
+    if d < radix { Some(d) } else { None }
+}
+
+fn js_to_f64(value: &JavaScript) -> f64 {
+    match value {
+        Raw(Num(n)) => *n,
+        Raw(Bool(b)) => {
+            if *b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        Raw(Str(s)) => {
+            let t = s.trim();
+            if t.is_empty() {
+                0.0
+            } else {
+                t.parse::<f64>().unwrap_or(f64::NAN)
+            }
+        }
+        Undefined => f64::NAN,
+        NaN => f64::NAN,
+        Array(items) => match items.as_slice() {
+            [] => 0.0,
+            [one] => js_to_f64(one),
+            _ => f64::NAN,
+        },
+        _ => f64::NAN,
     }
 }
 
@@ -943,6 +1050,12 @@ mod tests_js_integer {
         assert_eq!(deobfuscate("var x = 017;"), "var x = 15;");
         assert_eq!(deobfuscate("var x = 0017;"), "var x = 15;");
         assert_eq!(deobfuscate("var x = 019;"), "var x = 19;");
+        assert_eq!(deobfuscate("var x = parseInt('10');"), "var x = 10;");
+        assert_eq!(deobfuscate("var x = parseInt('10*3', 10);"), "var x = 10;");
+        assert_eq!(
+            deobfuscate("var x = parseInt('    3     ', 10);"),
+            "var x = 3;"
+        );
     }
 
     #[test]
