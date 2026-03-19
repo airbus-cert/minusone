@@ -8,6 +8,7 @@ pub mod fncall;
 pub mod forward;
 pub mod integer;
 pub mod linter;
+pub mod object;
 pub mod specials;
 pub mod strategy;
 pub mod string;
@@ -21,6 +22,7 @@ use self::fncall::*;
 use self::forward::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::object::*;
 use self::specials::*;
 use self::string::*;
 use self::var::*;
@@ -216,6 +218,7 @@ impl_javascript_ruleset!(
     ParseString,            // Parse string literals (single and double quotes)
     ParseArray,             // Parse arrays
     ParseSpecials,          // Parse specials (undefined, NaN, At, ...)
+    ParseObject,            // Parse objects
     NegInt,                 // Infer unary - operations on integers
     SubAddInt,              // Infer + and - operations on integers
     MultInt,                // Infer *, / and % operations on integers
@@ -239,6 +242,7 @@ impl_javascript_ruleset!(
     ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
     ToString,         // Infer toString calls
     B64,              // Infer atob & btoa calls and reduce them to string literals
+    ObjectField,      // Track objects field assignments and access
     Var,              // Track variable assignments and propagate known values to usage sites
     FnCall,           // Resolve predictable function calls to their return values
     StrictEq,         // Infer strict equality === and !==

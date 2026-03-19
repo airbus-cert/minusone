@@ -88,16 +88,19 @@ impl Var {
     }
 
     fn is_write_target(node: &Node<JavaScript>) -> bool {
-        if let Some(parent) = node.parent() {
+        let mut current = node.parent();
+        while let Some(parent) = current {
             match parent.kind() {
                 "variable_declarator" => {
                     if let Some(name_child) = parent.child(0) {
-                        return name_child.id() == node.id();
+                        return node.start_abs() >= name_child.start_abs()
+                            && node.end_abs() <= name_child.end_abs();
                     }
                 }
                 "assignment_expression" | "augmented_assignment_expression" => {
                     if let Some(left) = parent.child(0) {
-                        return left.id() == node.id();
+                        return node.start_abs() >= left.start_abs()
+                            && node.end_abs() <= left.end_abs();
                     }
                 }
                 "update_expression" => {
@@ -105,7 +108,10 @@ impl Var {
                 }
                 _ => {}
             }
+
+            current = parent.parent();
         }
+
         false
     }
 }
@@ -262,6 +268,10 @@ impl<'a> RuleMut<'a> for Var {
             // read
             "identifier" => {
                 if !Var::is_write_target(&view) {
+                    if matches!(view.data(), Some(JavaScript::Object(_))) {
+                        return Ok(());
+                    }
+
                     let var_name = view.text()?.to_string();
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);

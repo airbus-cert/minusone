@@ -1,0 +1,445 @@
+use crate::error::MinusOneResult;
+use crate::js::JavaScript;
+use crate::js::JavaScript::*;
+use crate::rule::RuleMut;
+use crate::scope::ScopeManager;
+use crate::tree::{ControlFlow, Node, NodeMut};
+use log::{trace, warn};
+use std::collections::HashMap;
+
+/// Parses JavaScript objects into `Object(_)`.
+#[derive(Default)]
+pub struct ParseObject;
+
+fn number_key(n: f64) -> String {
+    if n.fract() == 0.0 {
+        format!("{:.0}", n)
+    } else {
+        n.to_string()
+    }
+}
+
+fn key_from_node(node: &Node<JavaScript>) -> Option<String> {
+    if let Some(data) = node.data() {
+        return match data {
+            Raw(crate::js::Value::Str(s)) => Some(s.clone()),
+            Raw(crate::js::Value::Num(n)) => Some(number_key(*n)),
+            Raw(crate::js::Value::Bool(b)) => Some(b.to_string()),
+            _ => None,
+        };
+    }
+
+    match node.kind() {
+        "identifier" | "property_identifier" => node.text().ok().map(|s| s.to_string()),
+        _ => None,
+    }
+}
+
+impl<'a> RuleMut<'a> for ParseObject {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() == "object" {
+            let mut map = HashMap::new();
+            for child in view.iter() {
+                if child.kind() == "pair" {
+                    if let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
+                        if let (Some(key), Some(value)) = (key_from_node(&key), value.data()) {
+                            map.insert(key, value.clone());
+                        } else {
+                            warn!(
+                                "ParseObject: failed to parse key or value for pair: {:?}",
+                                child.text()
+                            );
+                        }
+                    }
+                }
+            }
+            trace!("ParseObject: map = {:?}", map);
+            node.reduce(Object(map));
+        }
+
+        Ok(())
+    }
+}
+
+/// ObjectField is a field manager for objects. It allows the engine to redefine fields and read them
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::forward::Forward;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::string::ParseString;
+/// use minusone::js::var::Var;
+/// use minusone::js::linter::Linter;
+/// use minusone::js::strategy::JavaScriptStrategy;
+///
+/// let mut tree = build_javascript_tree("var a = 'hello'; console.log(a);").unwrap();
+/// tree.apply_mut_with_strategy(
+///     &mut (ParseString::default(), Forward::default(), Var::default()),
+///     JavaScriptStrategy::default(),
+/// ).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var a = 'hello'; console.log('hello');");
+/// ```
+#[derive(Default)]
+pub struct ObjectField {
+    scope_manager: ScopeManager<JavaScript>,
+}
+
+struct MemberAccess {
+    base_name: Option<String>,
+    base_value: Option<JavaScript>,
+    keys: Vec<String>,
+}
+
+impl ObjectField {
+    fn is_write_target(node: &Node<JavaScript>) -> bool {
+        let mut current = node.parent();
+        while let Some(parent) = current {
+            match parent.kind() {
+                "variable_declarator" => {
+                    if let Some(name_child) = parent.child(0) {
+                        return node.start_abs() >= name_child.start_abs()
+                            && node.end_abs() <= name_child.end_abs();
+                    }
+                }
+                "assignment_expression" | "augmented_assignment_expression" => {
+                    if let Some(left) = parent.child(0) {
+                        return node.start_abs() >= left.start_abs()
+                            && node.end_abs() <= left.end_abs();
+                    }
+                }
+                "update_expression" => return true,
+                _ => {}
+            }
+
+            current = parent.parent();
+        }
+
+        false
+    }
+
+    fn extract_member_access(node: &Node<JavaScript>) -> Option<MemberAccess> {
+        match node.kind() {
+            "member_expression" => {
+                let object = node.named_child("object")?;
+                let property = node.named_child("property")?;
+                let mut access = Self::extract_member_access(&object)?;
+                access.keys.push(key_from_node(&property)?);
+                Some(access)
+            }
+            "subscript_expression" => {
+                let object = node.named_child("object")?;
+                let index = node.named_child("index")?;
+                let mut access = Self::extract_member_access(&object)?;
+                access.keys.push(key_from_node(&index)?);
+                Some(access)
+            }
+            "identifier" => Some(MemberAccess {
+                base_name: node.text().ok().map(|s| s.to_string()),
+                base_value: node.data().cloned(),
+                keys: vec![],
+            }),
+            _ => Some(MemberAccess {
+                base_name: None,
+                base_value: node.data().cloned(),
+                keys: vec![],
+            }),
+        }
+    }
+
+    fn get_by_path(root: &JavaScript, keys: &[String]) -> Option<JavaScript> {
+        if keys.is_empty() {
+            return Some(root.clone());
+        }
+
+        let mut current = root;
+        for key in keys {
+            current = match current {
+                Object(map) => map.get(key)?,
+                _ => return None,
+            };
+        }
+
+        Some(current.clone())
+    }
+
+    fn set_in_map(
+        map: &mut HashMap<String, JavaScript>,
+        keys: &[String],
+        value: JavaScript,
+    ) -> bool {
+        if keys.is_empty() {
+            return false;
+        }
+
+        if keys.len() == 1 {
+            map.insert(keys[0].clone(), value);
+            return true;
+        }
+
+        let head = keys[0].clone();
+        let entry = map.entry(head).or_insert_with(|| Object(HashMap::new()));
+        match entry {
+            Object(next) => Self::set_in_map(next, &keys[1..], value),
+            _ => false,
+        }
+    }
+
+    fn set_by_path(root: &mut JavaScript, keys: &[String], value: JavaScript) -> bool {
+        if keys.is_empty() {
+            return false;
+        }
+
+        match root {
+            Object(map) => Self::set_in_map(map, keys, value),
+            _ => false,
+        }
+    }
+}
+
+impl<'a> RuleMut<'a> for ObjectField {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        match view.kind() {
+            "program" => {
+                self.scope_manager.reset();
+            }
+            "function_declaration"
+            | "function"
+            | "arrow_function"
+            | "method_definition"
+            | "generator_function_declaration"
+            | "generator_function"
+            | "statement_block" => {
+                self.scope_manager.enter();
+            }
+            "}" => {
+                if let Some(parent) = view.parent()
+                    && parent.kind() == "statement_block"
+                {
+                    self.scope_manager.leave();
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        match view.kind() {
+            "variable_declarator" => {
+                if let Some(name_node) = view.named_child("name") {
+                    if name_node.kind() == "identifier" {
+                        let var_name = name_node.text()?.to_string();
+                        if let Some(value_node) = view.named_child("value") {
+                            if let Some(Object(_)) = value_node.data() {
+                                self.scope_manager.current_mut().assign(
+                                    &var_name,
+                                    value_node.data().unwrap().clone(),
+                                    node.is_ongoing_transaction(),
+                                );
+                            } else {
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&var_name, node.is_ongoing_transaction());
+                            }
+                        }
+                    }
+                }
+            }
+            "assignment_expression" => {
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
+                    if left.kind() == "identifier" {
+                        let var_name = left.text()?.to_string();
+                        if let Some(Object(_)) = right.data() {
+                            self.scope_manager.current_mut().assign(
+                                &var_name,
+                                right.data().unwrap().clone(),
+                                node.is_ongoing_transaction(),
+                            );
+                        } else {
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
+                        }
+                    } else if let Some(access) = Self::extract_member_access(&left) {
+                        if let Some(base_name) = access.base_name {
+                            if access.keys.is_empty() {
+                                return Ok(());
+                            }
+
+                            if let Some(data) = right.data() {
+                                if self.scope_manager.current().get_var(&base_name).is_none()
+                                    && matches!(access.base_value, Some(Object(_)))
+                                {
+                                    self.scope_manager.current_mut().assign(
+                                        &base_name,
+                                        access.base_value.unwrap(),
+                                        node.is_ongoing_transaction(),
+                                    );
+                                }
+
+                                if let Some(root) =
+                                    self.scope_manager.current_mut().get_var_mut(&base_name)
+                                {
+                                    let _ = Self::set_by_path(root, &access.keys, data.clone());
+                                }
+                            } else {
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&base_name, node.is_ongoing_transaction());
+                            }
+                        }
+                    }
+                }
+            }
+            "member_expression" | "subscript_expression" => {
+                if Self::is_write_target(&view) {
+                    return Ok(());
+                }
+
+                if let Some(access) = Self::extract_member_access(&view) {
+                    if access.keys.is_empty() {
+                        return Ok(());
+                    }
+
+                    let base = if let Some(base_name) = access.base_name {
+                        self.scope_manager
+                            .current()
+                            .get_var(&base_name)
+                            .cloned()
+                            .or(access.base_value)
+                    } else {
+                        access.base_value
+                    };
+
+                    if let Some(base) = base
+                        && let Some(value) = Self::get_by_path(&base, &access.keys)
+                    {
+                        trace!(
+                            "ObjectVar (L): Propagating object access {:?} => {:?}",
+                            view.text(),
+                            value
+                        );
+                        node.set(value);
+                    }
+                }
+            }
+            "identifier" => {
+                if !Self::is_write_target(&view) {
+                    let var_name = view.text()?.to_string();
+                    if let Some(value @ Object(_)) = self.scope_manager.current().get_var(&var_name)
+                    {
+                        node.set(value.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
+    use crate::js::integer::ParseInt;
+    use crate::js::linter::Linter;
+    use crate::js::object::{ObjectField, ParseObject};
+    use crate::js::strategy::JavaScriptStrategy;
+    use crate::js::string::ParseString;
+    use crate::js::var::Var;
+
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                ParseString::default(),
+                ParseObject::default(),
+                Forward::default(),
+                ObjectField::default(),
+                Var::default(),
+            ),
+            JavaScriptStrategy::default(),
+        )
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
+
+    #[test]
+    fn test_object_property_read() {
+        assert_eq!(
+            deobfuscate("var obj = { a: 'hello' }; console.log(obj.a);"),
+            "var obj = {a: 'hello'}; console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_object_property_write_then_read() {
+        assert_eq!(
+            deobfuscate("var obj = {}; obj.a = 'hello'; console.log(obj.a);"),
+            "var obj = {}; obj.a = 'hello'; console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_object_nested_write_then_read() {
+        assert_eq!(
+            deobfuscate("var obj = {}; obj.a = {}; obj.a.b = 1; console.log(obj.a.b);"),
+            "var obj = {}; obj.a = {}; obj.a.b = 1; console.log(1);"
+        );
+    }
+
+    #[test]
+    fn test_object_full_value_after_property_write() {
+        assert_eq!(
+            deobfuscate("var my_obj = {}; my_obj.a = 'a'; console.log(my_obj);"),
+            "var my_obj = {}; my_obj.a = 'a'; console.log({a: 'a'});"
+        );
+    }
+
+    #[test]
+    fn test_object_full_value_after_property_update() {
+        assert_eq!(
+            deobfuscate("var my_obj = { a: 'a' }; my_obj.a = 'b'; console.log(my_obj);"),
+            "var my_obj = {a: 'a'}; my_obj.a = 'b'; console.log({a: 'b'});"
+        );
+    }
+}
