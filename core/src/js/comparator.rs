@@ -91,6 +91,12 @@ impl<'a> RuleMut<'a> for StrictEq {
                 | (Some(Raw(Bool(_))), Some(Raw(Num(_))))
                 | (Some(Raw(Str(_))), Some(Raw(Bool(_))))
                 | (Some(Raw(Bool(_))), Some(Raw(Str(_))))
+                | (Some(Raw(BigInt(_))), Some(Raw(Num(_))))
+                | (Some(Raw(Num(_))), Some(Raw(BigInt(_))))
+                | (Some(Raw(BigInt(_))), Some(Raw(Str(_))))
+                | (Some(Raw(Str(_))), Some(Raw(BigInt(_))))
+                | (Some(Raw(BigInt(_))), Some(Raw(Bool(_))))
+                | (Some(Raw(Bool(_))), Some(Raw(BigInt(_))))
                 | (Some(Raw(_)), Some(Undefined))
                 | (Some(Undefined), Some(Raw(_))) => {
                     trace!("StrictEq (L): cross-type {} = false", op_str);
