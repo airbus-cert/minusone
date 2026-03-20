@@ -1,6 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
+use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -228,6 +229,7 @@ impl<'a> RuleMut<'a> for ObjectField {
         match view.kind() {
             "program" => {
                 self.scope_manager.reset();
+                inject_js_globals(self.scope_manager.current_mut(), false);
             }
             "function_declaration"
             | "function"
@@ -440,6 +442,19 @@ mod tests {
         assert_eq!(
             deobfuscate("var my_obj = { a: 'a' }; my_obj.a = 'b'; console.log(my_obj);"),
             "var my_obj = {a: 'a'}; my_obj.a = 'b'; console.log({a: 'b'});"
+        );
+    }
+
+    #[test]
+    fn test_number_builtin_field_access() {
+        assert_eq!(deobfuscate("console.log(Number.NaN);"), "console.log(NaN);");
+    }
+
+    #[test]
+    fn test_number_builtin_field_access_in_function_scope() {
+        assert_eq!(
+            deobfuscate("function f(){ console.log(Number.NaN); }"),
+            "function f(){ console.log(NaN); }"
         );
     }
 }

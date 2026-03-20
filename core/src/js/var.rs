@@ -1,5 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
@@ -128,6 +129,7 @@ impl<'a> RuleMut<'a> for Var {
         match view.kind() {
             "program" => {
                 self.scope_manager.reset();
+                inject_js_globals(self.scope_manager.current_mut(), false);
             }
             // fn scopes: entering -> new scope
             "function_declaration"
