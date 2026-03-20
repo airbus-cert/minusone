@@ -1,4 +1,4 @@
-use crate::cli::{Cli, Language};
+use crate::cli::{Cli, DebugLevel, Language};
 use minusone::debug::DebugView;
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
@@ -28,7 +28,7 @@ where
         engine.deobfuscate()?;
     }
 
-    if cli.debug {
+    if cli.debug_level == DebugLevel::Debug || cli.debug_level == DebugLevel::Trace {
         let debug_view = DebugView::new(
             cli.debug_indent,
             !cli.debug_no_text,

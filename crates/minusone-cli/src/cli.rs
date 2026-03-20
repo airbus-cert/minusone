@@ -36,9 +36,9 @@ pub struct Cli {
     #[arg(long, short)]
     pub path: Option<String>,
 
-    /// Debug mode: print the tree-sitter tree with inferred value on each node
-    #[arg(long, short)]
-    pub debug: bool,
+    /// Script in Base64
+    #[arg(long, short, value_name = "BASE64")]
+    pub input: Option<String>,
 
     /// Debug indent size for the debug mode
     #[arg(long, default_value_t = 2, value_name = "INT")]
@@ -76,9 +76,17 @@ pub struct Cli {
     #[arg(long, short)]
     pub time: bool,
 
-    /// Log level for the deobfuscation process
-    #[arg(long, value_enum, default_value_t = LogLevel::Info, alias = "log")]
-    pub log_level: LogLevel,
+    /// Debug level for the deobfuscation process
+    #[arg(long, short, value_enum, default_value_t = DebugLevel::Info, alias = "log")]
+    pub debug_level: DebugLevel,
+
+    /// Only output the deobfuscated script
+    #[arg(long, short)]
+    pub quiet: bool,
+
+    /// Toggle Base64 decoding utf8 <--> utf16le
+    #[arg(long)]
+    pub utf: bool,
 }
 
 impl Display for Language {
@@ -94,8 +102,8 @@ impl Display for Language {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum LogLevel {
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq)]
+pub enum DebugLevel {
     Off,
     Error,
     Warn,
@@ -104,15 +112,15 @@ pub enum LogLevel {
     Trace,
 }
 
-impl From<LogLevel> for log::LevelFilter {
-    fn from(level: LogLevel) -> Self {
+impl From<DebugLevel> for log::LevelFilter {
+    fn from(level: DebugLevel) -> Self {
         match level {
-            LogLevel::Off => log::LevelFilter::Off,
-            LogLevel::Error => log::LevelFilter::Error,
-            LogLevel::Warn => log::LevelFilter::Warn,
-            LogLevel::Info => log::LevelFilter::Info,
-            LogLevel::Debug => log::LevelFilter::Debug,
-            LogLevel::Trace => log::LevelFilter::Trace,
+            DebugLevel::Off => log::LevelFilter::Off,
+            DebugLevel::Error => log::LevelFilter::Error,
+            DebugLevel::Warn => log::LevelFilter::Warn,
+            DebugLevel::Info => log::LevelFilter::Info,
+            DebugLevel::Debug => log::LevelFilter::Debug,
+            DebugLevel::Trace => log::LevelFilter::Trace,
         }
     }
 }
@@ -150,6 +158,10 @@ pub static EXAMPLES: &[Example] = &[
     Example {
         title: "Deobfuscate with the maximum debug information",
         cmd: "minusone -l powershell --path obf_scr.ps1 --debug --log-level trace",
+    },
+    Example {
+        title: "Deobfuscate from b64 input",
+        cmd: "minusone -l javascript --input Y29uc29sZS5sb2coMDE3KQ",
     },
 ];
 

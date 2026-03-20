@@ -5,7 +5,10 @@ use crate::js::Value::*;
 use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::trace;
+use log::{trace, warn};
+use num::FromPrimitive;
+use std::cmp::Ordering;
+use std::cmp::Ordering::*;
 
 /// Infers `===` (strict equality) and `!==` (strict inequality).
 /// No type coercion is applied: distinct types always yield `false`/`true`.
@@ -44,8 +47,6 @@ impl<'a> RuleMut<'a> for StrictEq {
         node: &mut NodeMut<'a, Self::Language>,
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
-        use JavaScript::{NaN, Undefined};
-
         let view = node.view();
         if view.kind() != "binary_expression" {
             return Ok(());
@@ -60,6 +61,10 @@ impl<'a> RuleMut<'a> for StrictEq {
             let eq: Option<bool> = match (left.data(), right.data()) {
                 (Some(Raw(Num(l))), Some(Raw(Num(r)))) => {
                     trace!("StrictEq (L): {} {} {} = {}", l, op_str, r, l == r);
+                    Some(l == r)
+                }
+                (Some(Raw(BigInt(l))), Some(Raw(BigInt(r)))) => {
+                    trace!("StrictEq (L): {}n {} {}n = {}", l, op_str, r, l == r);
                     Some(l == r)
                 }
                 (Some(Raw(Str(l))), Some(Raw(Str(r)))) => {
@@ -86,6 +91,12 @@ impl<'a> RuleMut<'a> for StrictEq {
                 | (Some(Raw(Bool(_))), Some(Raw(Num(_))))
                 | (Some(Raw(Str(_))), Some(Raw(Bool(_))))
                 | (Some(Raw(Bool(_))), Some(Raw(Str(_))))
+                | (Some(Raw(BigInt(_))), Some(Raw(Num(_))))
+                | (Some(Raw(Num(_))), Some(Raw(BigInt(_))))
+                | (Some(Raw(BigInt(_))), Some(Raw(Str(_))))
+                | (Some(Raw(Str(_))), Some(Raw(BigInt(_))))
+                | (Some(Raw(BigInt(_))), Some(Raw(Bool(_))))
+                | (Some(Raw(Bool(_))), Some(Raw(BigInt(_))))
                 | (Some(Raw(_)), Some(Undefined))
                 | (Some(Undefined), Some(Raw(_))) => {
                     trace!("StrictEq (L): cross-type {} = false", op_str);
@@ -150,8 +161,6 @@ impl<'a> RuleMut<'a> for LooseEq {
         node: &mut NodeMut<'a, Self::Language>,
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
-        use JavaScript::{NaN, Undefined};
-
         let view = node.view();
         if view.kind() != "binary_expression" {
             return Ok(());
@@ -163,210 +172,8 @@ impl<'a> RuleMut<'a> for LooseEq {
                 return Ok(());
             }
 
-            let eq: Option<bool> = match (left.data(), right.data()) {
-                (Some(Raw(Num(l))), Some(Raw(Num(r)))) => {
-                    trace!("LooseEq (L): {} {} {} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(Str(l))), Some(Raw(Str(r)))) => {
-                    trace!("LooseEq (L): {:?} {} {:?} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(Bool(l))), Some(Raw(Bool(r)))) => {
-                    trace!("LooseEq (L): {} {} {} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Undefined), Some(Undefined)) => {
-                    trace!("LooseEq (L): undefined {} undefined = true", op_str);
-                    Some(true)
-                }
-                // NaN == anything -> false
-                (Some(NaN), _) | (_, Some(NaN)) => {
-                    trace!("LooseEq (L): NaN {} _ = false", op_str);
-                    Some(false)
-                }
-                // undefined == non-null primitive -> false
-                (Some(Undefined), Some(Raw(_))) | (Some(Raw(_)), Some(Undefined)) => {
-                    trace!("LooseEq (L): undefined {} primitive = false", op_str);
-                    Some(false)
-                }
-
-                // Bool == Num
-                (Some(Raw(Bool(b))), Some(Raw(Num(n)))) => {
-                    let bnum = *b as u8 as f64;
-                    trace!(
-                        "LooseEq (L): {} (->{}) {} {} = {}",
-                        b,
-                        bnum,
-                        op_str,
-                        n,
-                        bnum == *n
-                    );
-                    Some(bnum == *n)
-                }
-                (Some(Raw(Num(n))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as u8 as f64;
-                    trace!(
-                        "LooseEq (L): {} {} {} (->{}) = {}",
-                        n,
-                        op_str,
-                        b,
-                        bnum,
-                        *n == bnum
-                    );
-                    Some(*n == bnum)
-                }
-
-                // Str == Num
-                (Some(Raw(Str(s))), Some(Raw(Num(n)))) => match js_str_to_num(s) {
-                    Some(snum) => {
-                        trace!(
-                            "LooseEq (L): {:?} (->{}) {} {} = {}",
-                            s,
-                            snum,
-                            op_str,
-                            n,
-                            snum == *n
-                        );
-                        Some(snum == *n)
-                    }
-                    None => {
-                        trace!("LooseEq (L): {:?} (->NaN) {} {} = false", s, op_str, n);
-                        Some(false)
-                    }
-                },
-                (Some(Raw(Num(n))), Some(Raw(Str(s)))) => match js_str_to_num(s) {
-                    Some(snum) => {
-                        trace!(
-                            "LooseEq (L): {} {} {:?} (->{}) = {}",
-                            n,
-                            op_str,
-                            s,
-                            snum,
-                            *n == snum
-                        );
-                        Some(*n == snum)
-                    }
-                    None => {
-                        trace!("LooseEq (L): {} {} {:?} (->NaN) = false", n, op_str, s);
-                        Some(false)
-                    }
-                },
-
-                // bool == Str: bool -> num, str -> num
-                (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
-                    let bnum = *b as u8 as f64;
-                    match js_str_to_num(s) {
-                        Some(snum) => {
-                            trace!(
-                                "LooseEq (L): {} (->{}) {} {:?} (->{}) = {}",
-                                b,
-                                bnum,
-                                op_str,
-                                s,
-                                snum,
-                                bnum == snum
-                            );
-                            Some(bnum == snum)
-                        }
-                        None => {
-                            trace!(
-                                "LooseEq (L): {} (->{}) {} {:?} (->NaN) = false",
-                                b, bnum, op_str, s
-                            );
-                            Some(false)
-                        }
-                    }
-                }
-                (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as u8 as f64;
-                    match js_str_to_num(s) {
-                        Some(snum) => {
-                            trace!(
-                                "LooseEq (L): {:?} (->{}) {} {} (->{}) = {}",
-                                s,
-                                snum,
-                                op_str,
-                                b,
-                                bnum,
-                                snum == bnum
-                            );
-                            Some(snum == bnum)
-                        }
-                        None => {
-                            trace!(
-                                "LooseEq (L): {:?} (->NaN) {} {} (->{}) = false",
-                                s, op_str, b, bnum
-                            );
-                            Some(false)
-                        }
-                    }
-                }
-
-                // Array == Str: flatten array then compare
-                (Some(Array(arr)), Some(Raw(Str(s)))) => {
-                    let flat = flatten_array(arr);
-                    trace!(
-                        "LooseEq (L): [..](->{:?}) {} {:?} = {}",
-                        flat,
-                        op_str,
-                        s,
-                        flat == *s
-                    );
-                    Some(flat == *s)
-                }
-                (Some(Raw(Str(s))), Some(Array(arr))) => {
-                    let flat = flatten_array(arr);
-                    trace!(
-                        "LooseEq (L): {:?} {} [..](->{:?}) = {}",
-                        s,
-                        op_str,
-                        flat,
-                        *s == flat
-                    );
-                    Some(*s == flat)
-                }
-
-                // Array == Num: flatten -> parse -> compare
-                (Some(Array(arr)), Some(Raw(Num(n)))) => {
-                    let flat = flatten_array(arr);
-                    match js_str_to_num(&flat) {
-                        Some(anum) => {
-                            trace!(
-                                "LooseEq (L): [..](->{}) {} {} = {}",
-                                anum,
-                                op_str,
-                                n,
-                                anum == *n
-                            );
-                            Some(anum == *n)
-                        }
-                        None => {
-                            trace!("LooseEq (L): [..](->NaN) {} {} = false", op_str, n);
-                            Some(false)
-                        }
-                    }
-                }
-                (Some(Raw(Num(n))), Some(Array(arr))) => {
-                    let flat = flatten_array(arr);
-                    match js_str_to_num(&flat) {
-                        Some(anum) => {
-                            trace!(
-                                "LooseEq (L): {} {} [..](->{}) = {}",
-                                n,
-                                op_str,
-                                anum,
-                                *n == anum
-                            );
-                            Some(*n == anum)
-                        }
-                        None => {
-                            trace!("LooseEq (L): {} {} [..](->NaN) = false", n, op_str);
-                            Some(false)
-                        }
-                    }
-                }
-
+            let eq = match (left.data(), right.data()) {
+                (Some(l), Some(r)) => loose_eq(l, r),
                 _ => None,
             };
 
@@ -379,6 +186,86 @@ impl<'a> RuleMut<'a> for LooseEq {
 
         Ok(())
     }
+}
+
+fn loose_eq(left: &JavaScript, right: &JavaScript) -> Option<bool> {
+    match (left, right) {
+        // same-type fast path
+        (Raw(Num(l)), Raw(Num(r))) => Some(l == r),
+        (Raw(Str(l)), Raw(Str(r))) => Some(l == r),
+        (Raw(Bool(l)), Raw(Bool(r))) => Some(l == r),
+        (Raw(BigInt(l)), Raw(BigInt(r))) => Some(l == r),
+
+        (Undefined, Undefined) => Some(true),
+
+        // NaN
+        (NaN, _) | (_, NaN) => Some(false),
+
+        // bool -> number, then retry
+        (Raw(Bool(b)), other) => {
+            let n = if *b { 1.0 } else { 0.0 };
+            loose_eq(&Raw(Num(n)), other)
+        }
+        (other, Raw(Bool(b))) => {
+            let n = if *b { 1.0 } else { 0.0 };
+            loose_eq(other, &Raw(Num(n)))
+        }
+
+        // string x number
+        (Raw(Str(s)), Raw(Num(n))) => Some(js_str_to_num(s) == Some(*n)),
+        (Raw(Num(n)), Raw(Str(s))) => Some(js_str_to_num(s) == Some(*n)),
+
+        // string x bigint
+        (Raw(Str(s)), Raw(BigInt(b))) => parse_js_bigint(s).map(|x| x == *b).or(Some(false)),
+        (Raw(BigInt(b)), Raw(Str(s))) => parse_js_bigint(s).map(|x| x == *b).or(Some(false)),
+
+        // number x bigint
+        (Raw(Num(n)), Raw(BigInt(b))) => Some(number_bigint_eq(*n, b)),
+        (Raw(BigInt(b)), Raw(Num(n))) => Some(number_bigint_eq(*n, b)),
+
+        // array/object -> primitive, then retry
+        (Array(arr), other) => {
+            let flat = flatten_array(arr);
+            loose_eq(&Raw(Str(flat)), other)
+        }
+        (other, Array(arr)) => {
+            let flat = flatten_array(arr);
+            loose_eq(other, &Raw(Str(flat)))
+        }
+
+        // undefined x primitive
+        (Undefined, Raw(_)) | (Raw(_), Undefined) => Some(false),
+
+        _ => None,
+    }
+}
+
+fn number_bigint_eq(n: f64, b: &num_bigint::BigInt) -> bool {
+    if !n.is_finite() {
+        return false;
+    }
+    if n.fract() != 0.0 {
+        return false;
+    }
+    match f64_integer_to_bigint(n) {
+        Some(n_big) => &n_big == b,
+        None => false,
+    }
+}
+
+fn f64_integer_to_bigint(n: f64) -> Option<num_bigint::BigInt> {
+    if !n.is_finite() || n.fract() != 0.0 {
+        return None;
+    }
+    num_bigint::BigInt::from_f64(n)
+}
+
+fn parse_js_bigint(s: &str) -> Option<num_bigint::BigInt> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    num_bigint::BigInt::parse_bytes(s.as_bytes(), 10)
 }
 
 /// Infers comp operators (`<`, `>`, `<=`, `>=`) for all known types.
@@ -434,149 +321,151 @@ impl<'a> RuleMut<'a> for CmpOrd {
                 return Ok(());
             }
 
-            let cmp_num = |l: f64, r: f64| match op_str {
-                "<" => l < r,
-                ">" => l > r,
-                "<=" => l <= r,
-                ">=" => l >= r,
-                _ => unreachable!(),
-            };
-
-            let cmp_str = |l: &str, r: &str| match op_str {
-                "<" => l < r,
-                ">" => l > r,
-                "<=" => l <= r,
-                ">=" => l >= r,
-                _ => unreachable!(),
-            };
-
-            let result: Option<bool> = match (left.data(), right.data()) {
-                // NaN comparisons are always false
-                (Some(NaN), _) | (_, Some(NaN)) => {
-                    trace!("CmpOrd (L): NaN {} _ = false", op_str);
-                    Some(false)
-                }
-
-                // Num x Num
-                (Some(Raw(Num(l))), Some(Raw(Num(r)))) => {
-                    let res = cmp_num(*l, *r);
-                    trace!("CmpOrd (L): {} {} {} = {}", l, op_str, r, res);
-                    Some(res)
-                }
-
-                // Str x Str: lexicographic
-                (Some(Raw(Str(l))), Some(Raw(Str(r)))) => {
-                    let res = cmp_str(l, r);
-                    trace!("CmpOrd (L): {:?} {} {:?} = {}", l, op_str, r, res);
-                    Some(res)
-                }
-
-                // Bool x Bool: convert to number
-                (Some(Raw(Bool(l))), Some(Raw(Bool(r)))) => {
-                    let res = cmp_num(*l as u8 as f64, *r as u8 as f64);
-                    trace!(
-                        "CmpOrd (L): {} (->{}) {} {} (->{}) = {}",
-                        l, *l as u8 as f64, op_str, r, *r as u8 as f64, res
-                    );
-                    Some(res)
-                }
-
-                // Bool x Num
-                (Some(Raw(Bool(b))), Some(Raw(Num(n)))) => {
-                    let bnum = *b as u8 as f64;
-                    let res = cmp_num(bnum, *n);
-                    trace!("CmpOrd (L): {} (->{}) {} {} = {}", b, bnum, op_str, n, res);
-                    Some(res)
-                }
-                (Some(Raw(Num(n))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as u8 as f64;
-                    let res = cmp_num(*n, bnum);
-                    trace!("CmpOrd (L): {} {} {} (->{}) = {}", n, op_str, b, bnum, res);
-                    Some(res)
-                }
-
-                // Str x Num: parse string
-                (Some(Raw(Str(s))), Some(Raw(Num(n)))) => match js_str_to_num(s) {
-                    Some(snum) => {
-                        let res = cmp_num(snum, *n);
-                        trace!(
-                            "CmpOrd (L): {:?} (->{}) {} {} = {}",
-                            s, snum, op_str, n, res
-                        );
-                        Some(res)
-                    }
-                    None => {
-                        trace!("CmpOrd (L): {:?} (->NaN) {} {} = false", s, op_str, n);
-                        Some(false)
-                    }
-                },
-                (Some(Raw(Num(n))), Some(Raw(Str(s)))) => match js_str_to_num(s) {
-                    Some(snum) => {
-                        let res = cmp_num(*n, snum);
-                        trace!(
-                            "CmpOrd (L): {} {} {:?} (->{}) = {}",
-                            n, op_str, s, snum, res
-                        );
-                        Some(res)
-                    }
-                    None => {
-                        trace!("CmpOrd (L): {} {} {:?} (->NaN) = false", n, op_str, s);
-                        Some(false)
-                    }
-                },
-
-                // Bool x Str: bool -> num, str -> num
-                (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
-                    let bnum = *b as u8 as f64;
-                    match js_str_to_num(s) {
-                        Some(snum) => {
-                            let res = cmp_num(bnum, snum);
-                            trace!(
-                                "CmpOrd (L): {} (->{}) {} {:?} (->{}) = {}",
-                                b, bnum, op_str, s, snum, res
-                            );
-                            Some(res)
-                        }
-                        None => {
-                            trace!(
-                                "CmpOrd (L): {} (->{}) {} {:?} (->NaN) = false",
-                                b, bnum, op_str, s
-                            );
-                            Some(false)
-                        }
-                    }
-                }
-                (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
-                    let bnum = *b as u8 as f64;
-                    match js_str_to_num(s) {
-                        Some(snum) => {
-                            let res = cmp_num(snum, bnum);
-                            trace!(
-                                "CmpOrd (L): {:?} (->{}) {} {} (->{}) = {}",
-                                s, snum, op_str, b, bnum, res
-                            );
-                            Some(res)
-                        }
-                        None => {
-                            trace!(
-                                "CmpOrd (L): {:?} (->NaN) {} {} (->{}) = false",
-                                s, op_str, b, bnum
-                            );
-                            Some(false)
-                        }
-                    }
-                }
-
+            let result = match (left.data(), right.data()) {
+                (Some(l), Some(r)) => loose_ord(l, r, op_str),
                 _ => None,
             };
 
             if let Some(res) = result {
+                trace!(
+                    "CmpOrd (L): {} {} {} -> {}",
+                    left.text()?,
+                    op_str,
+                    right.text()?,
+                    res
+                );
                 node.reduce(Raw(Bool(res)));
+            } else {
+                warn!(
+                    "CmpOrd (L): unable to compare {} {} {}",
+                    left.text()?,
+                    op_str,
+                    right.text()?
+                );
             }
         }
 
         Ok(())
     }
+}
+
+#[derive(Clone, Debug)]
+enum OrdPrim {
+    Num(f64),
+    Str(String),
+    BigInt(num_bigint::BigInt),
+}
+
+#[derive(Clone, Debug)]
+enum Numeric {
+    Num(f64),
+    BigInt(num_bigint::BigInt),
+}
+
+fn to_ord_prim(value: &JavaScript) -> Option<OrdPrim> {
+    match value {
+        Raw(Num(n)) => Some(OrdPrim::Num(*n)),
+        Raw(Str(s)) => Some(OrdPrim::Str(s.clone())),
+        Raw(Bool(b)) => Some(OrdPrim::Num(if *b { 1.0 } else { 0.0 })),
+        Raw(BigInt(b)) => Some(OrdPrim::BigInt(b.clone())),
+        Array(arr) => Some(OrdPrim::Str(flatten_array(arr))),
+        Undefined => Some(OrdPrim::Num(f64::NAN)),
+        NaN => Some(OrdPrim::Num(f64::NAN)),
+        _ => None,
+    }
+}
+
+fn to_numeric(v: OrdPrim) -> Numeric {
+    match v {
+        OrdPrim::Num(n) => Numeric::Num(n),
+        OrdPrim::BigInt(b) => Numeric::BigInt(b),
+        OrdPrim::Str(s) => Numeric::Num(js_str_to_num(&s).unwrap_or(f64::NAN)),
+    }
+}
+
+fn cmp_num_bigint(n: f64, b: &num_bigint::BigInt) -> Option<Ordering> {
+    if n.is_nan() {
+        return None;
+    }
+
+    if n == f64::INFINITY {
+        return Some(Greater);
+    }
+
+    if n == f64::NEG_INFINITY {
+        return Some(Less);
+    }
+
+    let frac = n.fract();
+
+    if frac == 0.0 {
+        let nb = num_bigint::BigInt::from_f64(n)?;
+        return Some(nb.cmp(b));
+    }
+
+    let trunc = n.trunc();
+    let tb = num_bigint::BigInt::from_f64(trunc)?;
+
+    match tb.cmp(b) {
+        Equal if frac > 0.0 => Some(Greater),
+        Equal if frac < 0.0 => Some(Less),
+        ord => Some(ord),
+    }
+}
+
+fn cmp_numeric(op: &str, l: Numeric, r: Numeric) -> bool {
+    let ord = match (&l, &r) {
+        (Numeric::Num(ln), Numeric::Num(rn)) => match ln.partial_cmp(rn) {
+            Some(ord) => ord,
+            None => return false,
+        },
+
+        (Numeric::BigInt(lb), Numeric::BigInt(rb)) => lb.cmp(rb),
+
+        (Numeric::Num(ln), Numeric::BigInt(rb)) => match cmp_num_bigint(*ln, rb) {
+            Some(ord) => ord,
+            None => return false,
+        },
+
+        (Numeric::BigInt(lb), Numeric::Num(rn)) => match cmp_num_bigint(*rn, lb) {
+            Some(Less) => Greater,
+            Some(Greater) => Less,
+            Some(Equal) => Equal,
+            None => return false,
+        },
+    };
+
+    match op {
+        "<" => ord == Less,
+        ">" => ord == Greater,
+        "<=" => ord != Greater,
+        ">=" => ord != Less,
+        _ => unreachable!(),
+    }
+}
+
+fn loose_ord(left: &JavaScript, right: &JavaScript, op: &str) -> Option<bool> {
+    let l = to_ord_prim(left)?;
+    let r = to_ord_prim(right)?;
+
+    if let (OrdPrim::Str(ls), OrdPrim::Str(rs)) = (&l, &r) {
+        let res = match op {
+            "<" => ls < rs,
+            ">" => ls > rs,
+            "<=" => ls <= rs,
+            ">=" => ls >= rs,
+            _ => unreachable!(),
+        };
+        trace!("CmpOrd (L): {:?} {} {:?} = {}", ls, op, rs, res);
+        return Some(res);
+    }
+
+    let ln = to_numeric(l);
+    let rn = to_numeric(r);
+    let res = cmp_numeric(op, ln.clone(), rn.clone());
+
+    trace!("CmpOrd (L): {:?} {} {:?} = {}", ln, op, rn, res);
+    Some(res)
 }
 
 fn js_str_to_num(s: &str) -> Option<f64> {
