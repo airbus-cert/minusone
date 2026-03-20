@@ -1,4 +1,5 @@
 use crate::error::MinusOneResult;
+use crate::js::function::function_value_from_node;
 use crate::js::JavaScript;
 use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
@@ -253,6 +254,36 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             }
+            // function test() {} / function* test() {}
+            "function_declaration" | "generator_function_declaration" => {
+                if let Some(name_node) = view.named_child("name") {
+                    if name_node.kind() == "identifier" {
+                        let var_name = name_node.text()?.to_string();
+                        let value = view.data().cloned().or_else(|| function_value_from_node(&view));
+
+                        let Some(value) = value else {
+                            return Ok(());
+                        };
+
+                        trace!(
+                            "Var (L): Assigning function declaration '{}' = {:?}",
+                            var_name,
+                            value
+                        );
+                        self.scope_manager.current_mut().assign(
+                            &var_name,
+                            value,
+                            node.is_ongoing_transaction(),
+                        );
+
+                        if let Some(parent) = view.parent() {
+                            if parent.kind() == "program" {
+                                self.scope_manager.current_mut().set_non_local(&var_name);
+                            }
+                        }
+                    }
+                }
+            }
             // x++, x--, ++x, --x
             "update_expression" => {
                 for i in 0..view.child_count() {
@@ -270,12 +301,28 @@ impl<'a> RuleMut<'a> for Var {
             // read
             "identifier" => {
                 if !Var::is_write_target(&view) {
+                    if let Some(parent) = view.parent()
+                        && parent.kind() == "call_expression"
+                        && parent
+                            .named_child("function")
+                            .map(|f| {
+                                f.start_abs() == view.start_abs() && f.end_abs() == view.end_abs()
+                            })
+                            .unwrap_or(false)
+                    {
+                        return Ok(());
+                    }
+
                     if matches!(view.data(), Some(JavaScript::Object(_))) {
                         return Ok(());
                     }
 
                     let var_name = view.text()?.to_string();
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
+                        if matches!(data, JavaScript::Object(_)) {
+                            return Ok(());
+                        }
+
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);
                         node.set(data.clone());
                     }
@@ -417,6 +464,14 @@ mod tests {
         assert_eq!(
             deobfuscate("{ const x = 10; } console.log(x);"),
             "{ const x = 10; } console.log(x);"
+        );
+    }
+
+    #[test]
+    fn test_function_declaration_reference() {
+        assert_eq!(
+            deobfuscate("function test(){} console.log(test);"),
+            "function test(){} console.log(function test(){});"
         );
     }
 }

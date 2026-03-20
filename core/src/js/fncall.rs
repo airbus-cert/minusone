@@ -1,5 +1,7 @@
 use crate::error::MinusOneResult;
+use crate::js::function::function_value_from_node;
 use crate::js::JavaScript;
+use crate::js::Value::{Num, Str};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -31,12 +33,16 @@ use std::collections::HashMap;
 /// ```
 pub struct FnCall {
     functions: HashMap<String, JavaScript>,
+    vars: HashMap<String, JavaScript>,
+    object_fields: HashMap<(String, String), JavaScript>,
 }
 
 impl Default for FnCall {
     fn default() -> Self {
         FnCall {
             functions: HashMap::new(),
+            vars: HashMap::new(),
+            object_fields: HashMap::new(),
         }
     }
 }
@@ -116,6 +122,132 @@ impl FnCall {
             }
         }
     }
+
+    fn extract_member_access(node: &Node<JavaScript>) -> Option<(String, String)> {
+        if node.kind() != "member_expression" {
+            return None;
+        }
+
+        let object = node.named_child("object")?;
+        let property = node.named_child("property")?;
+        if object.kind() != "identifier" {
+            return None;
+        }
+
+        let base = object.text().ok()?.to_string();
+        let key = property.text().ok()?.to_string();
+        Some((base, key))
+    }
+
+    fn function_return_from_value(value: &JavaScript) -> Option<JavaScript> {
+        match value {
+            JavaScript::Function {
+                return_value: Some(return_value),
+                ..
+            } => Some(return_value.as_ref().clone()),
+            _ => None,
+        }
+    }
+
+    fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
+        let return_idx = source.find("return")?;
+        let after_return = &source[return_idx + "return".len()..];
+        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
+        let literal = after_return[..end_idx].trim();
+
+        if literal.starts_with('"') && literal.ends_with('"') && literal.len() >= 2 {
+            return Some(JavaScript::Raw(Str(literal[1..literal.len() - 1].to_string())));
+        }
+
+        if literal.starts_with('\'') && literal.ends_with('\'') && literal.len() >= 2 {
+            return Some(JavaScript::Raw(Str(literal[1..literal.len() - 1].to_string())));
+        }
+
+        literal.parse::<f64>().ok().map(|n| JavaScript::Raw(Num(n)))
+    }
+
+    fn find_initializer_source(prefix: &str, name: &str) -> Option<String> {
+        fn extract_function_source(rhs: &str) -> Option<String> {
+            let trimmed = rhs.trim_start();
+            if !(trimmed.starts_with("function") || trimmed.starts_with("async function") || trimmed.contains("=>")) {
+                return None;
+            }
+
+            if let Some(open_idx) = trimmed.find('{') {
+                let mut depth = 0usize;
+                for (i, ch) in trimmed.char_indices().skip(open_idx) {
+                    match ch {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth = depth.saturating_sub(1);
+                            if depth == 0 {
+                                return Some(trimmed[..=i].trim().to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            let end = trimmed.find(';').unwrap_or(trimmed.len());
+            Some(trimmed[..end].trim().to_string())
+        }
+
+        for kw in ["let", "var", "const"] {
+            let pattern = format!("{kw} {name} =");
+            if let Some(idx) = prefix.rfind(&pattern) {
+                let rhs = &prefix[idx + pattern.len()..];
+                return extract_function_source(rhs);
+            }
+        }
+        None
+    }
+
+    fn resolve_member_call_from_source(call: &Node<JavaScript>) -> Option<JavaScript> {
+        let callee = call.named_child("function")?;
+        if callee.kind() != "member_expression" {
+            return None;
+        }
+
+        let object = callee.named_child("object")?;
+        let property = callee.named_child("property")?;
+        if object.kind() != "identifier" {
+            return None;
+        }
+
+        let base = object.text().ok()?.to_string();
+        let key = property.text().ok()?.to_string();
+        let mut current = call.parent();
+        let mut program = None;
+        while let Some(node) = current {
+            if node.kind() == "program" {
+                program = Some(node);
+                break;
+            }
+            current = node.parent();
+        }
+
+        let program = program?;
+        let source = program.text().ok()?;
+        let prefix_end = call.start_abs().saturating_sub(program.start_abs());
+        let prefix = &source[..prefix_end];
+
+        let assign_pattern = format!("{base}.{key} =");
+        let assign_idx = prefix.rfind(&assign_pattern)?;
+        let rhs_text = {
+            let rhs = &prefix[assign_idx + assign_pattern.len()..];
+            let end = rhs.find(';')?;
+            rhs[..end].trim().to_string()
+        };
+
+        let function_source = if rhs_text.starts_with("function") || rhs_text.contains("=>") {
+            rhs_text
+        } else {
+            Self::find_initializer_source(prefix, &rhs_text)?
+        };
+
+        Self::parse_simple_return_literal(&function_source)
+    }
 }
 
 impl<'a> RuleMut<'a> for FnCall {
@@ -129,6 +261,8 @@ impl<'a> RuleMut<'a> for FnCall {
         let view = node.view();
         if view.kind() == "program" {
             self.functions.clear();
+            self.vars.clear();
+            self.object_fields.clear();
         }
         Ok(())
     }
@@ -140,6 +274,23 @@ impl<'a> RuleMut<'a> for FnCall {
     ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
+            "variable_declarator" => {
+                if let Some(name_node) = view.named_child("name")
+                    && name_node.kind() == "identifier"
+                {
+                    let name = name_node.text()?.to_string();
+                    if let Some(value_node) = view.named_child("value").or_else(|| view.child(2)) {
+                        let value = value_node
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&value_node));
+
+                        if let Some(value @ JavaScript::Function { .. }) = value {
+                            self.vars.insert(name, value);
+                        }
+                    }
+                }
+            }
             "function_declaration" => {
                 if let Some(name_node) = view.named_child("name") {
                     if name_node.kind() == "identifier" {
@@ -157,6 +308,44 @@ impl<'a> RuleMut<'a> for FnCall {
                     }
                 }
             }
+            "assignment_expression" => {
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
+                    if left.kind() == "identifier" {
+                        let var_name = left.text()?.to_string();
+                        let value = right
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&right))
+                            .or_else(|| {
+                                if right.kind() == "identifier" {
+                                    right.text().ok().and_then(|name| self.vars.get(name).cloned())
+                                } else {
+                                    None
+                                }
+                            });
+
+                        if let Some(value @ JavaScript::Function { .. }) = value {
+                            self.vars.insert(var_name, value);
+                        }
+                    } else if let Some((base, key)) = Self::extract_member_access(&left) {
+                        let value = right
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&right))
+                            .or_else(|| {
+                                if right.kind() == "identifier" {
+                                    right.text().ok().and_then(|name| self.vars.get(name).cloned())
+                                } else {
+                                    None
+                                }
+                            });
+
+                        if let Some(value @ JavaScript::Function { .. }) = value {
+                            self.object_fields.insert((base, key), value);
+                        }
+                    }
+                }
+            }
             "call_expression" => {
                 // check known fn
                 if let Some(func_node) = view.named_child("function") {
@@ -169,7 +358,41 @@ impl<'a> RuleMut<'a> for FnCall {
                                 fn_name, return_data
                             );
                             node.reduce(return_data.clone());
+                        } else if let Some(JavaScript::Function {
+                            return_value: Some(return_value),
+                            ..
+                        }) = func_node.data()
+                        {
+                            trace!(
+                                "FnCall (L): Resolving call to identifier function value with: {:?}",
+                                return_value
+                            );
+                            node.reduce(return_value.as_ref().clone());
                         }
+                    } else if let Some(return_value) = func_node
+                        .data()
+                        .and_then(Self::function_return_from_value)
+                    {
+                        trace!(
+                            "FnCall (L): Resolving call to function value with: {:?}",
+                            return_value
+                        );
+                        node.reduce(return_value);
+                    } else if let Some((base, key)) = Self::extract_member_access(&func_node)
+                        && let Some(value) = self.object_fields.get(&(base, key))
+                        && let Some(return_value) = Self::function_return_from_value(value)
+                    {
+                        trace!(
+                            "FnCall (L): Resolving call to object field function with: {:?}",
+                            return_value
+                        );
+                        node.reduce(return_value);
+                    } else if let Some(return_value) = Self::resolve_member_call_from_source(&view) {
+                        trace!(
+                            "FnCall (L): Resolving call to object field function from source with: {:?}",
+                            return_value
+                        );
+                        node.reduce(return_value);
                     }
                 }
             }
@@ -183,9 +406,11 @@ impl<'a> RuleMut<'a> for FnCall {
 mod tests {
     use crate::js::build_javascript_tree;
     use crate::js::fncall::FnCall;
+    use crate::js::function::ParseFunction;
     use crate::js::forward::Forward;
     use crate::js::integer::{ParseInt, SubAddInt};
     use crate::js::linter::Linter;
+    use crate::js::object::{ObjectField, ParseObject};
     use crate::js::strategy::JavaScriptStrategy;
     use crate::js::string::ParseString;
     use crate::js::var::Var;
@@ -197,7 +422,10 @@ mod tests {
                 ParseInt::default(),
                 SubAddInt::default(),
                 ParseString::default(),
+                ParseFunction::default(),
+                ParseObject::default(),
                 Forward::default(),
+                ObjectField::default(),
                 Var::default(),
                 FnCall::default(),
             ),
@@ -299,6 +527,16 @@ mod tests {
         assert_eq!(
             deobfuscate("function test() { return foo(); } console.log(test());"),
             "function test() { return foo(); } console.log(test());"
+        );
+    }
+
+    #[test]
+    fn test_fncall_object_stored_function_constant_return() {
+        assert_eq!(
+            deobfuscate(
+                "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(a.t());"
+            ),
+            "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(0);"
         );
     }
 }

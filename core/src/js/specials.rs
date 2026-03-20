@@ -508,6 +508,7 @@ fn constructor_to_name(constructor: &JavaScript) -> String {
             BigInt(_) => "BigInt".to_string(),
         },
         Array(_) => "Array".to_string(),
+        Function { .. } => "Function".to_string(),
         Constructor(inner) => constructor_to_name(inner),
         Bytes(_) => "String".to_string(),
         Null => {

@@ -6,6 +6,7 @@ pub mod comparator;
 pub mod globals;
 pub mod deadcode;
 pub mod fncall;
+pub mod function;
 pub mod forward;
 pub mod integer;
 pub mod linter;
@@ -20,6 +21,7 @@ use self::b64::*;
 use self::bool::*;
 use self::comparator::*;
 use self::fncall::*;
+use self::function::*;
 use self::forward::*;
 use self::integer::*;
 use self::linter::RemoveComment;
@@ -74,6 +76,10 @@ impl Display for Value {
 pub enum JavaScript {
     Raw(Value),
     Array(Vec<JavaScript>),
+    Function {
+        source: String,
+        return_value: Option<Box<JavaScript>>,
+    },
     Undefined,
     NaN,
     Null,
@@ -109,6 +115,7 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "[{}]", arr_str)
             }
+            Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),
             NaN => write!(f, "NaN"),
             At => write!(f, "[]['at']"),
@@ -124,6 +131,7 @@ impl Display for JavaScript {
                         BigInt(_) => "0n".to_string(),
                     },
                     Array(_) => "[]".to_string(),
+                    Function { .. } => "(function(){})".to_string(),
                     Constructor(_) => "['constructor']".to_string(),
                     Bytes(_) => "''".to_string(),
                     Null => {
@@ -166,6 +174,7 @@ impl JavaScript {
             },
 
             Array(_) => true,
+            Function { .. } => true,
             Undefined => false,
             NaN => false,
             Null => false,
@@ -226,6 +235,7 @@ impl_javascript_ruleset!(
     ParseInt,               // Parse integer literals (decimal, hex, octal, binary)
     ParseBool,              // Parse boolean literals (true, false)
     ParseString,            // Parse string literals (single and double quotes)
+    ParseFunction,          // Parse function and arrow-function expressions as first-class values
     ParseArray,             // Parse arrays
     ParseSpecials,          // Parse specials (undefined, NaN, At, ...)
     ParseObject,            // Parse objects

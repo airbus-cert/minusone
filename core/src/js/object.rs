@@ -1,4 +1,5 @@
 use crate::error::MinusOneResult;
+use crate::js::function::function_value_from_node;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::globals::inject_js_globals;
@@ -36,6 +37,7 @@ fn key_from_node(node: &Node<JavaScript>) -> Option<String> {
     }
 }
 
+
 impl<'a> RuleMut<'a> for ParseObject {
     type Language = JavaScript;
 
@@ -58,8 +60,17 @@ impl<'a> RuleMut<'a> for ParseObject {
             for child in view.iter() {
                 if child.kind() == "pair" {
                     if let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
-                        if let (Some(key), Some(value)) = (key_from_node(&key), value.data()) {
-                            map.insert(key, value.clone());
+                        if let Some(key) = key_from_node(&key) {
+                            if let Some(value_data) = value.data() {
+                                map.insert(key, value_data.clone());
+                            } else if let Some(function_value) = function_value_from_node(&value) {
+                                map.insert(key, function_value);
+                            } else {
+                                warn!(
+                                    "ParseObject: failed to parse value for pair: {:?}",
+                                    child.text()
+                                );
+                            }
                         } else {
                             warn!(
                                 "ParseObject: failed to parse key or value for pair: {:?}",
@@ -264,11 +275,16 @@ impl<'a> RuleMut<'a> for ObjectField {
                 if let Some(name_node) = view.named_child("name") {
                     if name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
-                        if let Some(value_node) = view.named_child("value") {
-                            if let Some(Object(_)) = value_node.data() {
+                        if let Some(value_node) = view.named_child("value").or_else(|| view.child(2)) {
+                            let value_data = value_node
+                                .data()
+                                .cloned()
+                                .or_else(|| function_value_from_node(&value_node));
+
+                            if let Some(value_data @ (Object(_) | Function { .. })) = value_data {
                                 self.scope_manager.current_mut().assign(
                                     &var_name,
-                                    value_node.data().unwrap().clone(),
+                                    value_data,
                                     node.is_ongoing_transaction(),
                                 );
                             } else {
@@ -284,10 +300,15 @@ impl<'a> RuleMut<'a> for ObjectField {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
                     if left.kind() == "identifier" {
                         let var_name = left.text()?.to_string();
-                        if let Some(Object(_)) = right.data() {
+                        let right_data = right
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&right));
+
+                        if let Some(right_data @ (Object(_) | Function { .. })) = right_data {
                             self.scope_manager.current_mut().assign(
                                 &var_name,
-                                right.data().unwrap().clone(),
+                                right_data,
                                 node.is_ongoing_transaction(),
                             );
                         } else {
@@ -301,21 +322,42 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 return Ok(());
                             }
 
-                            if let Some(data) = right.data() {
+                            let rhs_data = right.data().cloned().or_else(|| {
+                                if right.kind() == "identifier" {
+                                    right
+                                        .text()
+                                        .ok()
+                                        .and_then(|name| self.scope_manager.current().get_var(name).cloned())
+                                } else {
+                                    None
+                                }
+                            }).or_else(|| function_value_from_node(&right));
+                            if let Some(data) = rhs_data {
                                 if self.scope_manager.current().get_var(&base_name).is_none()
                                     && matches!(access.base_value, Some(Object(_)))
                                 {
                                     self.scope_manager.current_mut().assign(
                                         &base_name,
-                                        access.base_value.unwrap(),
+                                        access.base_value.clone().unwrap(),
                                         node.is_ongoing_transaction(),
                                     );
                                 }
 
-                                if let Some(root) =
-                                    self.scope_manager.current_mut().get_var_mut(&base_name)
+                                let mut root_value = self
+                                    .scope_manager
+                                    .current()
+                                    .get_var(&base_name)
+                                    .cloned()
+                                    .or(access.base_value.clone());
+
+                                if let Some(mut root) = root_value.take()
+                                    && Self::set_by_path(&mut root, &access.keys, data)
                                 {
-                                    let _ = Self::set_by_path(root, &access.keys, data.clone());
+                                    self.scope_manager.current_mut().assign(
+                                        &base_name,
+                                        root,
+                                        node.is_ongoing_transaction(),
+                                    );
                                 }
                             } else {
                                 self.scope_manager
@@ -361,7 +403,8 @@ impl<'a> RuleMut<'a> for ObjectField {
             "identifier" => {
                 if !Self::is_write_target(&view) {
                     let var_name = view.text()?.to_string();
-                    if let Some(value @ Object(_)) = self.scope_manager.current().get_var(&var_name)
+                    if let Some(value @ (Object(_) | Function { .. })) =
+                        self.scope_manager.current().get_var(&var_name)
                     {
                         node.set(value.clone());
                     }
@@ -377,6 +420,7 @@ impl<'a> RuleMut<'a> for ObjectField {
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
+    use crate::js::function::ParseFunction;
     use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
@@ -391,6 +435,7 @@ mod tests {
             &mut (
                 ParseInt::default(),
                 ParseString::default(),
+                ParseFunction::default(),
                 ParseObject::default(),
                 Forward::default(),
                 ObjectField::default(),
@@ -457,4 +502,21 @@ mod tests {
             "function f(){ console.log(NaN); }"
         );
     }
+
+    #[test]
+    fn test_object_function_field_read() {
+        assert_eq!(
+            deobfuscate("var obj = { a: function(){return 1;} }; console.log(obj.a);"),
+            "var obj = {a: function(){return 1;}}; console.log(function(){return 1;});"
+        );
+    }
+
+    #[test]
+    fn test_object_arrow_function_field_read() {
+        assert_eq!(
+            deobfuscate("var obj = { a: () => 1 }; console.log(obj.a);"),
+            "var obj = {a: () => 1}; console.log(() => 1);"
+        );
+    }
+
 }
