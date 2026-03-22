@@ -211,7 +211,7 @@ impl_javascript_ruleset!(
     ParseArray,             // Parse arrays
     ParseSpecials,          // Parse specials (undefined, NaN, At, ...)
     NegInt,                 // Infer unary - operations on integers
-    SubAddInt,              // Infer + and - operations on integers
+    AddSubInt,              // Infer + and - operations on integers
     MultInt,                // Infer *, / and % operations on integers
     PowInt,                 // Infer ** operations on integers
     ShiftInt,               // Infer <<, >> and >>> operations on integers
@@ -219,7 +219,7 @@ impl_javascript_ruleset!(
     NotBool,                // Infer unary ! operations on booleans
     BoolAlgebra,            // Infer boolean algebra operations (&&, ||)
     AddBool,                // Infer + and - operations on booleans
-    CombineArrays,          // Infer + operations on two arrays
+    CombineArrays,          // Infers `+` and `-` on arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     Forward, // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals

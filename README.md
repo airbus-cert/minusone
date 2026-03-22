@@ -9,23 +9,53 @@ Reverse operation of script obfuscation
 ## Usage
 
 MinusOne is written in Rust and can be built, deployed or executed through the Cargo package manager:
+
+*You'll need to be in the `crates/minusone-cli` directory*
+
 ```bash
-cargo run -- --path test.ps1                    # Run default ruleset
-cargo run -- --path test.ps1 --debug            # Run debug mode to print the inferred tree
-cargo run -- --list                             # List available rule
-cargo run -- --path test.ps1 -r forward,addint  # Only use Forward and AddInt
-cargo run -- --path test.ps1 -R foreach         # Do not use foreach rule
+cargo run -- -p test.ps1 -l powershell                    # Run default ruleset
+cargo run -- -p test.ps1 -l powershell -d debug           # Run debug mode to print the inferred tree
+cargo run -- --list -l javascript                         # List available rule on a language
+cargo run -- -p test.ps1 -l powershell -r Forward,AddInt  # Only use Forward and AddInt
+cargo run -- -p test.ps1 -l powershell -R ForEach         # Do not use foreach rule
+cargo run -- -i Y29uc29sZS5sb2coMDE3KQ -l javascript      # Deobfuscate from b64 input
 ```
 
-By default, cargo will build the minusone library and run the minusone-cli binary.
+By default, Cargo builds the minusone library and runs the minusone-cli binary.
+
+## Args
+
+| short         | long                       | description                                                             |
+|---------------|----------------------------|-------------------------------------------------------------------------|
+| -h            | --help                     | Help information                                                        |
+| -v            | --version                  | Version information                                                     |
+| -p _\<PATH>_  | --path _\<PATH>_           | Path to the script file                                                 |
+| -d            | --debug                    | Debug mode: print the tree-sitter tree with inferred value on each node |
+|               | --debug-indent _\<INT>_    | Debug indent size for the debug mode                                    |
+|               |                            | Default: `2`                                                            |
+|               | --debug-no-text            | Disable text in debug nodes                                             |
+|               | --debug-no-count           | Disable child count in debug nodes                                      |
+|               | --debug-no-colors          | Disable colors in debug nodes                                           |
+| -l _\<LANG>_  | --lang _\<LANG>_           | Language of the script                                                  |
+|               |                            | Possible values: [`powershell`, `javascript`]                           |
+| -L            | --list                     | List rules available for a language                                     |
+| -r _\<RULES>_ | --rules _\<RULES>_         | Custom comma separated list of rules to apply for the deobfuscation     |
+| -R _\<RULES>_ | --skip-rules _\<RULES>_    | Custom comma separated list of rules to skip for the deobfuscation      |
+| -t            | --time                     | Show computation time for the deobfuscation process                     |
+|               | --log-level _\<LOG_LEVEL>_ | Log level for the deobfuscation process                                 |
+|               |                            | Possible values: [`off`, `error`, `warn`, `info`, `debug`, `trace`]     |
+|               |                            | Default: `info`                                                         |
+|               | --utf                      | Toggle Base64 decoding utf8 <--> utf16le                                |
 
 ## Bindings
 
 The following bindings are available:
-- Python, allowing MinusOne to be easily integrated into Jupyter notebooks
-- JS (WASM), allowing to embeed minusone in web apps like https://minusone.skyblue.team/
 
-To build and publish these packages, use the `justfile` modules:
+- Python, allowing MinusOne to be easily integrated into Jupyter notebooks
+- JS (WASM), allowing to embed minusone in web apps like https://minusone.skyblue.team/
+
+To build and publish these bindings/packages, use the `justfile` tasks:
+
 ```
 just py build  # Build the python wheel
 
@@ -36,18 +66,23 @@ just js serve  # Build the WASM module and serve it on localhost to test it
 ## Project structure
 
 - `core`: minusone core library
-  - `src/ps`: minusone powershell specific rules
+    - `src/ps`: minusone powershell specific rules
+    - `src/js`: minusone Javascript specific rules
 - `crates`
-  - `minusone-cli`: Simple CLI to use minusone from your terminal
-  - `pyminusone`: Python bindings for minusone
-  - `minusone-cli`: JS bindings for minusone, built with WASM
+    - `minusone-cli`: Simple CLI to use minusone from your terminal
+    - `pyminusone`: Python bindings for minusone
+    - `minusonejs`: JS bindings for minusone, built with WASM
 
 ## Description
 
-MinusOne is a deobfuscation engine focused on scripting languages. MinusOne is based on [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for parsing, and will apply a set of rules to infer node values and simplify expressions.
+MinusOne is a deobfuscation engine focused on scripting languages. MinusOne is based
+on [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for parsing, and will apply a set of rules to infer node
+values and simplify expressions.
 
 MinusOne supports the following languages:
-* Powershell
+
+* PowerShell
+* Javascript
 
 By taking the following example from [`Invoke-Obfuscation`](https://github.com/gh0x0st/Invoke-PSObfuscation/blob/main/layer-0-obfuscation.md#final-payload):
 
@@ -63,9 +98,10 @@ Write-Host "MinusOne is the best script linter"
 
 ## What is a Rule?
 
-A rule will produce a result when visiting a particular node, depending on its children or parent. A rule will be called when entering and leaving a node.
+A rule will produce a result when visiting a particular node, depending on its children or parent. A rule will be called
+when entering and leaving a node.
 
-Creating a rule for Powershell is as easy as implementing the `RuleMut` trait :
+Creating a rule for PowerShell is as easy as implementing the `RuleMut` trait :
 
 ```rust
 #[derive(Default)]
@@ -84,7 +120,8 @@ impl<'a> RuleMut<'a> for MyRule {
 }
 ```
 
-The `enter()` method is called before visiting the node, and the `leave()` method will be called when leaving the node, so after visiting the node and all its children.
+The `enter()` method is called before visiting the node, and the `leave()` method will be called when leaving the node,
+so after visiting the node and all its children.
 
 ### Example: A rule that adds two integers
 
@@ -130,12 +167,15 @@ impl<'a> RuleMut<'a> for ParseInt {
 }
 ```
 
-The rule will be processed when leaving a node of type `decimal_integer_literal` in the `tree-sitter-powershell` grammar,
-then it will try to parse the token by using the [`std::str::parse`](https://doc.rust-lang.org/std/primitive.str.html#method.parse) method (`token.parse::<i32>()`).
+The rule will be processed when leaving a node of type `decimal_integer_literal` in the `tree-sitter-powershell`
+grammar,
+then it will try to parse the token by using the [
+`std::str::parse`](https://doc.rust-lang.org/std/primitive.str.html#method.parse) method (`token.parse::<i32>()`).
 
 A more complete implementation of this rule can be found [here](src/ps/integer.rs).
 
-Now we will create a new rule that will infer the value of two nodes involved in a `+` operation. This rule will be focused on the `additive_expression` node type.
+Now we will create a new rule that will infer the value of two nodes involved in a `+` operation. This rule will be
+focused on the `additive_expression` node type.
 
 It will check if the node has three children:
 
@@ -169,7 +209,7 @@ impl<'a> RuleMut<'a> for AddInt {
 }
 ```
 
-Then we can apply these rule to the Powershell tree generated by `tree-sitter-powershell`:
+Then we can apply these rules to the PowerShell tree generated by `tree-sitter-powershell`:
 
 ```rust
 
@@ -183,9 +223,10 @@ tree.apply_mut(&mut (
 
 ```
 
-The `Forward` rule is a particular rule that will forward a node's inferred type in case a node is not used in a semantic way, which is mainly due to how the Powershell grammar was generated.
+The `Forward` rule is a particular rule that will forward a node's inferred type in case a node is not used in a
+semantic way, which is mainly due to how the PowerShell grammar was generated.
 
-Then, you can print the Powershell result by using the object `Linter`:
+Then, you can print the PowerShell result by using the object `Linter`:
 
 ```rust
 let mut ps_linter_view = Linter::default();
@@ -194,65 +235,23 @@ ps_linter_view.print(&tree.root().unwrap()).unwrap();
 // => 42
 ```
 
-## Rules for Powershell
-### Static ruleset
+## Rulesets
 
-When using the `Engine` object, you will automatically use predefined rules designed for Powershell. These can be found in [src/ps/mod.rs](src/ps/mod.rs) :
+### Default ruleset
 
-```rust
-impl_powershell_ruleset!(
-    Forward,      // Special rule that will forward inferred value in case the node is transparent
-    ParseInt,     // Parse integer
-    AddInt,       // +, - operations on integer
-    MultInt,      // *, / operations on integer
-    ParseString,  // Parse string token, including multiline strings
-    ConcatString, // String concatenation operation
-    Cast,         // cast operation, like [char]0x65
-    ParseArrayLiteral, // It will parse array declared using separate value (integer or string) by a comma
-    ParseRange,        // It will parse .. operator and generate an array
-    AccessString,      // The access operator [] apply to a string : "foo"[0] => "f"
-    JoinComparison, // It will infer join string operation using the -join operator : @('a', 'b', 'c') -join '' => "abc"
-    JoinStringMethod, // It will infer join string operation using the [string]::join method : [string]::join('', @('a', 'b', 'c'))
-    JoinOperator, // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
-    PSItemInferrator, // PsItem is used to inferred commandlet pattern like % { [char] $_ }
-    ForEach,      // It will used PSItem rules to inferred foreach-object command
-    StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
-    ComputeArrayExpr,    // It will infer array that start with @
-    NewObjectArray,      // Infers arrays constructed via New-Object cmdlet
-    StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
-    StaticVar,       // It will infer value of known variable : $pshome, $shellid
-    CastNull,        // It will infer value of +$() or -$() which will produce 0
-    ParseHash,       // Parse hashtable
-    FormatString, // It will infer string when format operator is used ; "{1}-{0}" -f "Debug", "Write"
-    ParseBool,    // It will infer boolean operator
-    Comparison,   // It will infer comparison when it's possible
-    Not,          // It will infer the ! operator
-    ParseType,    // Parse type
-    DecodeBase64, // Decode calls to FromBase64
-    FromUTF,      // Decode calls to FromUTF{8,16}.GetText
-    Length,       // Decode attribute length of string and array
-    BoolAlgebra,  // Add support to boolean algebra (or and)
-    Var,          // Variable replacement in case of predictable flow
-    AddArray,     // Array concat using +, operator
-    StringSplitMethod, // Handle split method
-    AccessArray,  // Handle static array element access
-    AccessHashMap, // Handle hashmap access
-    ForStatementCondition, // Infer for condition to remove fake loops
-    ForStatementFlowControl  // Simplify for statment based on flow control
-);
-```
+When you use the `Engine` object, it automatically loads the predefined rules for PowerShell. These can be found
+in `src/{language}/mod.rs`
 
-By default, if you choose to use the full deobfuscation ruleset of a language, `minusone` will use a static implementation.
-It allows to declare the `PowershellDefaultRuleSet` type as a tuple of types implementing `RuleMut`.
-Thanks to the `impl_data` macro, this type will also implement `RuleMut`, allowing to pass it to the deobfuscation engine.
+<h3>[PowerShell rules](core/src/ps/RULES.md)</h3>
+<h3>[JavaScript rules](core/src/js/RULES.md)</h3>
 
-### Dynamic ruleset
 
-`minusone` provides the ability to select dynamically which rules to use at execution time by using the `-r` and `-R` flags to respectively include or exclude a rule.
-The rule names or case insensitive.
-Under the hood, the engine will create a ruleset with a vector of all available rules, and then filter out those that will not be used.
+By default, if you choose to use the full deobfuscation ruleset of a language, `minusone` will use a static
+implementation.
+This allows you to declare the `PowerShellDefaultRuleSet` type as a tuple of types implementing `RuleMut`.
+Thanks to the `impl_data` macro, this type will also implement `RuleMut`, allowing to pass it to the deobfuscation
+engine.
 
 ## Roadmap
 
-* More accurate parsing of Powershell HashTables
-* Basic support of Javascript
+* More accurate parsing of PowerShell HashTables
