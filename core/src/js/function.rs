@@ -24,7 +24,10 @@ fn is_function_kind(kind: &str) -> bool {
 }
 
 fn is_function_expression_kind(kind: &str) -> bool {
-    matches!(kind, "function" | "function_expression" | "arrow_function" | "generator_function")
+    matches!(
+        kind,
+        "function" | "function_expression" | "arrow_function" | "generator_function"
+    )
 }
 
 fn looks_like_function_source(source: &str) -> bool {
@@ -137,7 +140,10 @@ impl<'a> RuleMut<'a> for ParseFunction {
         }
 
         if let Some(function_value) = function_value_from_node(&view) {
-            trace!("ParseFunction (L): function expression => {:?}", function_value);
+            trace!(
+                "ParseFunction (L): function expression => {:?}",
+                function_value
+            );
             node.reduce(function_value);
         }
 
@@ -162,5 +168,3 @@ mod tests {
         assert_eq!(linter.output, "const f = () => 1;");
     }
 }
-
-

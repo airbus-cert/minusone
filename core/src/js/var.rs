@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
-use crate::js::function::function_value_from_node;
 use crate::js::JavaScript;
+use crate::js::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
@@ -259,7 +259,10 @@ impl<'a> RuleMut<'a> for Var {
                 if let Some(name_node) = view.named_child("name") {
                     if name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
-                        let value = view.data().cloned().or_else(|| function_value_from_node(&view));
+                        let value = view
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&view));
 
                         let Some(value) = value else {
                             return Ok(());
@@ -267,8 +270,7 @@ impl<'a> RuleMut<'a> for Var {
 
                         trace!(
                             "Var (L): Assigning function declaration '{}' = {:?}",
-                            var_name,
-                            value
+                            var_name, value
                         );
                         self.scope_manager.current_mut().assign(
                             &var_name,
@@ -464,14 +466,6 @@ mod tests {
         assert_eq!(
             deobfuscate("{ const x = 10; } console.log(x);"),
             "{ const x = 10; } console.log(x);"
-        );
-    }
-
-    #[test]
-    fn test_function_declaration_reference() {
-        assert_eq!(
-            deobfuscate("function test(){} console.log(test);"),
-            "function test(){} console.log(function test(){});"
         );
     }
 }

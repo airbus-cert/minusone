@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
-use crate::js::function::function_value_from_node;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
+use crate::js::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
@@ -36,7 +36,6 @@ fn key_from_node(node: &Node<JavaScript>) -> Option<String> {
         _ => None,
     }
 }
-
 
 impl<'a> RuleMut<'a> for ParseObject {
     type Language = JavaScript;
@@ -275,7 +274,9 @@ impl<'a> RuleMut<'a> for ObjectField {
                 if let Some(name_node) = view.named_child("name") {
                     if name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
-                        if let Some(value_node) = view.named_child("value").or_else(|| view.child(2)) {
+                        if let Some(value_node) =
+                            view.named_child("value").or_else(|| view.child(2))
+                        {
                             let value_data = value_node
                                 .data()
                                 .cloned()
@@ -322,16 +323,19 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 return Ok(());
                             }
 
-                            let rhs_data = right.data().cloned().or_else(|| {
-                                if right.kind() == "identifier" {
-                                    right
-                                        .text()
-                                        .ok()
-                                        .and_then(|name| self.scope_manager.current().get_var(name).cloned())
-                                } else {
-                                    None
-                                }
-                            }).or_else(|| function_value_from_node(&right));
+                            let rhs_data = right
+                                .data()
+                                .cloned()
+                                .or_else(|| {
+                                    if right.kind() == "identifier" {
+                                        right.text().ok().and_then(|name| {
+                                            self.scope_manager.current().get_var(name).cloned()
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .or_else(|| function_value_from_node(&right));
                             if let Some(data) = rhs_data {
                                 if self.scope_manager.current().get_var(&base_name).is_none()
                                     && matches!(access.base_value, Some(Object(_)))
@@ -402,6 +406,19 @@ impl<'a> RuleMut<'a> for ObjectField {
             }
             "identifier" => {
                 if !Self::is_write_target(&view) {
+                    if let Some(parent) = view.parent()
+                        && matches!(parent.kind(), "member_expression" | "subscript_expression")
+                        && parent
+                            .named_child("object")
+                            .map(|obj| {
+                                obj.start_abs() == view.start_abs()
+                                    && obj.end_abs() == view.end_abs()
+                            })
+                            .unwrap_or(false)
+                    {
+                        return Ok(());
+                    }
+
                     let var_name = view.text()?.to_string();
                     if let Some(value @ (Object(_) | Function { .. })) =
                         self.scope_manager.current().get_var(&var_name)
@@ -420,8 +437,8 @@ impl<'a> RuleMut<'a> for ObjectField {
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
-    use crate::js::function::ParseFunction;
     use crate::js::forward::Forward;
+    use crate::js::function::ParseFunction;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
     use crate::js::object::{ObjectField, ParseObject};
@@ -518,5 +535,4 @@ mod tests {
             "var obj = {a: () => 1}; console.log(() => 1);"
         );
     }
-
 }
