@@ -43,18 +43,28 @@ pub struct FnCall {
 #[derive(Clone)]
 enum ReturnExpr {
     Literal(JavaScript),
-    Param(String),
+    Symbol(String),
     BinOp {
         op: String,
         left: Box<ReturnExpr>,
         right: Box<ReturnExpr>,
+    },
+    Subscript {
+        array: Box<ReturnExpr>,
+        index: Box<ReturnExpr>,
     },
 }
 
 #[derive(Clone)]
 struct FunctionShape {
     params: Vec<String>,
+    steps: Vec<EvalStep>,
     return_expr: Option<ReturnExpr>,
+}
+
+#[derive(Clone)]
+enum EvalStep {
+    Assign { name: String, expr: ReturnExpr },
 }
 
 impl Default for FnCall {
@@ -220,7 +230,7 @@ impl FnCall {
         vec![]
     }
 
-    fn parse_return_expr(node: &Node<JavaScript>, params: &[String]) -> Option<ReturnExpr> {
+    fn parse_return_expr(node: &Node<JavaScript>) -> Option<ReturnExpr> {
         if let Some(data) = node.data() {
             return Some(ReturnExpr::Literal(data.clone()));
         }
@@ -228,16 +238,12 @@ impl FnCall {
         match node.kind() {
             "identifier" => {
                 let name = node.text().ok()?.to_string();
-                if params.iter().any(|p| p == &name) {
-                    Some(ReturnExpr::Param(name))
-                } else {
-                    None
-                }
+                Some(ReturnExpr::Symbol(name))
             }
             "parenthesized_expression" => {
                 for child in node.iter() {
                     if child.kind() != "(" && child.kind() != ")" {
-                        if let Some(expr) = Self::parse_return_expr(&child, params) {
+                        if let Some(expr) = Self::parse_return_expr(&child) {
                             return Some(expr);
                         }
                     }
@@ -251,36 +257,41 @@ impl FnCall {
 
                 Some(ReturnExpr::BinOp {
                     op: operator,
-                    left: Box::new(Self::parse_return_expr(&left, params)?),
-                    right: Box::new(Self::parse_return_expr(&right, params)?),
+                    left: Box::new(Self::parse_return_expr(&left)?),
+                    right: Box::new(Self::parse_return_expr(&right)?),
+                })
+            }
+            "subscript_expression" => {
+                let array = node.child(0)?;
+                let index = node.child(2)?;
+
+                Some(ReturnExpr::Subscript {
+                    array: Box::new(Self::parse_return_expr(&array)?),
+                    index: Box::new(Self::parse_return_expr(&index)?),
                 })
             }
             _ => None,
         }
     }
 
-    fn parse_return_statement_expr(
-        return_statement: &Node<JavaScript>,
-        params: &[String],
-    ) -> Option<ReturnExpr> {
+    fn parse_return_statement_expr(return_statement: &Node<JavaScript>) -> Option<ReturnExpr> {
         for i in 0..return_statement.child_count() {
             if let Some(c) = return_statement.child(i)
                 && c.kind() != "return"
                 && c.kind() != ";"
             {
-                return Self::parse_return_expr(&c, params);
+                return Self::parse_return_expr(&c);
             }
         }
         None
     }
 
-    fn find_single_return_expr(body: &Node<JavaScript>, params: &[String]) -> Option<ReturnExpr> {
+    fn find_single_return_expr(body: &Node<JavaScript>) -> Option<ReturnExpr> {
         let mut return_expr: Option<ReturnExpr> = None;
         let mut found_count = 0;
 
         fn walk(
             node: &Node<JavaScript>,
-            params: &[String],
             return_expr: &mut Option<ReturnExpr>,
             found_count: &mut usize,
         ) {
@@ -289,7 +300,7 @@ impl FnCall {
                     "return_statement" => {
                         *found_count += 1;
                         if *found_count == 1 {
-                            *return_expr = FnCall::parse_return_statement_expr(&child, params);
+                            *return_expr = FnCall::parse_return_statement_expr(&child);
                         }
                     }
                     "function_declaration"
@@ -305,13 +316,83 @@ impl FnCall {
                             *found_count += inner_count;
                         }
                     }
-                    _ => walk(&child, params, return_expr, found_count),
+                    _ => walk(&child, return_expr, found_count),
                 }
             }
         }
 
-        walk(body, params, &mut return_expr, &mut found_count);
+        walk(body, &mut return_expr, &mut found_count);
         if found_count == 1 { return_expr } else { None }
+    }
+
+    fn parse_assignment_step(statement: &Node<JavaScript>) -> Option<EvalStep> {
+        if matches!(
+            statement.kind(),
+            "variable_declaration" | "lexical_declaration"
+        ) {
+            for child in statement.iter() {
+                if child.kind() == "variable_declarator"
+                    && let Some(name_node) = child.named_child("name")
+                    && name_node.kind() == "identifier"
+                    && let Some(value_node) = child.named_child("value").or_else(|| child.child(2))
+                {
+                    let name = name_node.text().ok()?.to_string();
+                    let expr = Self::parse_return_expr(&value_node)?;
+                    return Some(EvalStep::Assign { name, expr });
+                }
+            }
+            return None;
+        }
+
+        if statement.kind() == "expression_statement" {
+            for child in statement.iter() {
+                if child.kind() == "assignment_expression" {
+                    let left = child.child(0)?;
+                    let right = child.child(2)?;
+                    if left.kind() != "identifier" {
+                        return None;
+                    }
+
+                    let name = left.text().ok()?.to_string();
+                    let expr = Self::parse_return_expr(&right)?;
+                    return Some(EvalStep::Assign { name, expr });
+                }
+            }
+        }
+
+        None
+    }
+
+    fn collect_simple_steps_and_return(
+        body: &Node<JavaScript>,
+    ) -> Option<(Vec<EvalStep>, ReturnExpr)> {
+        let mut steps = vec![];
+        let mut return_expr = None;
+        let mut return_count = 0usize;
+
+        for statement in body.iter() {
+            match statement.kind() {
+                "if_statement" | "while_statement" | "do_statement" | "for_statement"
+                | "for_in_statement" | "switch_statement" | "try_statement" => return None,
+                "return_statement" => {
+                    return_count += 1;
+                    if return_count == 1 {
+                        return_expr = Self::parse_return_statement_expr(&statement);
+                    }
+                }
+                _ => {
+                    if let Some(step) = Self::parse_assignment_step(&statement) {
+                        steps.push(step);
+                    }
+                }
+            }
+        }
+
+        if return_count == 1 {
+            return_expr.map(|ret| (steps, ret))
+        } else {
+            None
+        }
     }
 
     fn function_shape_from_node(function_node: &Node<JavaScript>) -> Option<FunctionShape> {
@@ -328,16 +409,23 @@ impl FnCall {
         }
 
         let params = Self::extract_params(function_node);
-        let return_expr = function_node.named_child("body").and_then(|body| {
+        let (steps, return_expr) = if let Some(body) = function_node.named_child("body") {
             if body.kind() == "statement_block" {
-                Self::find_single_return_expr(&body, &params)
+                if let Some((steps, ret)) = Self::collect_simple_steps_and_return(&body) {
+                    (steps, Some(ret))
+                } else {
+                    (vec![], Self::find_single_return_expr(&body))
+                }
             } else {
-                Self::parse_return_expr(&body, &params)
+                (vec![], Self::parse_return_expr(&body))
             }
-        });
+        } else {
+            (vec![], None)
+        };
 
         Some(FunctionShape {
             params,
+            steps,
             return_expr,
         })
     }
@@ -356,18 +444,14 @@ impl FnCall {
 
     fn eval_return_expr(
         expr: &ReturnExpr,
-        params: &[String],
-        args: &[JavaScript],
+        env: &HashMap<String, JavaScript>,
     ) -> Option<JavaScript> {
         match expr {
             ReturnExpr::Literal(value) => Some(value.clone()),
-            ReturnExpr::Param(name) => {
-                let idx = params.iter().position(|p| p == name)?;
-                args.get(idx).cloned()
-            }
+            ReturnExpr::Symbol(name) => env.get(name).cloned(),
             ReturnExpr::BinOp { op, left, right } => {
-                let lhs = Self::eval_return_expr(left, params, args)?;
-                let rhs = Self::eval_return_expr(right, params, args)?;
+                let lhs = Self::eval_return_expr(left, env)?;
+                let rhs = Self::eval_return_expr(right, env)?;
                 match (lhs, rhs) {
                     (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => {
                         let result = match op.as_str() {
@@ -382,13 +466,44 @@ impl FnCall {
                     _ => None,
                 }
             }
+            ReturnExpr::Subscript { array, index } => {
+                let array = Self::eval_return_expr(array, env)?;
+                let index = Self::eval_return_expr(index, env)?;
+
+                match (array, index) {
+                    (JavaScript::Array(arr), JavaScript::Raw(Num(i))) if i >= 0.0 => {
+                        arr.get(i as usize).cloned()
+                    }
+                    (JavaScript::Array(arr), JavaScript::Raw(Str(i))) => {
+                        let idx = i.parse::<usize>().ok()?;
+                        arr.get(idx).cloned()
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
     fn eval_shape(shape: &FunctionShape, call_node: &Node<JavaScript>) -> Option<JavaScript> {
         let args = Self::extract_call_args(call_node);
+        let mut env: HashMap<String, JavaScript> = HashMap::new();
+        for (idx, param) in shape.params.iter().enumerate() {
+            if let Some(arg) = args.get(idx) {
+                env.insert(param.clone(), arg.clone());
+            }
+        }
+
+        for step in &shape.steps {
+            match step {
+                EvalStep::Assign { name, expr } => {
+                    let value = Self::eval_return_expr(expr, &env)?;
+                    env.insert(name.clone(), value);
+                }
+            }
+        }
+
         let expr = shape.return_expr.as_ref()?;
-        Self::eval_return_expr(expr, &shape.params, &args)
+        Self::eval_return_expr(expr, &env)
     }
 
     fn shape_from_value(&self, value: &JavaScript) -> Option<FunctionShape> {
@@ -414,6 +529,7 @@ impl FnCall {
         stop_abs: usize,
         var_shapes: &mut HashMap<String, FunctionShape>,
         object_field_shapes: &mut HashMap<(String, String), FunctionShape>,
+        aliases: &mut HashMap<String, String>,
     ) {
         if node.start_abs() >= stop_abs {
             return;
@@ -428,7 +544,23 @@ impl FnCall {
                 {
                     if let Some(shape) = Self::function_shape_from_node(&value_node) {
                         var_shapes.insert(name.to_string(), shape);
+                    } else if value_node.kind() == "identifier"
+                        && let Ok(rhs_name) = value_node.text()
+                    {
+                        aliases.insert(name.to_string(), rhs_name.to_string());
+                        if let Some(shape) = var_shapes.get(rhs_name).cloned() {
+                            var_shapes.insert(name.to_string(), shape);
+                        }
                     }
+                }
+            }
+            "function_declaration" | "generator_function_declaration" => {
+                if let Some(name_node) = node.named_child("name")
+                    && name_node.kind() == "identifier"
+                    && let Ok(name) = name_node.text()
+                    && let Some(shape) = Self::function_shape_from_node(node)
+                {
+                    var_shapes.insert(name.to_string(), shape);
                 }
             }
             "assignment_expression" => {
@@ -440,9 +572,11 @@ impl FnCall {
                             var_shapes.insert(var_name.to_string(), shape);
                         } else if right.kind() == "identifier"
                             && let Ok(rhs_name) = right.text()
-                            && let Some(shape) = var_shapes.get(rhs_name).cloned()
                         {
-                            var_shapes.insert(var_name.to_string(), shape);
+                            aliases.insert(var_name.to_string(), rhs_name.to_string());
+                            if let Some(shape) = var_shapes.get(rhs_name).cloned() {
+                                var_shapes.insert(var_name.to_string(), shape);
+                            }
                         }
                     } else if let Some((base, key)) = Self::extract_member_access(&left) {
                         if let Some(shape) = Self::function_shape_from_node(&right) {
@@ -460,8 +594,29 @@ impl FnCall {
         }
 
         for child in node.iter() {
-            Self::build_shapes_until(&child, stop_abs, var_shapes, object_field_shapes);
+            Self::build_shapes_until(&child, stop_abs, var_shapes, object_field_shapes, aliases);
         }
+    }
+
+    fn resolve_shape_with_aliases(
+        name: &str,
+        var_shapes: &HashMap<String, FunctionShape>,
+        aliases: &HashMap<String, String>,
+    ) -> Option<FunctionShape> {
+        if let Some(shape) = var_shapes.get(name) {
+            return Some(shape.clone());
+        }
+
+        let mut current = name;
+        for _ in 0..16 {
+            let next = aliases.get(current)?;
+            if let Some(shape) = var_shapes.get(next) {
+                return Some(shape.clone());
+            }
+            current = next;
+        }
+
+        None
     }
 
     fn resolve_member_call_semantic_fallback<'a>(
@@ -472,16 +627,43 @@ impl FnCall {
         let program = Self::find_program_node(call_node)?;
         let mut var_shapes = HashMap::new();
         let mut object_field_shapes = HashMap::new();
+        let mut aliases = HashMap::new();
 
         Self::build_shapes_until(
             &program,
             call_node.start_abs(),
             &mut var_shapes,
             &mut object_field_shapes,
+            &mut aliases,
         );
 
         let shape = object_field_shapes.get(&(base.to_string(), key.to_string()))?;
         Self::eval_shape(shape, call_node)
+    }
+
+    fn resolve_identifier_call_semantic_fallback<'a>(
+        call_node: &Node<'a, JavaScript>,
+        fn_name: &str,
+    ) -> Option<JavaScript> {
+        let program = Self::find_program_node(call_node)?;
+        let mut var_shapes = HashMap::new();
+        let mut object_field_shapes = HashMap::new();
+        let mut aliases = HashMap::new();
+
+        Self::build_shapes_until(
+            &program,
+            call_node.start_abs(),
+            &mut var_shapes,
+            &mut object_field_shapes,
+            &mut aliases,
+        );
+
+        if !aliases.contains_key(fn_name) {
+            return None;
+        }
+
+        let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
+        Self::eval_shape(&shape, call_node)
     }
 
     fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
@@ -843,6 +1025,14 @@ impl<'a> RuleMut<'a> for FnCall {
                                 return_value
                             );
                             node.reduce(return_value);
+                        } else if let Some(value) =
+                            Self::resolve_identifier_call_semantic_fallback(&view, &fn_name)
+                        {
+                            trace!(
+                                "FnCall (L): Resolving call to semantic identifier fallback with: {:?}",
+                                value
+                            );
+                            node.reduce(value);
                         } else if let Some(JavaScript::Function {
                             return_value: Some(return_value),
                             ..
