@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::Value::{Num, Str};
-use crate::js::function::function_value_from_node;
+use crate::js::functions::function::function_value_from_node;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -16,7 +16,7 @@ use std::collections::HashMap;
 /// use minusone::js::integer::ParseInt;
 /// use minusone::js::string::ParseString;
 /// use minusone::js::var::Var;
-/// use minusone::js::fncall::FnCall;
+/// use minusone::js::functions::fncall::FnCall;
 /// use minusone::js::linter::Linter;
 /// use minusone::js::strategy::JavaScriptStrategy;
 ///
@@ -1099,12 +1099,12 @@ impl<'a> RuleMut<'a> for FnCall {
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
-    use crate::js::fncall::FnCall;
     use crate::js::forward::Forward;
-    use crate::js::function::ParseFunction;
+    use crate::js::functions::fncall::FnCall;
+    use crate::js::functions::function::ParseFunction;
     use crate::js::integer::{ParseInt, SubAddInt};
     use crate::js::linter::Linter;
-    use crate::js::object::{ObjectField, ParseObject};
+    use crate::js::objects::object::{ObjectField, ParseObject};
     use crate::js::strategy::JavaScriptStrategy;
     use crate::js::string::ParseString;
     use crate::js::var::Var;

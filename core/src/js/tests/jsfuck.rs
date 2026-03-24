@@ -6,12 +6,12 @@ pub mod jsfuck_tests {
     use crate::js::bool::*;
     use crate::js::build_javascript_tree;
     use crate::js::comparator::*;
-    use crate::js::fncall::*;
     use crate::js::forward::*;
-    use crate::js::function::*;
+    use crate::js::functions::fncall::*;
+    use crate::js::functions::function::*;
     use crate::js::integer::*;
     use crate::js::linter::Linter;
-    use crate::js::object::*;
+    use crate::js::objects::object::*;
     use crate::js::specials::*;
     use crate::js::string::*;
     use crate::js::var::*;

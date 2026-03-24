@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::function::function_value_from_node;
+use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;

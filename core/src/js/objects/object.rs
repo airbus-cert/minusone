@@ -1,9 +1,9 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
-use crate::js::function::function_value_from_node;
+use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
-use crate::js::objectify::as_object;
+use crate::js::objects::objectify::as_object;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -498,12 +498,12 @@ mod tests {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
-    use crate::js::fncall::FnCall;
     use crate::js::forward::Forward;
-    use crate::js::function::{ConcatFunction, ParseFunction};
+    use crate::js::functions::fncall::FnCall;
+    use crate::js::functions::function::{ConcatFunction, ParseFunction};
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
-    use crate::js::object::{ObjectField, ParseObject};
+    use crate::js::objects::object::{ObjectField, ParseObject};
     use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::strategy::JavaScriptStrategy;
     use crate::js::string::Concat;

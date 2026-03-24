@@ -163,12 +163,12 @@ impl<'a> Rule<'a> for Linter {
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
-    use crate::js::fncall::FnCall;
     use crate::js::forward::Forward;
-    use crate::js::function::ParseFunction;
+    use crate::js::functions::fncall::FnCall;
+    use crate::js::functions::function::ParseFunction;
     use crate::js::integer::{ParseInt, SubAddInt};
     use crate::js::linter::Linter;
-    use crate::js::object::{ObjectField, ParseObject};
+    use crate::js::objects::object::{ObjectField, ParseObject};
     use crate::js::strategy::JavaScriptStrategy;
     use crate::js::var::Var;
 

@@ -230,7 +230,7 @@ impl<'a> RuleMut<'a> for ConcatFunction {
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
-    use crate::js::function::ParseFunction;
+    use crate::js::functions::function::ParseFunction;
     use crate::js::linter::Linter;
 
     #[test]
