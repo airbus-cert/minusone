@@ -1,5 +1,8 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::JavaScript::{Array, Function, NaN, Raw};
+use crate::js::Value::{Bool, Str};
+use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -145,6 +148,79 @@ impl<'a> RuleMut<'a> for ParseFunction {
                 function_value
             );
             node.reduce(function_value);
+        }
+
+        Ok(())
+    }
+}
+
+/// Infers function source concatenation with `+` and reduces them to single string literals
+#[derive(Default)]
+pub struct ConcatFunction;
+
+impl<'a> RuleMut<'a> for ConcatFunction {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+
+        if let (Some(left), Some(operator), Some(right)) =
+            (view.child(0), view.child(1), view.child(2))
+        {
+            if operator.text()? == "+" {
+                match (left.data(), right.data()) {
+                    (Some(Function { source, .. }), Some(Raw(Str(s)))) => {
+                        trace!("Concat: reducing function + '{}' to '{}...'", s, source);
+                        node.reduce(Raw(Str(format!("{}{}", source, s))));
+                    }
+                    (Some(Raw(Str(s))), Some(Function { source, .. })) => {
+                        trace!("Concat: reducing '{}' + function to '{}...'", s, source);
+                        node.reduce(Raw(Str(format!("{}{}", s, source))));
+                    }
+                    (Some(Function { source, .. }), Some(Array(array))) => {
+                        let array_str = flatten_array(array, None);
+                        trace!("Concat: reducing function + array");
+                        node.reduce(Raw(Str(format!("{}{}", source, array_str))));
+                    }
+                    (Some(Array(array)), Some(Function { source, .. })) => {
+                        let array_str = flatten_array(array, None);
+                        trace!("Concat: reducing array + function");
+                        node.reduce(Raw(Str(format!("{}{}", array_str, source))));
+                    }
+                    (Some(Function { source, .. }), Some(Raw(Bool(b)))) => {
+                        trace!("Concat: reducing function + bool");
+                        node.reduce(Raw(Str(format!("{}{}", source, b))));
+                    }
+                    (Some(Raw(Bool(b))), Some(Function { source, .. })) => {
+                        trace!("Concat: reducing bool + function");
+                        node.reduce(Raw(Str(format!("{}{}", b, source))));
+                    }
+                    (Some(Function { source, .. }), Some(NaN)) => {
+                        trace!("Concat: reducing function + NaN");
+                        node.reduce(Raw(Str(format!("{}NaN", source))));
+                    }
+                    (Some(NaN), Some(Function { source, .. })) => {
+                        trace!("Concat: reducing NaN + function");
+                        node.reduce(Raw(Str(format!("NaN{}", source))));
+                    }
+                    _ => {}
+                }
+            }
         }
 
         Ok(())

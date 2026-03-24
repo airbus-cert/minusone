@@ -459,7 +459,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                             view.text(),
                             value
                         );
-                        node.set(value);
+                        node.reduce(value);
                     }
                 }
             }
@@ -500,7 +500,7 @@ mod tests {
     use crate::js::build_javascript_tree;
     use crate::js::fncall::FnCall;
     use crate::js::forward::Forward;
-    use crate::js::function::ParseFunction;
+    use crate::js::function::{ConcatFunction, ParseFunction};
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
     use crate::js::object::{ObjectField, ParseObject};
@@ -526,6 +526,7 @@ mod tests {
                 ObjectField::default(),
                 AddSubSpecials::default(),
                 Concat::default(),
+                ConcatFunction::default(),
                 Var::default(),
                 FnCall::default(),
             ),

@@ -218,7 +218,6 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
             }
         }
 
-
         Ok(())
     }
 }
@@ -234,7 +233,7 @@ mod tests_js_specials {
     use crate::js::specials::*;
     use crate::js::string::ParseString;
 
-    fn deobfuscate_specials(input: &str) -> String {
+    fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
@@ -256,42 +255,36 @@ mod tests_js_specials {
 
     #[test]
     fn test_parse_specials() {
-        assert_eq!(
-            deobfuscate_specials("var x = undefined;"),
-            "var x = undefined;"
-        );
-        assert_eq!(deobfuscate_specials("var x = NaN;"), "var x = NaN;");
+        assert_eq!(deobfuscate("var x = undefined;"), "var x = undefined;");
+        assert_eq!(deobfuscate("var x = NaN;"), "var x = NaN;");
     }
 
     #[test]
     fn test_empty_array_plus_undefined() {
         assert_eq!(
-            deobfuscate_specials("var x = ([1][2]) + [];"),
+            deobfuscate("var x = ([1][2]) + [];"),
             "var x = 'undefined';"
         );
     }
 
     #[test]
     fn test_empty_array_plus_nan() {
-        assert_eq!(deobfuscate_specials("var x = [] + NaN;"), "var x = 'NaN';");
+        assert_eq!(deobfuscate("var x = [] + NaN;"), "var x = 'NaN';");
     }
 
     #[test]
     fn test_undefined_plus_number_gives_nan() {
-        assert_eq!(
-            deobfuscate_specials("var x = undefined + 1;"),
-            "var x = NaN;"
-        );
+        assert_eq!(deobfuscate("var x = undefined + 1;"), "var x = NaN;");
     }
 
     #[test]
     fn test_special_plus_string() {
         assert_eq!(
-            deobfuscate_specials("var x = undefined + 'hello';"),
+            deobfuscate("var x = undefined + 'hello';"),
             "var x = 'undefinedhello';"
         );
         assert_eq!(
-            deobfuscate_specials("var x = 'cheese' + NaN;"),
+            deobfuscate("var x = 'cheese' + NaN;"),
             "var x = 'cheeseNaN';"
         );
     }
@@ -299,12 +292,9 @@ mod tests_js_specials {
     #[test]
     fn test_array_plus_special() {
         assert_eq!(
-            deobfuscate_specials("var x = [1, 2] + undefined;"),
+            deobfuscate("var x = [1, 2] + undefined;"),
             "var x = '1,2undefined';"
         );
-        assert_eq!(
-            deobfuscate_specials("var x = [1, 2] + NaN;"),
-            "var x = '1,2NaN';"
-        );
+        assert_eq!(deobfuscate("var x = [1, 2] + NaN;"), "var x = '1,2NaN';");
     }
 }

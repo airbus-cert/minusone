@@ -1,15 +1,15 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Function, Raw};
+use crate::js::JavaScript::{Array, Raw};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
-use crate::js::utils::{get_positional_arguments, method_name};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -405,48 +405,7 @@ impl<'a> RuleMut<'a> for Concat {
                         );
                         node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
                     }
-                    (Some(Function { source, .. }), Some(Raw(Str(s)))) => {
-                        trace!(
-                            "Concat: reducing function + '{}' to '{}...'",
-                            s,
-                            source
-                        );
-                        node.reduce(Raw(Str(format!("{}{}", source, s))));
-                    }
-                    (Some(Raw(Str(s))), Some(Function { source, .. })) => {
-                        trace!(
-                            "Concat: reducing '{}' + function to '{}...'",
-                            s,
-                            source
-                        );
-                        node.reduce(Raw(Str(format!("{}{}", s, source))));
-                    }
-                    (Some(Function { source, .. }), Some(Array(array))) => {
-                        let array_str = flatten_array(array, None);
-                        trace!("Concat: reducing function + array");
-                        node.reduce(Raw(Str(format!("{}{}", source, array_str))));
-                    }
-                    (Some(Array(array)), Some(Function { source, .. })) => {
-                        let array_str = flatten_array(array, None);
-                        trace!("Concat: reducing array + function");
-                        node.reduce(Raw(Str(format!("{}{}", array_str, source))));
-                    }
-                    (Some(Function { source, .. }), Some(Raw(Bool(b)))) => {
-                        trace!("Concat: reducing function + bool");
-                        node.reduce(Raw(Str(format!("{}{}", source, b))));
-                    }
-                    (Some(Raw(Bool(b))), Some(Function { source, .. })) => {
-                        trace!("Concat: reducing bool + function");
-                        node.reduce(Raw(Str(format!("{}{}", b, source))));
-                    }
-                    (Some(Function { source, .. }), Some(NaN)) => {
-                        trace!("Concat: reducing function + NaN");
-                        node.reduce(Raw(Str(format!("{}NaN", source))));
-                    }
-                    (Some(NaN), Some(Function { source, .. })) => {
-                        trace!("Concat: reducing NaN + function");
-                        node.reduce(Raw(Str(format!("NaN{}", source))));
-                    }
+
                     (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
                         trace!(
                             "Concat: reducing '{}' + {} to '{}'",
@@ -699,13 +658,16 @@ impl<'a> RuleMut<'a> for Split {
             parts.truncate(limit);
         }
 
-        trace!("Split: reducing split call on '{}' => {} parts", input, parts.len());
+        trace!(
+            "Split: reducing split call on '{}' => {} parts",
+            input,
+            parts.len()
+        );
         node.reduce(Array(parts.into_iter().map(|s| Raw(Str(s))).collect()));
 
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests_js_string {

@@ -9,14 +9,15 @@ pub mod forward;
 pub mod function;
 pub mod globals;
 pub mod integer;
+mod jsfuck;
 pub mod linter;
 pub mod object;
 pub mod objectify;
 pub mod specials;
 pub mod strategy;
 pub mod string;
-pub mod var;
 mod utils;
+pub mod var;
 
 use self::array::*;
 use self::b64::*;
@@ -137,7 +138,6 @@ pub struct JavaScriptRuleSet<'a> {
 }
 
 impl JavaScript {
-
     pub fn as_bool(&self) -> bool {
         match self {
             Raw(raw) => match raw {
@@ -204,40 +204,41 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt,               // Parse integer literals (decimal, hex, octal, binary)
-    ParseBool,              // Parse boolean literals (true, false)
-    ParseString,            // Parse string literals (single and double quotes)
-    ParseFunction,          // Parse function and arrow-function expressions as first-class values
-    ParseArray,             // Parse arrays
-    ParseSpecials,          // Parse specials (undefined, NaN, null)
-    ParseObject,            // Parse objects
-    NegInt,                 // Infer unary - operations on integers
-    SubAddInt,              // Infer + and - operations on integers
-    MultInt,                // Infer *, / and % operations on integers
-    PowInt,                 // Infer ** operations on integers
-    ShiftInt,               // Infer <<, >> and >>> operations on integers
-    BitwiseInt,             // Infer &, |, ^ and ~ operations on integers
-    NotBool,                // Infer unary ! operations on booleans
-    BoolAlgebra,            // Infer boolean algebra operations (&&, ||)
-    AddBool,                // Infer + and - operations on booleans
-    CombineArrays,          // Infer + operations on two arrays
+    ParseInt,        // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,       // Parse boolean literals (true, false)
+    ParseString,     // Parse string literals (single and double quotes)
+    ParseFunction,   // Parse function and arrow-function expressions as first-class values
+    ParseArray,      // Parse arrays
+    ParseSpecials,   // Parse specials (undefined, NaN, null)
+    ParseObject,     // Parse objects
+    NegInt,          // Infer unary - operations on integers
+    SubAddInt,       // Infer + and - operations on integers
+    MultInt,         // Infer *, / and % operations on integers
+    PowInt,          // Infer ** operations on integers
+    ShiftInt,        // Infer <<, >> and >>> operations on integers
+    BitwiseInt,      // Infer &, |, ^ and ~ operations on integers
+    ObjectField,     // Track objects field assignments and access
+    NotBool,         // Infer unary ! operations on booleans
+    BoolAlgebra,     // Infer boolean algebra operations (&&, ||)
+    AddBool,         // Infer + and - operations on booleans
+    CombineArrays,   // Infer + operations on two arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     Forward, // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     BoolPlusMinus, // Infer + and - operations on booleans
     Concat, // Infer string concatenation with + operator on string literals
-    Split, // Infer string split calls on literal strings
+    ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
+    Split,          // Infer string split calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
-    ToString,         // Infer toString calls
-    B64,              // Infer atob & btoa calls and reduce them to string literals
-    ObjectField,      // Track objects field assignments and access
-    Var,              // Track variable assignments and propagate known values to usage sites
-    FnCall,           // Resolve predictable function calls to their return values
-    StrictEq,         // Infer strict equality === and !==
-    LooseEq,          // Infer strict equality == and !=
-    CmpOrd            // Infer comparison operators <, >, <= and >=
+    ToString,       // Infer toString calls
+    B64,            // Infer atob & btoa calls and reduce them to string literals
+    Var,            // Track variable assignments and propagate known values to usage sites
+    FnCall,         // Resolve predictable function calls to their return values
+    StrictEq,       // Infer strict equality === and !==
+    LooseEq,        // Infer strict equality == and !=
+    CmpOrd          // Infer comparison operators <, >, <= and >=
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
