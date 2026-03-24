@@ -3,6 +3,7 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::objectify::as_object;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -234,7 +235,7 @@ impl ObjectField {
         for key in keys {
             current = match current {
                 Object(map) => map.get(key).cloned()?,
-                value => match value.as_object() {
+                value => match as_object(&value) {
                     Some(Object(map)) => map.get(key).cloned()?,
                     _ => return None,
                 },
@@ -497,6 +498,7 @@ mod tests {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
+    use crate::js::fncall::FnCall;
     use crate::js::forward::Forward;
     use crate::js::function::ParseFunction;
     use crate::js::integer::ParseInt;
@@ -525,6 +527,7 @@ mod tests {
                 AddSubSpecials::default(),
                 Concat::default(),
                 Var::default(),
+                FnCall::default(),
             ),
             JavaScriptStrategy::default(),
         )
@@ -649,6 +652,14 @@ mod tests {
         assert_eq!(
             deobfuscate("[]['at']['constructor']('return eval')();"),
             "[]['at']['constructor']('return eval')();"
+        );
+    }
+
+    #[test]
+    fn test_string_fontcolor_objectified_call() {
+        assert_eq!(
+            deobfuscate("var x = 'abc'['fontcolor']();"),
+            "var x = '<font color=\"undefined\">abc</font>';"
         );
     }
 }

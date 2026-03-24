@@ -186,6 +186,32 @@ impl<'a> RuleMut<'a> for CombineArrays {
 #[derive(Default)]
 pub struct GetArrayElement;
 
+impl GetArrayElement {
+    fn is_call_like_target(view: &crate::tree::Node<JavaScript>) -> bool {
+        if let Some(parent) = view.parent() {
+            if parent.kind() == "call_expression"
+                && parent
+                    .named_child("function")
+                    .map(|f| f.start_abs() == view.start_abs() && f.end_abs() == view.end_abs())
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+
+            if parent.kind() == "new_expression"
+                && parent
+                    .named_child("constructor")
+                    .map(|f| f.start_abs() == view.start_abs() && f.end_abs() == view.end_abs())
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
 impl<'a> RuleMut<'a> for GetArrayElement {
     type Language = JavaScript;
 
@@ -207,7 +233,11 @@ impl<'a> RuleMut<'a> for GetArrayElement {
             return Ok(());
         }
 
-        // This bypass empty arrays rules
+        if Self::is_call_like_target(&view) {
+            return Ok(());
+        }
+
+        // bypass empty arrays rules
         if let (Some(n), Some(index_node)) = (view.child(0), view.child(2)) {
             if let (Some(_), Some(index)) = (n.data(), index_node.data()) {
                 if index == NaN || index == Undefined {
@@ -476,5 +506,10 @@ mod tests_js_array {
     #[test]
     fn test_jsfuck_from_array_access() {
         assert_eq!(deobfuscate("var x = ([][[]]+[])[1];"), "var x = 'n';");
+    }
+
+    #[test]
+    fn test_dont_reduce_array_lookup_when_used_as_callee() {
+        assert_eq!(deobfuscate("var x = [][[]]();"), "var x = [][[]]();");
     }
 }
