@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Raw};
+use crate::js::JavaScript::{Array, Function, Raw};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
@@ -403,6 +403,48 @@ impl<'a> RuleMut<'a> for Concat {
                             b.to_string() + s.to_string().as_str()
                         );
                         node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                    }
+                    (Some(Function { source, .. }), Some(Raw(Str(s)))) => {
+                        trace!(
+                            "Concat: reducing function + '{}' to '{}...'",
+                            s,
+                            source
+                        );
+                        node.reduce(Raw(Str(format!("{}{}", source, s))));
+                    }
+                    (Some(Raw(Str(s))), Some(Function { source, .. })) => {
+                        trace!(
+                            "Concat: reducing '{}' + function to '{}...'",
+                            s,
+                            source
+                        );
+                        node.reduce(Raw(Str(format!("{}{}", s, source))));
+                    }
+                    (Some(Function { source, .. }), Some(Array(array))) => {
+                        let array_str = flatten_array(array);
+                        trace!("Concat: reducing function + array");
+                        node.reduce(Raw(Str(format!("{}{}", source, array_str))));
+                    }
+                    (Some(Array(array)), Some(Function { source, .. })) => {
+                        let array_str = flatten_array(array);
+                        trace!("Concat: reducing array + function");
+                        node.reduce(Raw(Str(format!("{}{}", array_str, source))));
+                    }
+                    (Some(Function { source, .. }), Some(Raw(Bool(b)))) => {
+                        trace!("Concat: reducing function + bool");
+                        node.reduce(Raw(Str(format!("{}{}", source, b))));
+                    }
+                    (Some(Raw(Bool(b))), Some(Function { source, .. })) => {
+                        trace!("Concat: reducing bool + function");
+                        node.reduce(Raw(Str(format!("{}{}", b, source))));
+                    }
+                    (Some(Function { source, .. }), Some(NaN)) => {
+                        trace!("Concat: reducing function + NaN");
+                        node.reduce(Raw(Str(format!("{}NaN", source))));
+                    }
+                    (Some(NaN), Some(Function { source, .. })) => {
+                        trace!("Concat: reducing NaN + function");
+                        node.reduce(Raw(Str(format!("NaN{}", source))));
                     }
                     _ => {}
                 }
