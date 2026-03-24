@@ -177,6 +177,54 @@ impl ObjectField {
         }
     }
 
+    fn is_string_concat_target(node: &Node<JavaScript>) -> bool {
+        let mut current_start = node.start_abs();
+        let mut current_end = node.end_abs();
+        let mut parent = node.parent();
+
+        while let Some(p) = parent {
+            if p.kind() == "parenthesized_expression" {
+                current_start = p.start_abs();
+                current_end = p.end_abs();
+                parent = p.parent();
+                continue;
+            }
+
+            if p.kind() == "binary_expression"
+                && let Some(op) = p.child(1)
+                && op.text().ok() == Some("+")
+            {
+                return p
+                    .child(0)
+                    .map(|c| c.start_abs() == current_start && c.end_abs() == current_end)
+                    .unwrap_or(false)
+                    || p.child(2)
+                        .map(|c| c.start_abs() == current_start && c.end_abs() == current_end)
+                        .unwrap_or(false);
+            }
+
+            break;
+        }
+
+        if let Some(parent) = node.parent() {
+            if parent.kind() == "binary_expression"
+                && let Some(op) = parent.child(1)
+                && op.text().ok() == Some("+")
+            {
+                return parent
+                    .child(0)
+                    .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
+                    .unwrap_or(false)
+                    || parent
+                        .child(2)
+                        .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
+                        .unwrap_or(false);
+            }
+        }
+
+        false
+    }
+
     fn get_by_path(root: &JavaScript, keys: &[String]) -> Option<JavaScript> {
         if keys.is_empty() {
             return Some(root.clone());
@@ -398,6 +446,13 @@ impl<'a> RuleMut<'a> for ObjectField {
                     if let Some(base) = base
                         && let Some(value) = Self::get_by_path(&base, &access.keys)
                     {
+                        if matches!(&value, Function { source, .. } if source.contains("[native code]"))
+                            && !Self::is_string_concat_target(&view)
+                        {
+                            // keep original constructor/at access except in + coercion contexts.
+                            return Ok(());
+                        }
+
                         trace!(
                             "ObjectVar (L): Propagating object access {:?} => {:?}",
                             view.text(),
@@ -578,6 +633,22 @@ mod tests {
         assert_eq!(
             deobfuscate("let a = ([]['constructor']) + ''; console.log(a);"),
             "let a = 'function Array() { [native code] }'; console.log('function Array() { [native code] }');"
+        );
+    }
+
+    #[test]
+    fn test_native_constructor_callee_is_not_inlined() {
+        assert_eq!(
+            deobfuscate("[]['constructor']('return eval')();"),
+            "[]['constructor']('return eval')();"
+        );
+    }
+
+    #[test]
+    fn test_native_at_constructor_chain_is_not_inlined() {
+        assert_eq!(
+            deobfuscate("[]['at']['constructor']('return eval')();"),
+            "[]['at']['constructor']('return eval')();"
         );
     }
 }
