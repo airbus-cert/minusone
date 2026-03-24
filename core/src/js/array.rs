@@ -219,13 +219,17 @@ impl<'a> RuleMut<'a> for GetArrayElement {
         }
 
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
-            if let Some(Array(arr)) = array_node.data() {
-                if arr.is_empty() {
-                    trace!("GetArrayElement: accessing index of empty array, setting to undefined");
+            if let (Some(Array(_)), Some(Array(index_arr))) = (array_node.data(), index_node.data())
+            {
+                if index_arr.is_empty() {
+                    trace!(
+                        "GetArrayElement: array indexed by [] coerces to empty-string key => undefined"
+                    );
                     node.reduce(Undefined);
                     return Ok(());
                 }
             }
+
             if let (Some(Array(arr)), Some(Raw(Num(index)))) =
                 (array_node.data(), index_node.data())
             {
@@ -264,11 +268,18 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     }
                     Ok(())
                 } else {
-                    warn!(
-                        "GetArrayElement: cannot parse index '{}' as number",
-                        index_str
-                    );
-                    node.reduce(Undefined);
+                    if index_str == "constructor" || index_str == "at" {
+                        trace!(
+                            "GetArrayElement: preserving known array property access '{}', defer to object coercion",
+                            index_str
+                        );
+                    } else {
+                        warn!(
+                            "GetArrayElement: non-numeric array index '{}' => undefined",
+                            index_str
+                        );
+                        node.reduce(Undefined);
+                    }
                     Ok(())
                 };
             }
@@ -405,6 +416,8 @@ mod tests_js_array {
     use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use crate::js::specials::AddSubSpecials;
+    use crate::js::string::CharAt;
     use crate::js::string::ParseString;
 
     fn deobfuscate(input: &str) -> String {
@@ -417,6 +430,8 @@ mod tests_js_array {
             Forward::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
+            AddSubSpecials::default(),
+            CharAt::default(),
         ))
         .unwrap();
 
@@ -429,7 +444,7 @@ mod tests_js_array {
     fn test_array_parsing() {
         assert_eq!(
             deobfuscate("var x = [1, 2, [3, '4']]"),
-            "var x = [1, 2, [3, '4']]",
+            "var x = [1, 2, [3, '4']]"
         );
     }
 
@@ -437,7 +452,7 @@ mod tests_js_array {
     fn test_combine_arrays() {
         assert_eq!(
             deobfuscate("var x = [0, 1,7] + [3, [7, '2', [88]]]"),
-            "var x = '0,1,73,7,2,88'",
+            "var x = '0,1,73,7,2,88'"
         );
     }
 
@@ -445,16 +460,21 @@ mod tests_js_array {
     fn test_get_array_element() {
         assert_eq!(
             deobfuscate("var x = ([1, [2, '3'], 4][1])[0];"),
-            "var x = 2;",
+            "var x = 2;"
         );
     }
 
     #[test]
     fn test_array_plus_minus() {
-        assert_eq!(deobfuscate("var x = +[['455']];"), "var x = 455;",);
+        assert_eq!(deobfuscate("var x = +[['455']];"), "var x = 455;");
 
-        assert_eq!(deobfuscate("var x = +['a'];"), "var x = NaN;",);
+        assert_eq!(deobfuscate("var x = +['a'];"), "var x = NaN;");
 
-        assert_eq!(deobfuscate("var x = [8] - 1;"), "var x = 7;",);
+        assert_eq!(deobfuscate("var x = [8] - 1;"), "var x = 7;");
+    }
+
+    #[test]
+    fn test_jsfuck_from_array_access() {
+        assert_eq!(deobfuscate("var x = ([][[]]+[])[1];"), "var x = 'n';");
     }
 }
