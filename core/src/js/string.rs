@@ -447,6 +447,24 @@ impl<'a> RuleMut<'a> for Concat {
                         trace!("Concat: reducing NaN + function");
                         node.reduce(Raw(Str(format!("NaN{}", source))));
                     }
+                    (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
+                        trace!(
+                            "Concat: reducing '{}' + {} to '{}'",
+                            s,
+                            b,
+                            s.to_string() + b.to_string().as_str()
+                        );
+                        node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
+                    }
+                    (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
+                        trace!(
+                            "Concat: reducing {} + '{}' to '{}'",
+                            b,
+                            s,
+                            b.to_string() + s.to_string().as_str()
+                        );
+                        node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                    }
                     _ => {}
                 }
             }
