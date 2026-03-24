@@ -16,6 +16,7 @@ pub mod specials;
 pub mod strategy;
 pub mod string;
 pub mod var;
+mod utils;
 
 use self::array::*;
 use self::b64::*;

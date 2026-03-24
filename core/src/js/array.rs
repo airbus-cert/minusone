@@ -4,6 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
@@ -103,7 +104,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     return Ok(());
                 }
                 (Some(Array(l)), "-", Some(Raw(Num(r)))) => {
-                    let l = flatten_array(l);
+                    let l = flatten_array(l, None);
                     trace!("Flatten : {}", l);
                     if !l.contains(",") {
                         if let Some(l_num) = l.parse::<f64>().ok() {
@@ -119,7 +120,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     }
                 }
                 (Some(Raw(Num(l))), "-", Some(Array(r))) => {
-                    let r = flatten_array(r);
+                    let r = flatten_array(r, None);
                     if !r.contains(",") {
                         if let Some(r_num) = r.parse::<f64>().ok() {
                             let result = l - r_num;
@@ -137,8 +138,8 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 (Some(Array(left_values)), "+", Some(Raw(raw))) => {
                     let combined = format!(
                         "{}{}",
-                        flatten_array(left_values),
-                        flatten_value(&Raw(raw.clone()))
+                        flatten_array(left_values, None),
+                        flatten_value(&Raw(raw.clone()), None)
                     );
                     trace!(
                         "CombineArrays (L): combining array and raw => left: {:?}, right: {:?} => '{}'",
@@ -149,8 +150,8 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 (Some(Raw(raw)), "+", Some(Array(right_values))) => {
                     let combined = format!(
                         "{}{}",
-                        flatten_value(&Raw(raw.clone())),
-                        flatten_array(right_values)
+                        flatten_value(&Raw(raw.clone()), None),
+                        flatten_array(right_values, None)
                     );
                     trace!(
                         "CombineArrays (L): combining raw and array => left: {:?}, right: {:?} => '{}'",
@@ -326,17 +327,18 @@ impl<'a> RuleMut<'a> for GetArrayElement {
     }
 }
 
-pub fn flatten_array(arr: &Vec<JavaScript>) -> String {
+pub fn flatten_array(arr: &Vec<JavaScript>, separator: Option<String>) -> String {
+    let separator = separator.unwrap_or_else(|| ",".to_string());
     arr.iter()
-        .map(flatten_value)
+        .map(|value| flatten_value(value, Some(separator.clone())))
         .filter(|s| !s.is_empty())
         .collect::<Vec<String>>()
-        .join(",")
+        .join(&separator)
 }
 
-fn flatten_value(value: &JavaScript) -> String {
+fn flatten_value(value: &JavaScript, separator: Option<String>) -> String {
     match value {
-        Array(arr) => flatten_array(arr),
+        Array(arr) => flatten_array(arr, separator.clone()),
         Raw(Num(n)) => n.to_string(),
         Raw(Str(s)) => s.clone(),
         Raw(Bool(b)) => b.to_string(),
@@ -352,7 +354,11 @@ fn flatten_value(value: &JavaScript) -> String {
 }
 
 fn combine_arrays(left: &Vec<JavaScript>, right: &Vec<JavaScript>) -> String {
-    format!("{}{}", flatten_array(left), flatten_array(right))
+    format!(
+        "{}{}",
+        flatten_array(left, None),
+        flatten_array(right, None)
+    )
 }
 
 /// Infers unary plus and minus on arrays
@@ -436,6 +442,90 @@ fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
         }
     } else {
         None
+    }
+}
+
+/// Infers join calls on arrays
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::{ParseArray, ArrayJoin};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = ['a', 'b'].join();").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), ArrayJoin::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'a,b';");
+/// ```
+#[derive(Default)]
+pub struct ArrayJoin;
+
+impl<'a> RuleMut<'a> for ArrayJoin {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "join" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.named_child("object") else {
+            return Ok(());
+        };
+        let Some(Array(input)) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let separator: Option<String> = match positional_args.first().and_then(|a| a.data()) {
+            None => None,
+            Some(Undefined) => None,
+            Some(Raw(Str(s))) => Some(s.clone()),
+            _ => return Ok(()),
+        };
+
+        let flatten = flatten_array(input, separator);
+        trace!(
+            "ArrayJoin: reducing {:?}.join({:?}) to '{}'",
+            input,
+            positional_args.first().and_then(|a| a.data()),
+            flatten
+        );
+        node.reduce(Raw(Str(flatten)));
+
+        Ok(())
     }
 }
 

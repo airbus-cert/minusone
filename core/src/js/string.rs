@@ -9,6 +9,7 @@ use crate::js::integer::ParseInt;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
+use crate::js::utils::{get_positional_arguments, method_name};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -369,7 +370,7 @@ impl<'a> RuleMut<'a> for Concat {
                         node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
                     }
                     (Some(Array(array)), Some(Raw(Str(s)))) => {
-                        let array_str = flatten_array(array);
+                        let array_str = flatten_array(array, None);
                         trace!(
                             "Concat: reducing array + '{}' to '{}'",
                             s,
@@ -378,7 +379,7 @@ impl<'a> RuleMut<'a> for Concat {
                         node.reduce(Raw(Str(array_str.to_string() + s)));
                     }
                     (Some(Raw(Str(s))), Some(Array(array))) => {
-                        let array_str = flatten_array(array);
+                        let array_str = flatten_array(array, None);
                         trace!(
                             "Concat: reducing '{}' + array to '{}'",
                             s,
@@ -421,12 +422,12 @@ impl<'a> RuleMut<'a> for Concat {
                         node.reduce(Raw(Str(format!("{}{}", s, source))));
                     }
                     (Some(Function { source, .. }), Some(Array(array))) => {
-                        let array_str = flatten_array(array);
+                        let array_str = flatten_array(array, None);
                         trace!("Concat: reducing function + array");
                         node.reduce(Raw(Str(format!("{}{}", source, array_str))));
                     }
                     (Some(Array(array)), Some(Function { source, .. })) => {
-                        let array_str = flatten_array(array);
+                        let array_str = flatten_array(array, None);
                         trace!("Concat: reducing array + function");
                         node.reduce(Raw(Str(format!("{}{}", array_str, source))));
                     }
@@ -563,7 +564,7 @@ impl<'a> RuleMut<'a> for ToString {
                             }
                             Some(Raw(Bool(b))) => b.to_string(),
                             Some(Raw(Str(s))) => s.to_string(),
-                            Some(Array(array)) => flatten_array(array),
+                            Some(Array(array)) => flatten_array(array, None),
                             _ => {
                                 warn!("ToString: unsupported object type for toString call");
                                 return Ok(());
@@ -609,26 +610,6 @@ impl<'a> RuleMut<'a> for ToString {
 pub struct Split;
 
 impl Split {
-    fn method_name(callee: &crate::tree::Node<JavaScript>) -> Option<String> {
-        match callee.kind() {
-            "subscript_expression" => {
-                let index = callee.named_child("index")?;
-                match index.data() {
-                    Some(Raw(Str(s))) => Some(s.clone()),
-                    _ => index.text().ok().map(|s| s.to_string()),
-                }
-            }
-            "member_expression" => callee
-                .named_child("property")
-                .and_then(|p| p.text().ok().map(|s| s.to_string())),
-            _ => None,
-        }
-    }
-
-    fn object_node<'a>(callee: &'a crate::tree::Node<JavaScript>) -> Option<crate::tree::Node<'a, JavaScript>> {
-        callee.named_child("object")
-    }
-
     fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
         match separator {
             None => vec![input.to_string()],
@@ -663,14 +644,14 @@ impl<'a> RuleMut<'a> for Split {
             return Ok(());
         };
 
-        let Some(method) = Self::method_name(&callee) else {
+        let Some(method) = method_name(&callee) else {
             return Ok(());
         };
         if method != "split" {
             return Ok(());
         }
 
-        let Some(object) = Self::object_node(&callee) else {
+        let Some(object) = callee.named_child("object") else {
             return Ok(());
         };
         let Some(Raw(Str(input))) = object.data() else {
@@ -678,14 +659,7 @@ impl<'a> RuleMut<'a> for Split {
         };
 
         let args = view.named_child("arguments");
-        let mut positional_args = vec![];
-        if let Some(arguments) = args {
-            for child in arguments.iter() {
-                if !matches!(child.kind(), "(" | ")" | ",") {
-                    positional_args.push(child);
-                }
-            }
-        }
+        let positional_args = get_positional_arguments(args);
 
         let separator_owned: Option<String> = match positional_args.first().and_then(|a| a.data()) {
             None => None,

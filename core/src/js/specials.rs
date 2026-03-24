@@ -120,7 +120,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                                     .collect::<Vec<_>>()
                                     .join(",")
                             );
-                            let array_str = flatten_array(array);
+                            let array_str = flatten_array(array, None);
                             node.reduce(Raw(Str(format!("{}undefined", array_str))));
                         }
                     }
@@ -137,7 +137,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                                     .collect::<Vec<_>>()
                                     .join(",")
                             );
-                            let array_str = flatten_array(array);
+                            let array_str = flatten_array(array, None);
                             node.reduce(Raw(Str(format!("undefined{}", array_str))));
                         }
                     }
@@ -154,7 +154,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                                     .collect::<Vec<_>>()
                                     .join(",")
                             );
-                            let array_str = flatten_array(array);
+                            let array_str = flatten_array(array, None);
                             node.reduce(Raw(Str(format!("{}NaN", array_str))));
                         }
                     }
@@ -171,7 +171,7 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                                     .collect::<Vec<_>>()
                                     .join(",")
                             );
-                            let array_str = flatten_array(array);
+                            let array_str = flatten_array(array, None);
                             node.reduce(Raw(Str(format!("NaN{}", array_str))));
                         }
                     }
