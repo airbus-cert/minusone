@@ -11,6 +11,7 @@ pub mod globals;
 pub mod integer;
 pub mod linter;
 pub mod object;
+pub mod objectify;
 pub mod specials;
 pub mod strategy;
 pub mod string;
@@ -135,72 +136,6 @@ pub struct JavaScriptRuleSet<'a> {
 }
 
 impl JavaScript {
-    fn native_function(name: &str) -> JavaScript {
-        JavaScript::Function {
-            source: format!("function {name}() {{ [native code] }}"),
-            return_value: None,
-        }
-    }
-
-    fn function_name_from_source(source: &str) -> String {
-        let trimmed = source.trim();
-        if let Some(rest) = trimmed.strip_prefix("function ")
-            && let Some((name, _)) = rest.split_once('(')
-        {
-            let name = name.trim();
-            if !name.is_empty() {
-                return name.to_string();
-            }
-        }
-
-        "anonymous".to_string()
-    }
-
-    fn constructor_name(&self) -> &'static str {
-        match self {
-            Undefined => "undefined",
-            NaN => "Number",
-            Raw(v) => match v {
-                Num(_) => "Number",
-                Str(_) => "String",
-                Bool(_) => "Boolean",
-                BigInt(_) => "BigInt",
-            },
-            Array(_) => "Array",
-            Function { .. } => "Function",
-            Bytes(_) => "String",
-            Null => "null",
-            Object(_) => "Object",
-        }
-    }
-
-    pub fn as_object(&self) -> Option<JavaScript> {
-        if let Object(map) = self {
-            let mut obj = map.clone();
-            obj.entry("constructor".to_string())
-                .or_insert_with(|| Self::native_function("Object"));
-            return Some(Object(obj));
-        }
-
-        let mut map = HashMap::new();
-        map.insert(
-            "constructor".to_string(),
-            Self::native_function(self.constructor_name()),
-        );
-
-        if matches!(self, Array(_)) {
-            map.insert("at".to_string(), Self::native_function("at"));
-        }
-
-        if let Function { source, .. } = self {
-            map.insert(
-                "name".to_string(),
-                Raw(Str(Self::function_name_from_source(source))),
-            );
-        }
-
-        Some(Object(map))
-    }
 
     pub fn as_bool(&self) -> bool {
         match self {
@@ -291,6 +226,7 @@ impl_javascript_ruleset!(
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     BoolPlusMinus, // Infer + and - operations on booleans
     Concat, // Infer string concatenation with + operator on string literals
+    Split, // Infer string split calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,         // Infer toString calls
