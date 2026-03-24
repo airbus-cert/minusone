@@ -182,15 +182,18 @@ impl ObjectField {
             return Some(root.clone());
         }
 
-        let mut current = root;
+        let mut current = root.clone();
         for key in keys {
             current = match current {
-                Object(map) => map.get(key)?,
-                _ => return None,
+                Object(map) => map.get(key).cloned()?,
+                value => match value.as_object() {
+                    Some(Object(map)) => map.get(key).cloned()?,
+                    _ => return None,
+                },
             };
         }
 
-        Some(current.clone())
+        Some(current)
     }
 
     fn set_in_map(
@@ -436,13 +439,17 @@ impl<'a> RuleMut<'a> for ObjectField {
 
 #[cfg(test)]
 mod tests {
+    use crate::js::array::{GetArrayElement, ParseArray};
+    use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
     use crate::js::function::ParseFunction;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
     use crate::js::object::{ObjectField, ParseObject};
+    use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::strategy::JavaScriptStrategy;
+    use crate::js::string::Concat;
     use crate::js::string::ParseString;
     use crate::js::var::Var;
 
@@ -452,10 +459,16 @@ mod tests {
             &mut (
                 ParseInt::default(),
                 ParseString::default(),
+                ParseBool::default(),
+                ParseArray::default(),
                 ParseFunction::default(),
                 ParseObject::default(),
+                ParseSpecials::default(),
                 Forward::default(),
+                GetArrayElement::default(),
                 ObjectField::default(),
+                AddSubSpecials::default(),
+                Concat::default(),
                 Var::default(),
             ),
             JavaScriptStrategy::default(),
@@ -533,6 +546,38 @@ mod tests {
         assert_eq!(
             deobfuscate("var obj = { a: () => 1 }; console.log(obj.a);"),
             "var obj = {a: () => 1}; console.log(() => 1);"
+        );
+    }
+
+    #[test]
+    fn test_array_at_native_function_stringification() {
+        assert_eq!(
+            deobfuscate("var x = []['at'] + 'hello';"),
+            "var x = 'function at() { [native code] }hello';"
+        );
+    }
+
+    #[test]
+    fn test_constructor_name_access_via_object_coercion() {
+        assert_eq!(
+            deobfuscate("var x = ''['constructor']['name'];"),
+            "var x = 'String';"
+        );
+    }
+
+    #[test]
+    fn test_array_constructor_function_stringification() {
+        assert_eq!(
+            deobfuscate("var x = []['constructor'] + '';"),
+            "var x = 'function Array() { [native code] }';"
+        );
+    }
+
+    #[test]
+    fn test_constructor_stringification_var_propagation() {
+        assert_eq!(
+            deobfuscate("let a = ([]['constructor']) + ''; console.log(a);"),
+            "let a = 'function Array() { [native code] }'; console.log('function Array() { [native code] }');"
         );
     }
 }

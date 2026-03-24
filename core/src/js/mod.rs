@@ -36,7 +36,7 @@ use crate::js::Value::*;
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use log::{error, warn};
+use log::warn;
 use num::Zero;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -83,8 +83,6 @@ pub enum JavaScript {
     Undefined,
     NaN,
     Null,
-    At, // This is a special value that represents ƒ -> at() { [native code] }
-    Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
     Bytes(Vec<u8>),
     Object(HashMap<String, JavaScript>), // This is a special value that represents an object with known properties (e.g. { length: 1 })
 }
@@ -118,33 +116,6 @@ impl Display for JavaScript {
             Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),
             NaN => write!(f, "NaN"),
-            At => write!(f, "[]['at']"),
-            Constructor(inner) => {
-                let value = match **inner {
-                    Undefined => "undefined".to_string(),
-                    NaN => "Number".to_string(),
-                    At => "[]['at']".to_string(),
-                    Raw(ref v) => match v {
-                        Num(_) => "0".to_string(),
-                        Str(_) => "''".to_string(),
-                        Bool(_) => "true".to_string(),
-                        BigInt(_) => "0n".to_string(),
-                    },
-                    Array(_) => "[]".to_string(),
-                    Function { .. } => "(function(){})".to_string(),
-                    Constructor(_) => "['constructor']".to_string(),
-                    Bytes(_) => "''".to_string(),
-                    Null => {
-                        error!(
-                            "Null constructor should crash the JS runtime, but we will return 'null' here for safety."
-                        );
-                        "null".to_string()
-                    }
-                    Object(_) => "Object()".to_string(),
-                };
-
-                write!(f, "{}['constructor']", value)
-            }
             Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
             Null => write!(f, "null"),
             Object(obj) => {
@@ -164,6 +135,73 @@ pub struct JavaScriptRuleSet<'a> {
 }
 
 impl JavaScript {
+    fn native_function(name: &str) -> JavaScript {
+        JavaScript::Function {
+            source: format!("function {name}() {{ [native code] }}"),
+            return_value: None,
+        }
+    }
+
+    fn function_name_from_source(source: &str) -> String {
+        let trimmed = source.trim();
+        if let Some(rest) = trimmed.strip_prefix("function ")
+            && let Some((name, _)) = rest.split_once('(')
+        {
+            let name = name.trim();
+            if !name.is_empty() {
+                return name.to_string();
+            }
+        }
+
+        "anonymous".to_string()
+    }
+
+    fn constructor_name(&self) -> &'static str {
+        match self {
+            Undefined => "undefined",
+            NaN => "Number",
+            Raw(v) => match v {
+                Num(_) => "Number",
+                Str(_) => "String",
+                Bool(_) => "Boolean",
+                BigInt(_) => "BigInt",
+            },
+            Array(_) => "Array",
+            Function { .. } => "Function",
+            Bytes(_) => "String",
+            Null => "null",
+            Object(_) => "Object",
+        }
+    }
+
+    pub fn as_object(&self) -> Option<JavaScript> {
+        if let Object(map) = self {
+            let mut obj = map.clone();
+            obj.entry("constructor".to_string())
+                .or_insert_with(|| Self::native_function("Object"));
+            return Some(Object(obj));
+        }
+
+        let mut map = HashMap::new();
+        map.insert(
+            "constructor".to_string(),
+            Self::native_function(self.constructor_name()),
+        );
+
+        if matches!(self, Array(_)) {
+            map.insert("at".to_string(), Self::native_function("at"));
+        }
+
+        if let Function { source, .. } = self {
+            map.insert(
+                "name".to_string(),
+                Raw(Str(Self::function_name_from_source(source))),
+            );
+        }
+
+        Some(Object(map))
+    }
+
     pub fn as_bool(&self) -> bool {
         match self {
             Raw(raw) => match raw {
@@ -178,8 +216,6 @@ impl JavaScript {
             Undefined => false,
             NaN => false,
             Null => false,
-            At => true,
-            Constructor(_) => true,
             Bytes(bytes) => {
                 if bytes.is_empty() {
                     return false;
@@ -237,7 +273,7 @@ impl_javascript_ruleset!(
     ParseString,            // Parse string literals (single and double quotes)
     ParseFunction,          // Parse function and arrow-function expressions as first-class values
     ParseArray,             // Parse arrays
-    ParseSpecials,          // Parse specials (undefined, NaN, At, ...)
+    ParseSpecials,          // Parse specials (undefined, NaN, null)
     ParseObject,            // Parse objects
     NegInt,                 // Infer unary - operations on integers
     SubAddInt,              // Infer + and - operations on integers
@@ -257,9 +293,6 @@ impl_javascript_ruleset!(
     Concat, // Infer string concatenation with + operator on string literals
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
-    AtTrick, // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
-    ConstructorAccessTrick, // Infer the constructor access trick
-    ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
     ToString,         // Infer toString calls
     B64,              // Infer atob & btoa calls and reduce them to string literals
     ObjectField,      // Track objects field assignments and access
