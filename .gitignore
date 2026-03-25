@@ -28,3 +28,6 @@ devenv.local.nix
 # tests scripts
 *.ps1
 *.js
+
+# test venv
+/.venv-pyminusone-test/
