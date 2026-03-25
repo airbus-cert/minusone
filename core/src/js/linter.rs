@@ -76,6 +76,18 @@ pub struct Linter {
 }
 
 impl Linter {
+    fn is_function_like_kind(kind: &str) -> bool {
+        matches!(
+            kind,
+            "function"
+                | "function_expression"
+                | "function_declaration"
+                | "arrow_function"
+                | "generator_function"
+                | "generator_function_declaration"
+        )
+    }
+
     fn copy_until(&mut self, end: usize) {
         if end > self.last_index {
             self.output += &self.source[self.last_index..end];
@@ -106,6 +118,16 @@ impl<'a> Rule<'a> for Linter {
         }
 
         if let Some(data) = node.data() {
+            // fn nodes may cache their original source, but we still want to emit transformed children from the latest AST
+            if Self::is_function_like_kind(node.kind()) {
+                return Ok(true);
+            }
+
+            // keep identifiers stable when they refer to fn values
+            if node.kind() == "identifier" && matches!(data, JavaScript::Function { .. }) {
+                return Ok(true);
+            }
+
             self.copy_until(node.start_abs());
             // Preserve parentheses for conditions in control-flow statements to keep the output as valid JavaScript
             if node.kind() == "parenthesized_expression" {
@@ -135,5 +157,66 @@ impl<'a> Rule<'a> for Linter {
             self.copy_until(len);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
+    use crate::js::functions::fncall::FnCall;
+    use crate::js::functions::function::ParseFunction;
+    use crate::js::integer::{ParseInt, SubAddInt};
+    use crate::js::linter::Linter;
+    use crate::js::objects::object::{ObjectField, ParseObject};
+    use crate::js::strategy::JavaScriptStrategy;
+    use crate::js::var::Var;
+
+    #[test]
+    fn test_linter_emits_simplified_function_expression_body() {
+        let mut tree = build_javascript_tree("let x = function () { return 1 + 2; };").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                SubAddInt::default(),
+                ParseFunction::default(),
+            ),
+            JavaScriptStrategy::default(),
+        )
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert_eq!(linter.output, "let x = function () { return 3; };");
+    }
+
+    #[test]
+    fn test_linter_keeps_identifier_on_function_object_assignment() {
+        let mut tree = build_javascript_tree(
+            "let a = {}; let x = function (n) { return n + 1; }; a.t = x; console.log(a.t(1));",
+        )
+        .unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                SubAddInt::default(),
+                ParseFunction::default(),
+                ParseObject::default(),
+                Forward::default(),
+                ObjectField::default(),
+                Var::default(),
+                FnCall::default(),
+            ),
+            JavaScriptStrategy::default(),
+        )
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert!(linter.output.contains("a.t = x;"));
     }
 }

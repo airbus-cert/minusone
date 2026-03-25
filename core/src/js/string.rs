@@ -1,11 +1,12 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Raw};
+use crate::js::JavaScript::{Array, Object, Raw};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
@@ -369,7 +370,7 @@ impl<'a> RuleMut<'a> for Concat {
                         node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
                     }
                     (Some(Array(array)), Some(Raw(Str(s)))) => {
-                        let array_str = flatten_array(array);
+                        let array_str = flatten_array(array, None);
                         trace!(
                             "Concat: reducing array + '{}' to '{}'",
                             s,
@@ -378,7 +379,7 @@ impl<'a> RuleMut<'a> for Concat {
                         node.reduce(Raw(Str(array_str.to_string() + s)));
                     }
                     (Some(Raw(Str(s))), Some(Array(array))) => {
-                        let array_str = flatten_array(array);
+                        let array_str = flatten_array(array, None);
                         trace!(
                             "Concat: reducing '{}' + array to '{}'",
                             s,
@@ -403,6 +404,51 @@ impl<'a> RuleMut<'a> for Concat {
                             b.to_string() + s.to_string().as_str()
                         );
                         node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                    }
+
+                    (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
+                        trace!(
+                            "Concat: reducing '{}' + {} to '{}'",
+                            s,
+                            b,
+                            s.to_string() + b.to_string().as_str()
+                        );
+                        node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
+                    }
+                    (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
+                        trace!(
+                            "Concat: reducing {} + '{}' to '{}'",
+                            b,
+                            s,
+                            b.to_string() + s.to_string().as_str()
+                        );
+                        node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                    }
+                    (
+                        Some(Raw(Str(s))),
+                        Some(Object {
+                            to_string_override: Some(obj_str),
+                            ..
+                        }),
+                    ) => {
+                        trace!(
+                            "Concat: reducing '{}' + object override to '{}{}'",
+                            s, s, obj_str
+                        );
+                        node.reduce(Raw(Str(format!("{}{}", s, obj_str))));
+                    }
+                    (
+                        Some(Object {
+                            to_string_override: Some(obj_str),
+                            ..
+                        }),
+                        Some(Raw(Str(s))),
+                    ) => {
+                        trace!(
+                            "Concat: reducing object override + '{}' to '{}{}'",
+                            s, obj_str, s
+                        );
+                        node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
                     }
                     _ => {}
                 }
@@ -521,7 +567,7 @@ impl<'a> RuleMut<'a> for ToString {
                             }
                             Some(Raw(Bool(b))) => b.to_string(),
                             Some(Raw(Str(s))) => s.to_string(),
-                            Some(Array(array)) => flatten_array(array),
+                            Some(Array(array)) => flatten_array(array, None),
                             _ => {
                                 warn!("ToString: unsupported object type for toString call");
                                 return Ok(());
@@ -544,8 +590,114 @@ impl<'a> RuleMut<'a> for ToString {
     }
 }
 
+/// Infers Split calls on strings
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Split, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'a,b'.split(',');").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), Split::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = ['a', 'b'];");
+/// ```
+#[derive(Default)]
+pub struct Split;
+
+impl Split {
+    fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
+        match separator {
+            None => vec![input.to_string()],
+            Some("") => input.chars().map(|c| c.to_string()).collect(),
+            Some(sep) => input.split(sep).map(|s| s.to_string()).collect(),
+        }
+    }
+}
+
+impl<'a> RuleMut<'a> for Split {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "split" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.named_child("object") else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let separator_owned: Option<String> = match positional_args.first().and_then(|a| a.data()) {
+            None => None,
+            Some(Undefined) => None,
+            Some(Raw(Str(s))) => Some(s.clone()),
+            Some(Raw(Num(n))) => Some(n.to_string()),
+            _ => return Ok(()),
+        };
+
+        let limit = match positional_args.get(1).and_then(|a| a.data()) {
+            None => None,
+            Some(Raw(Num(n))) if *n >= 0.0 => Some(*n as usize),
+            Some(Raw(Num(_))) => Some(0),
+            _ => return Ok(()),
+        };
+
+        let mut parts = Self::split_parts(input, separator_owned.as_deref());
+        if let Some(limit) = limit {
+            parts.truncate(limit);
+        }
+
+        trace!(
+            "Split: reducing split call on '{}' => {} parts",
+            input,
+            parts.len()
+        );
+        node.reduce(Array(parts.into_iter().map(|s| Raw(Str(s))).collect()));
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
+    use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
@@ -558,9 +710,12 @@ mod tests_js_string {
         tree.apply_mut(&mut (
             ParseString::default(),
             ParseInt::default(),
+            ParseArray::default(),
             StringPlusMinus::default(),
             CharAt::default(),
             Concat::default(),
+            Split::default(),
+            GetArrayElement::default(),
             ToString::default(),
             AddSubSpecials::default(),
         ))
@@ -634,6 +789,18 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
             "var x = 'baNaNa'"
+        );
+    }
+
+    #[test]
+    fn test_split_with_params() {
+        assert_eq!(
+            deobfuscate_string("var x = 'alert164t50t471t47t51'['split']('t')[0];"),
+            "var x = 'aler';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.split(',', 2)[1];"),
+            "var x = 'b';"
         );
     }
 }

@@ -4,23 +4,29 @@ pub mod backend;
 pub mod bool;
 pub mod comparator;
 pub mod deadcode;
-pub mod fncall;
 pub mod forward;
+pub mod functions;
+pub mod globals;
 pub mod integer;
 pub mod linter;
+pub mod objects;
 pub mod specials;
 pub mod strategy;
 pub mod string;
+mod tests;
+mod utils;
 pub mod var;
 
 use self::array::*;
 use self::b64::*;
 use self::bool::*;
 use self::comparator::*;
-use self::fncall::*;
 use self::forward::*;
+use self::functions::fncall::*;
+use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::objects::object::*;
 use self::specials::*;
 use self::string::*;
 use self::var::*;
@@ -31,8 +37,9 @@ use crate::js::Value::*;
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use log::error;
+use log::warn;
 use num::Zero;
+use std::collections::HashMap;
 use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
@@ -70,12 +77,18 @@ impl Display for Value {
 pub enum JavaScript {
     Raw(Value),
     Array(Vec<JavaScript>),
+    Function {
+        source: String,
+        return_value: Option<Box<JavaScript>>,
+    },
     Undefined,
     NaN,
     Null,
-    At, // This is a special value that represents ƒ -> at() { [native code] }
-    Constructor(Box<JavaScript>), // This is a special value that represents ƒ -> JavaScript() { [native code] }
     Bytes(Vec<u8>),
+    Object {
+        map: HashMap<String, JavaScript>,
+        to_string_override: Option<String>,
+    },
 }
 
 impl PartialEq<JavaScript> for &JavaScript {
@@ -104,35 +117,19 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "[{}]", arr_str)
             }
+            Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),
             NaN => write!(f, "NaN"),
-            At => write!(f, "[]['at']"),
-            Constructor(inner) => {
-                let value = match **inner {
-                    Undefined => "undefined".to_string(),
-                    NaN => "Number".to_string(),
-                    At => "[]['at']".to_string(),
-                    Raw(ref v) => match v {
-                        Num(_) => "0".to_string(),
-                        Str(_) => "''".to_string(),
-                        Bool(_) => "true".to_string(),
-                        BigInt(_) => "0n".to_string(),
-                    },
-                    Array(_) => "[]".to_string(),
-                    Constructor(_) => "['constructor']".to_string(),
-                    Bytes(_) => "''".to_string(),
-                    Null => {
-                        error!(
-                            "Null constructor should crash the JS runtime, but we will return 'null' here for safety."
-                        );
-                        "null".to_string()
-                    }
-                };
-
-                write!(f, "{}['constructor']", value)
-            }
             Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
             Null => write!(f, "null"),
+            Object { map, .. } => {
+                let obj_str = map
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                write!(f, "{{{}}}", obj_str)
+            }
         }
     }
 }
@@ -152,11 +149,10 @@ impl JavaScript {
             },
 
             Array(_) => true,
+            Function { .. } => true,
             Undefined => false,
             NaN => false,
             Null => false,
-            At => true,
-            Constructor(_) => true,
             Bytes(bytes) => {
                 if bytes.is_empty() {
                     return false;
@@ -169,6 +165,10 @@ impl JavaScript {
                 }
 
                 false
+            }
+            Object { .. } => {
+                warn!("Objects don't really have a boolean value in Js, falling back to true");
+                true
             }
         }
     }
@@ -205,39 +205,41 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt,               // Parse integer literals (decimal, hex, octal, binary)
-    ParseBool,              // Parse boolean literals (true, false)
-    ParseString,            // Parse string literals (single and double quotes)
-    ParseArray,             // Parse arrays
-    ParseSpecials,          // Parse specials (undefined, NaN, At, ...)
-    NegInt,                 // Infer unary - operations on integers
-    SubAddInt,              // Infer + and - operations on integers
-    MultInt,                // Infer *, / and % operations on integers
-    PowInt,                 // Infer ** operations on integers
-    ShiftInt,               // Infer <<, >> and >>> operations on integers
-    BitwiseInt,             // Infer &, |, ^ and ~ operations on integers
-    NotBool,                // Infer unary ! operations on booleans
-    BoolAlgebra,            // Infer boolean algebra operations (&&, ||)
-    AddBool,                // Infer + and - operations on booleans
-    CombineArrays,          // Infer + operations on two arrays
+    ParseInt,        // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,       // Parse boolean literals (true, false)
+    ParseString,     // Parse string literals (single and double quotes)
+    ParseFunction,   // Parse function and arrow-function expressions as first-class values
+    ParseArray,      // Parse arrays
+    ParseSpecials,   // Parse specials (undefined, NaN, null)
+    ParseObject,     // Parse objects
+    NegInt,          // Infer unary - operations on integers
+    SubAddInt,       // Infer + and - operations on integers
+    MultInt,         // Infer *, / and % operations on integers
+    PowInt,          // Infer ** operations on integers
+    ShiftInt,        // Infer <<, >> and >>> operations on integers
+    BitwiseInt,      // Infer &, |, ^ and ~ operations on integers
+    ObjectField,     // Track objects field assignments and access
+    NotBool,         // Infer unary ! operations on booleans
+    BoolAlgebra,     // Infer boolean algebra operations (&&, ||)
+    AddBool,         // Infer + and - operations on booleans
+    CombineArrays,   // Infer + operations on two arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     Forward, // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     BoolPlusMinus, // Infer + and - operations on booleans
     Concat, // Infer string concatenation with + operator on string literals
+    ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
+    Split,          // Infer string split calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
-    AtTrick, // Infer the at trick (e.g. []['at'] -> ƒ -> at() { [native code] }
-    ConstructorAccessTrick, // Infer the constructor access trick
-    ConstructorTrick, // Infer the constructor trick (e.g. []['constructor'] -> ƒ -> Array() { [native code] }
-    ToString,         // Infer toString calls
-    B64,              // Infer atob & btoa calls and reduce them to string literals
-    Var,              // Track variable assignments and propagate known values to usage sites
-    FnCall,           // Resolve predictable function calls to their return values
-    StrictEq,         // Infer strict equality === and !==
-    LooseEq,          // Infer strict equality == and !=
-    CmpOrd            // Infer comparison operators <, >, <= and >=
+    ToString,       // Infer toString calls
+    B64,            // Infer atob & btoa calls and reduce them to string literals
+    Var,            // Track variable assignments and propagate known values to usage sites
+    FnCall,         // Resolve predictable function calls to their return values
+    StrictEq,       // Infer strict equality === and !==
+    LooseEq,        // Infer strict equality == and !=
+    CmpOrd          // Infer comparison operators <, >, <= and >=
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

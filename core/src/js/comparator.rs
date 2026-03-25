@@ -225,11 +225,11 @@ fn loose_eq(left: &JavaScript, right: &JavaScript) -> Option<bool> {
 
         // array/object -> primitive, then retry
         (Array(arr), other) => {
-            let flat = flatten_array(arr);
+            let flat = flatten_array(arr, None);
             loose_eq(&Raw(Str(flat)), other)
         }
         (other, Array(arr)) => {
-            let flat = flatten_array(arr);
+            let flat = flatten_array(arr, None);
             loose_eq(other, &Raw(Str(flat)))
         }
 
@@ -368,7 +368,7 @@ fn to_ord_prim(value: &JavaScript) -> Option<OrdPrim> {
         Raw(Str(s)) => Some(OrdPrim::Str(s.clone())),
         Raw(Bool(b)) => Some(OrdPrim::Num(if *b { 1.0 } else { 0.0 })),
         Raw(BigInt(b)) => Some(OrdPrim::BigInt(b.clone())),
-        Array(arr) => Some(OrdPrim::Str(flatten_array(arr))),
+        Array(arr) => Some(OrdPrim::Str(flatten_array(arr, None))),
         Undefined => Some(OrdPrim::Num(f64::NAN)),
         NaN => Some(OrdPrim::Num(f64::NAN)),
         _ => None,
