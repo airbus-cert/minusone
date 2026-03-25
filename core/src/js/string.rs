@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Raw};
+use crate::js::JavaScript::{Array, Object, Raw};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
@@ -423,6 +423,36 @@ impl<'a> RuleMut<'a> for Concat {
                             b.to_string() + s.to_string().as_str()
                         );
                         node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                    }
+                    (
+                        Some(Raw(Str(s))),
+                        Some(Object {
+                            to_string_override: Some(obj_str),
+                            ..
+                        }),
+                    ) => {
+                        trace!(
+                            "Concat: reducing '{}' + object override to '{}{}'",
+                            s,
+                            s,
+                            obj_str
+                        );
+                        node.reduce(Raw(Str(format!("{}{}", s, obj_str))));
+                    }
+                    (
+                        Some(Object {
+                            to_string_override: Some(obj_str),
+                            ..
+                        }),
+                        Some(Raw(Str(s))),
+                    ) => {
+                        trace!(
+                            "Concat: reducing object override + '{}' to '{}{}'",
+                            s,
+                            obj_str,
+                            s
+                        );
+                        node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
                     }
                     _ => {}
                 }

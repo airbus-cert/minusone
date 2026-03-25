@@ -18,7 +18,10 @@ fn number_obj() -> JavaScript {
     number.insert("NEGATIVE_INFINITY".to_string(), Raw(Num(f64::NEG_INFINITY)));
     number.insert("NaN".to_string(), NaN);
     number.insert("EPSILON".to_string(), Raw(Num(f64::EPSILON)));
-    Object(number)
+    Object {
+        map: number,
+        to_string_override: Some("function Number() { [native code] }".to_string()),
+    }
 }
 
 fn math_obj() -> JavaScript {
@@ -31,13 +34,25 @@ fn math_obj() -> JavaScript {
     number.insert("PI".to_string(), Raw(Num(PI)));
     number.insert("SQRT2".to_string(), Raw(Num(SQRT_2)));
     number.insert("SQRT1_2".to_string(), Raw(Num(FRAC_1_SQRT_2)));
-    Object(number)
+    Object {
+        map: number,
+        to_string_override: Some("[object Math]".to_string()),
+    }
+}
+
+fn string_obj() -> JavaScript {
+    let string = HashMap::new();
+    Object {
+        map: string,
+        to_string_override: Some("function String() { [native code] }".to_string()),
+    }
 }
 
 fn js_global_objects() -> HashMap<String, JavaScript> {
     let mut globals = HashMap::new();
     globals.insert("Number".to_string(), number_obj());
     globals.insert("Math".to_string(), math_obj());
+    globals.insert("String".to_string(), string_obj());
     globals
 }
 

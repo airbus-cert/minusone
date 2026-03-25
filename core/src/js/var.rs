@@ -315,13 +315,13 @@ impl<'a> RuleMut<'a> for Var {
                         return Ok(());
                     }
 
-                    if matches!(view.data(), Some(JavaScript::Object(_))) {
+                    if matches!(view.data(), Some(JavaScript::Object { .. })) {
                         return Ok(());
                     }
 
                     let var_name = view.text()?.to_string();
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
-                        if matches!(data, JavaScript::Object(_)) {
+                        if matches!(data, JavaScript::Object { .. }) {
                             return Ok(());
                         }
 

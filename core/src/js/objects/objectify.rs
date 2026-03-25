@@ -38,7 +38,7 @@ fn constructor_name(value: &JavaScript) -> &'static str {
         Function { .. } => "Function",
         Bytes(_) => "String",
         Null => "null",
-        Object(_) => "Object",
+        Object { .. } => "Object",
     }
 }
 
@@ -87,11 +87,18 @@ fn array_builtins(_v: Vec<JavaScript>) -> HashMap<String, JavaScript> {
 }
 
 pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
-    if let Object(map) = value {
+    if let Object {
+        map,
+        to_string_override,
+    } = value
+    {
         let mut obj = map.clone();
         obj.entry("constructor".to_string())
             .or_insert_with(|| native_function("Object"));
-        return Some(Object(obj));
+        return Some(Object {
+            map: obj,
+            to_string_override: to_string_override.clone(),
+        });
     }
 
     let mut map = HashMap::new();
@@ -119,5 +126,8 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         map.extend(array_builtins(arr.clone()));
     }
 
-    Some(Object(map))
+    Some(Object {
+        map,
+        to_string_override: None,
+    })
 }

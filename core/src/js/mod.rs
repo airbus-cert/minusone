@@ -85,7 +85,10 @@ pub enum JavaScript {
     NaN,
     Null,
     Bytes(Vec<u8>),
-    Object(HashMap<String, JavaScript>), // This is a special value that represents an object with known properties (e.g. { length: 1 })
+    Object {
+        map: HashMap<String, JavaScript>,
+        to_string_override: Option<String>,
+    },
 }
 
 impl PartialEq<JavaScript> for &JavaScript {
@@ -119,8 +122,8 @@ impl Display for JavaScript {
             NaN => write!(f, "NaN"),
             Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
             Null => write!(f, "null"),
-            Object(obj) => {
-                let obj_str = obj
+            Object { map, .. } => {
+                let obj_str = map
                     .iter()
                     .map(|(k, v)| format!("{}: {}", k, v))
                     .collect::<Vec<String>>()
@@ -163,7 +166,7 @@ impl JavaScript {
 
                 false
             }
-            Object(_) => {
+            Object { .. } => {
                 warn!("Objects don't really have a boolean value in Js, falling back to true");
                 true
             }

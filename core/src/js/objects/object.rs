@@ -81,7 +81,10 @@ impl<'a> RuleMut<'a> for ParseObject {
                 }
             }
             trace!("ParseObject: map = {:?}", map);
-            node.reduce(Object(map));
+            node.reduce(Object {
+                map,
+                to_string_override: None,
+            });
         }
 
         Ok(())
@@ -234,9 +237,9 @@ impl ObjectField {
         let mut current = root.clone();
         for key in keys {
             current = match current {
-                Object(map) => map.get(key).cloned()?,
+                Object { map, .. } => map.get(key).cloned()?,
                 value => match as_object(&value) {
-                    Some(Object(map)) => map.get(key).cloned()?,
+                    Some(Object { map, .. }) => map.get(key).cloned()?,
                     _ => return None,
                 },
             };
@@ -260,9 +263,12 @@ impl ObjectField {
         }
 
         let head = keys[0].clone();
-        let entry = map.entry(head).or_insert_with(|| Object(HashMap::new()));
+        let entry = map.entry(head).or_insert_with(|| Object {
+            map: HashMap::new(),
+            to_string_override: None,
+        });
         match entry {
-            Object(next) => Self::set_in_map(next, &keys[1..], value),
+            Object { map, .. } => Self::set_in_map(map, &keys[1..], value),
             _ => false,
         }
     }
@@ -273,7 +279,7 @@ impl ObjectField {
         }
 
         match root {
-            Object(map) => Self::set_in_map(map, keys, value),
+            Object { map, .. } => Self::set_in_map(map, keys, value),
             _ => false,
         }
     }
@@ -334,7 +340,8 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .cloned()
                                 .or_else(|| function_value_from_node(&value_node));
 
-                            if let Some(value_data @ (Object(_) | Function { .. })) = value_data {
+                            if let Some(value_data @ (Object { .. } | Function { .. })) = value_data
+                            {
                                 self.scope_manager.current_mut().assign(
                                     &var_name,
                                     value_data,
@@ -358,7 +365,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                             .cloned()
                             .or_else(|| function_value_from_node(&right));
 
-                        if let Some(right_data @ (Object(_) | Function { .. })) = right_data {
+                        if let Some(right_data @ (Object { .. } | Function { .. })) = right_data {
                             self.scope_manager.current_mut().assign(
                                 &var_name,
                                 right_data,
@@ -390,7 +397,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .or_else(|| function_value_from_node(&right));
                             if let Some(data) = rhs_data {
                                 if self.scope_manager.current().get_var(&base_name).is_none()
-                                    && matches!(access.base_value, Some(Object(_)))
+                                    && matches!(access.base_value, Some(Object { .. }))
                                 {
                                     self.scope_manager.current_mut().assign(
                                         &base_name,
@@ -479,7 +486,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                     }
 
                     let var_name = view.text()?.to_string();
-                    if let Some(value @ (Object(_) | Function { .. })) =
+                    if let Some(value @ (Object { .. } | Function { .. })) =
                         self.scope_manager.current().get_var(&var_name)
                     {
                         node.set(value.clone());
@@ -661,6 +668,14 @@ mod tests {
         assert_eq!(
             deobfuscate("var x = 'abc'['fontcolor']();"),
             "var x = '<font color=\"undefined\">abc</font>';"
+        );
+    }
+
+    #[test]
+    fn test_global_number_string_concat() {
+        assert_eq!(
+            deobfuscate("console.log('false0'+Number);"),
+            "console.log('false0function Number() { [native code] }');"
         );
     }
 }
