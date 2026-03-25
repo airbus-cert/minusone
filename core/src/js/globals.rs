@@ -1,12 +1,13 @@
 use crate::js::JavaScript;
-use crate::js::JavaScript::{NaN, Object, Raw};
-use crate::js::Value::Num;
+use crate::js::JavaScript::*;
+use crate::js::Value::*;
 use crate::scope::Scope;
 use std::collections::HashMap;
 use std::f64::consts::*;
 
 fn number_obj() -> JavaScript {
     let mut number = HashMap::new();
+    number.insert("name".to_string(), Raw(Str("Number".to_string())));
     number.insert("MAX_VALUE".to_string(), Raw(Num(f64::MAX)));
     number.insert("MIN_VALUE".to_string(), Raw(Num(f64::MIN_POSITIVE)));
     number.insert("MAX_SAFE_INTEGER".to_string(), Raw(Num(9007199254740991.0)));
@@ -41,7 +42,8 @@ fn math_obj() -> JavaScript {
 }
 
 fn string_obj() -> JavaScript {
-    let string = HashMap::new();
+    let mut string = HashMap::new();
+    string.insert("name".to_string(), Raw(Str("String".to_string())));
     Object {
         map: string,
         to_string_override: Some("function String() { [native code] }".to_string()),

@@ -433,9 +433,7 @@ impl<'a> RuleMut<'a> for Concat {
                     ) => {
                         trace!(
                             "Concat: reducing '{}' + object override to '{}{}'",
-                            s,
-                            s,
-                            obj_str
+                            s, s, obj_str
                         );
                         node.reduce(Raw(Str(format!("{}{}", s, obj_str))));
                     }
@@ -448,9 +446,7 @@ impl<'a> RuleMut<'a> for Concat {
                     ) => {
                         trace!(
                             "Concat: reducing object override + '{}' to '{}{}'",
-                            s,
-                            obj_str,
-                            s
+                            s, obj_str, s
                         );
                         node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
                     }

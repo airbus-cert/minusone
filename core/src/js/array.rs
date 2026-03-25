@@ -135,6 +135,36 @@ impl<'a> RuleMut<'a> for CombineArrays {
                         node.reduce(NaN);
                     }
                 }
+                (
+                    Some(Array(left_values)),
+                    "+",
+                    Some(Object {
+                        to_string_override: Some(obj_str),
+                        ..
+                    }),
+                ) => {
+                    let combined = format!("{}{}", flatten_array(left_values, None), obj_str);
+                    trace!(
+                        "CombineArrays (L): combining array and object => left: {:?}, right: {:?} => '{}'",
+                        left_values, obj_str, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                (
+                    Some(Object {
+                        to_string_override: Some(obj_str),
+                        ..
+                    }),
+                    "+",
+                    Some(Array(right_values)),
+                ) => {
+                    let combined = format!("{}{}", obj_str, flatten_array(right_values, None));
+                    trace!(
+                        "CombineArrays (L): combining object and array => left: {:?}, right: {:?} => '{}'",
+                        obj_str, right_values, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
                 (Some(Array(left_values)), "+", Some(Raw(raw))) => {
                     let combined = format!(
                         "{}{}",
@@ -339,7 +369,11 @@ pub fn flatten_array(arr: &Vec<JavaScript>, separator: Option<String>) -> String
 fn flatten_value(value: &JavaScript, separator: Option<String>) -> String {
     match value {
         Array(arr) => flatten_array(arr, separator.clone()),
-        Raw(Num(n)) => n.to_string(),
+        Raw(Num(n)) => match *n {
+            f64::INFINITY => "Infinity".to_string(),
+            f64::NEG_INFINITY => "-Infinity".to_string(),
+            n => n.to_string(),
+        },
         Raw(Str(s)) => s.clone(),
         Raw(Bool(b)) => b.to_string(),
 
