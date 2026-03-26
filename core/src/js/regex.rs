@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Null, Raw, Regex, Undefined};
 use crate::js::Value::{Bool, Num, Str};
+use crate::js::string::Concat;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -291,10 +292,85 @@ impl<'a> RuleMut<'a> for RegexExec {
     }
 }
 
+/// Infers string concatenation with `+` and reduces them to single string literals
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Concat};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'Hello, ' + 'world!' + 1;").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), Concat::default())).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'Hello, world!1';");
+/// ```
+#[derive(Default)]
+pub struct RegexConcat;
+
+impl<'a> RuleMut<'a> for RegexConcat {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let pending = {
+            let view = node.view();
+            if view.kind() != "binary_expression" {
+                return Ok(());
+            }
+
+            match (view.child(0), view.child(1), view.child(2)) {
+                (Some(left), Some(operator), Some(right)) if operator.text()? == "+" => {
+                    let left_update = match left.data() {
+                        Some(regex @ Regex { .. }) => Some((left.id(), regex.to_string())),
+                        _ => None,
+                    };
+                    let right_update = match right.data() {
+                        Some(regex @ Regex { .. }) => Some((right.id(), regex.to_string())),
+                        _ => None,
+                    };
+                    (left_update, right_update)
+                }
+                _ => return Ok(()),
+            }
+        };
+
+        let mut changed = false;
+        if let Some((id, s)) = pending.0 {
+            node.set_by_node_id(id, Raw(Str(s)));
+            changed = true;
+        }
+        if let Some((id, s)) = pending.1 {
+            node.set_by_node_id(id, Raw(Str(s)));
+            changed = true;
+        }
+
+        if changed {
+            Concat::default().leave(node, flow)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_regex {
     use super::*;
     use crate::js::build_javascript_tree;
+    use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
     use crate::js::objects::object::ObjectField;
     use crate::js::string::{Concat, ParseString};
@@ -304,7 +380,9 @@ mod tests_js_regex {
         tree.apply_mut(&mut (
             ParseString::default(),
             ParseRegex::default(),
+            ParseInt::default(),
             Concat::default(),
+            RegexConcat::default(),
             ObjectField::default(),
             RegexExec::default(),
         ))
@@ -352,5 +430,12 @@ mod tests_js_regex {
             deobfuscate("var m = RegExp + '';"),
             "var m = 'function RegExp() { [native code] }';"
         );
+    }
+
+    #[test]
+    fn test_regex_concat() {
+        assert_eq!(deobfuscate("var m = /a/ + 'a';"), "var m = '/a/a';");
+        assert_eq!(deobfuscate("var m = /a/ + 1;"), "var m = '/a/1';");
+        assert_eq!(deobfuscate("var m = /a/g + /a/i;"), "var m = '/a/g/a/i';");
     }
 }

@@ -238,6 +238,7 @@ impl_javascript_ruleset!(
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     BoolPlusMinus, // Infer + and - operations on booleans
     Concat, // Infer string concatenation with + operator on string literals
+    RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
     Split,          // Infer string split calls on literal strings
     GetArrayElement, // Get element at array index
