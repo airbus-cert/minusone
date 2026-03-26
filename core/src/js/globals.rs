@@ -50,11 +50,21 @@ fn string_obj() -> JavaScript {
     }
 }
 
+fn regexp_obj() -> JavaScript {
+    let mut string = HashMap::new();
+    string.insert("name".to_string(), Raw(Str("RegExp".to_string())));
+    Object {
+        map: string,
+        to_string_override: Some("function RegExp() { [native code] }".to_string()),
+    }
+}
+
 fn js_global_objects() -> HashMap<String, JavaScript> {
     let mut globals = HashMap::new();
     globals.insert("Number".to_string(), number_obj());
     globals.insert("Math".to_string(), math_obj());
     globals.insert("String".to_string(), string_obj());
+    globals.insert("RegExp".to_string(), regexp_obj());
     globals
 }
 

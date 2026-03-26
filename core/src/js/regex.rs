@@ -296,13 +296,16 @@ mod tests_js_regex {
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
-    use crate::js::string::ParseString;
+    use crate::js::objects::object::ObjectField;
+    use crate::js::string::{Concat, ParseString};
 
     fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             ParseRegex::default(),
+            Concat::default(),
+            ObjectField::default(),
             RegexExec::default(),
         ))
         .unwrap();
@@ -341,5 +344,13 @@ mod tests_js_regex {
             "var m = ['abbb', 'bbb'];"
         );
         assert_eq!(deobfuscate("var m = /a+/.exec('zzz');"), "var m = null;");
+    }
+
+    #[test]
+    fn test_regexp_concat() {
+        assert_eq!(
+            deobfuscate("var m = RegExp + '';"),
+            "var m = 'function RegExp() { [native code] }';"
+        );
     }
 }
