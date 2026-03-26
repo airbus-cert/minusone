@@ -12,7 +12,10 @@
   ];
 
   languages = {
-    python.enable = true;
+    python = {
+      enable = true;
+      package = pkgs.python3.withPackages (ps: [ ps.pip ]);
+    };
     javascript = {
       enable = true;
       npm.enable = true;
@@ -38,5 +41,6 @@
 
   enterTest = ''
     just test
+    just test-py
   '';
 }
