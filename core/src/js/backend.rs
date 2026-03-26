@@ -7,7 +7,7 @@ use crate::js::{
 };
 use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
-use log::error;
+use log::{error, trace};
 
 pub struct JavaScriptBackend;
 
@@ -87,11 +87,32 @@ impl CleanBackend for JavaScriptBackend {
     }
 
     fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String> {
-        let mut rule = UnusedVar::default();
-        root.apply(&mut rule)?;
-        let mut clean_view = RemoveUnusedVar::new(rule);
-        root.apply(&mut clean_view)?;
-        clean_view.clear()
+        let mut current = root.root()?.text()?.to_string();
+
+        // re-run deadcode elimination until no more nodes are removed, this handles cascading cases
+        for i in 0..16 {
+            trace!(
+                "Clean pass iteration {}: current code length = {}",
+                i + 1,
+                current.len()
+            );
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+
+            let mut rule = UnusedVar::default();
+            tree.apply(&mut rule)?;
+
+            let mut clean_view = RemoveUnusedVar::new(rule);
+            tree.apply(&mut clean_view)?;
+            let next = clean_view.clear()?;
+
+            if next == current {
+                return Ok(next);
+            }
+
+            current = next;
+        }
+
+        Ok(current)
     }
 }
 

@@ -1,5 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::functions::function::function_value_from_node;
+use crate::js::globals::inject_js_globals;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
@@ -88,16 +90,19 @@ impl Var {
     }
 
     fn is_write_target(node: &Node<JavaScript>) -> bool {
-        if let Some(parent) = node.parent() {
+        let mut current = node.parent();
+        while let Some(parent) = current {
             match parent.kind() {
                 "variable_declarator" => {
                     if let Some(name_child) = parent.child(0) {
-                        return name_child.id() == node.id();
+                        return node.start_abs() >= name_child.start_abs()
+                            && node.end_abs() <= name_child.end_abs();
                     }
                 }
                 "assignment_expression" | "augmented_assignment_expression" => {
                     if let Some(left) = parent.child(0) {
-                        return left.id() == node.id();
+                        return node.start_abs() >= left.start_abs()
+                            && node.end_abs() <= left.end_abs();
                     }
                 }
                 "update_expression" => {
@@ -105,7 +110,10 @@ impl Var {
                 }
                 _ => {}
             }
+
+            current = parent.parent();
         }
+
         false
     }
 }
@@ -122,6 +130,7 @@ impl<'a> RuleMut<'a> for Var {
         match view.kind() {
             "program" => {
                 self.scope_manager.reset();
+                inject_js_globals(self.scope_manager.current_mut(), false);
             }
             // fn scopes: entering -> new scope
             "function_declaration"
@@ -245,6 +254,38 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             }
+            // function test() {} / function* test() {}
+            "function_declaration" | "generator_function_declaration" => {
+                if let Some(name_node) = view.named_child("name") {
+                    if name_node.kind() == "identifier" {
+                        let var_name = name_node.text()?.to_string();
+                        let value = view
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&view));
+
+                        let Some(value) = value else {
+                            return Ok(());
+                        };
+
+                        trace!(
+                            "Var (L): Assigning function declaration '{}' = {:?}",
+                            var_name, value
+                        );
+                        self.scope_manager.current_mut().assign(
+                            &var_name,
+                            value,
+                            node.is_ongoing_transaction(),
+                        );
+
+                        if let Some(parent) = view.parent() {
+                            if parent.kind() == "program" {
+                                self.scope_manager.current_mut().set_non_local(&var_name);
+                            }
+                        }
+                    }
+                }
+            }
             // x++, x--, ++x, --x
             "update_expression" => {
                 for i in 0..view.child_count() {
@@ -262,8 +303,28 @@ impl<'a> RuleMut<'a> for Var {
             // read
             "identifier" => {
                 if !Var::is_write_target(&view) {
+                    if let Some(parent) = view.parent()
+                        && parent.kind() == "call_expression"
+                        && parent
+                            .named_child("function")
+                            .map(|f| {
+                                f.start_abs() == view.start_abs() && f.end_abs() == view.end_abs()
+                            })
+                            .unwrap_or(false)
+                    {
+                        return Ok(());
+                    }
+
+                    if matches!(view.data(), Some(JavaScript::Object { .. })) {
+                        return Ok(());
+                    }
+
                     let var_name = view.text()?.to_string();
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
+                        if matches!(data, JavaScript::Object { .. }) {
+                            return Ok(());
+                        }
+
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);
                         node.set(data.clone());
                     }

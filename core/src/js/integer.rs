@@ -95,7 +95,7 @@ impl<'a> RuleMut<'a> for ParseInt {
                                 let result = Self::js_parse_int(
                                     value.data().cloned().unwrap_or(Undefined),
                                     radix.clone(),
-                                    func.text()? == "parseInt"
+                                    func.text()? == "parseInt",
                                 );
 
                                 trace!(

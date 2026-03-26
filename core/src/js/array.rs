@@ -4,6 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
@@ -103,7 +104,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     return Ok(());
                 }
                 (Some(Array(l)), "-", Some(Raw(Num(r)))) => {
-                    let l = flatten_array(l);
+                    let l = flatten_array(l, None);
                     trace!("Flatten : {}", l);
                     if !l.contains(",") {
                         if let Some(l_num) = l.parse::<f64>().ok() {
@@ -119,7 +120,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     }
                 }
                 (Some(Raw(Num(l))), "-", Some(Array(r))) => {
-                    let r = flatten_array(r);
+                    let r = flatten_array(r, None);
                     if !r.contains(",") {
                         if let Some(r_num) = r.parse::<f64>().ok() {
                             let result = l - r_num;
@@ -134,11 +135,41 @@ impl<'a> RuleMut<'a> for CombineArrays {
                         node.reduce(NaN);
                     }
                 }
+                (
+                    Some(Array(left_values)),
+                    "+",
+                    Some(Object {
+                        to_string_override: Some(obj_str),
+                        ..
+                    }),
+                ) => {
+                    let combined = format!("{}{}", flatten_array(left_values, None), obj_str);
+                    trace!(
+                        "CombineArrays (L): combining array and object => left: {:?}, right: {:?} => '{}'",
+                        left_values, obj_str, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                (
+                    Some(Object {
+                        to_string_override: Some(obj_str),
+                        ..
+                    }),
+                    "+",
+                    Some(Array(right_values)),
+                ) => {
+                    let combined = format!("{}{}", obj_str, flatten_array(right_values, None));
+                    trace!(
+                        "CombineArrays (L): combining object and array => left: {:?}, right: {:?} => '{}'",
+                        obj_str, right_values, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
                 (Some(Array(left_values)), "+", Some(Raw(raw))) => {
                     let combined = format!(
                         "{}{}",
-                        flatten_array(left_values),
-                        flatten_value(&Raw(raw.clone()))
+                        flatten_array(left_values, None),
+                        flatten_value(&Raw(raw.clone()), None)
                     );
                     trace!(
                         "CombineArrays (L): combining array and raw => left: {:?}, right: {:?} => '{}'",
@@ -149,8 +180,8 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 (Some(Raw(raw)), "+", Some(Array(right_values))) => {
                     let combined = format!(
                         "{}{}",
-                        flatten_value(&Raw(raw.clone())),
-                        flatten_array(right_values)
+                        flatten_value(&Raw(raw.clone()), None),
+                        flatten_array(right_values, None)
                     );
                     trace!(
                         "CombineArrays (L): combining raw and array => left: {:?}, right: {:?} => '{}'",
@@ -186,6 +217,32 @@ impl<'a> RuleMut<'a> for CombineArrays {
 #[derive(Default)]
 pub struct GetArrayElement;
 
+impl GetArrayElement {
+    fn is_call_like_target(view: &crate::tree::Node<JavaScript>) -> bool {
+        if let Some(parent) = view.parent() {
+            if parent.kind() == "call_expression"
+                && parent
+                    .named_child("function")
+                    .map(|f| f.start_abs() == view.start_abs() && f.end_abs() == view.end_abs())
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+
+            if parent.kind() == "new_expression"
+                && parent
+                    .named_child("constructor")
+                    .map(|f| f.start_abs() == view.start_abs() && f.end_abs() == view.end_abs())
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
 impl<'a> RuleMut<'a> for GetArrayElement {
     type Language = JavaScript;
 
@@ -207,7 +264,11 @@ impl<'a> RuleMut<'a> for GetArrayElement {
             return Ok(());
         }
 
-        // This bypass empty arrays rules
+        if Self::is_call_like_target(&view) {
+            return Ok(());
+        }
+
+        // bypass empty arrays rules
         if let (Some(n), Some(index_node)) = (view.child(0), view.child(2)) {
             if let (Some(_), Some(index)) = (n.data(), index_node.data()) {
                 if index == NaN || index == Undefined {
@@ -219,13 +280,17 @@ impl<'a> RuleMut<'a> for GetArrayElement {
         }
 
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
-            if let Some(Array(arr)) = array_node.data() {
-                if arr.is_empty() {
-                    trace!("GetArrayElement: accessing index of empty array, setting to undefined");
+            if let (Some(Array(_)), Some(Array(index_arr))) = (array_node.data(), index_node.data())
+            {
+                if index_arr.is_empty() {
+                    trace!(
+                        "GetArrayElement: array indexed by [] coerces to empty-string key => undefined"
+                    );
                     node.reduce(Undefined);
                     return Ok(());
                 }
             }
+
             if let (Some(Array(arr)), Some(Raw(Num(index)))) =
                 (array_node.data(), index_node.data())
             {
@@ -264,11 +329,18 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     }
                     Ok(())
                 } else {
-                    warn!(
-                        "GetArrayElement: cannot parse index '{}' as number",
-                        index_str
-                    );
-                    node.reduce(Undefined);
+                    if index_str == "constructor" || index_str == "at" {
+                        trace!(
+                            "GetArrayElement: preserving known array property access '{}', defer to object coercion",
+                            index_str
+                        );
+                    } else {
+                        warn!(
+                            "GetArrayElement: non-numeric array index '{}' => undefined",
+                            index_str
+                        );
+                        node.reduce(Undefined);
+                    }
                     Ok(())
                 };
             }
@@ -285,18 +357,23 @@ impl<'a> RuleMut<'a> for GetArrayElement {
     }
 }
 
-pub fn flatten_array(arr: &Vec<JavaScript>) -> String {
+pub fn flatten_array(arr: &Vec<JavaScript>, separator: Option<String>) -> String {
+    let separator = separator.unwrap_or_else(|| ",".to_string());
     arr.iter()
-        .map(flatten_value)
+        .map(|value| flatten_value(value, Some(separator.clone())))
         .filter(|s| !s.is_empty())
         .collect::<Vec<String>>()
-        .join(",")
+        .join(&separator)
 }
 
-fn flatten_value(value: &JavaScript) -> String {
+fn flatten_value(value: &JavaScript, separator: Option<String>) -> String {
     match value {
-        Array(arr) => flatten_array(arr),
-        Raw(Num(n)) => n.to_string(),
+        Array(arr) => flatten_array(arr, separator.clone()),
+        Raw(Num(n)) => match *n {
+            f64::INFINITY => "Infinity".to_string(),
+            f64::NEG_INFINITY => "-Infinity".to_string(),
+            n => n.to_string(),
+        },
         Raw(Str(s)) => s.clone(),
         Raw(Bool(b)) => b.to_string(),
 
@@ -311,7 +388,11 @@ fn flatten_value(value: &JavaScript) -> String {
 }
 
 fn combine_arrays(left: &Vec<JavaScript>, right: &Vec<JavaScript>) -> String {
-    format!("{}{}", flatten_array(left), flatten_array(right))
+    format!(
+        "{}{}",
+        flatten_array(left, None),
+        flatten_array(right, None)
+    )
 }
 
 /// Infers unary plus and minus on arrays
@@ -398,6 +479,90 @@ fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
     }
 }
 
+/// Infers join calls on arrays
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::{ParseArray, ArrayJoin};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = ['a', 'b'].join();").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), ArrayJoin::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'a,b';");
+/// ```
+#[derive(Default)]
+pub struct ArrayJoin;
+
+impl<'a> RuleMut<'a> for ArrayJoin {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "join" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.named_child("object") else {
+            return Ok(());
+        };
+        let Some(Array(input)) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let separator: Option<String> = match positional_args.first().and_then(|a| a.data()) {
+            None => None,
+            Some(Undefined) => None,
+            Some(Raw(Str(s))) => Some(s.clone()),
+            _ => return Ok(()),
+        };
+
+        let flatten = flatten_array(input, separator);
+        trace!(
+            "ArrayJoin: reducing {:?}.join({:?}) to '{}'",
+            input,
+            positional_args.first().and_then(|a| a.data()),
+            flatten
+        );
+        node.reduce(Raw(Str(flatten)));
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_array {
     use super::*;
@@ -405,6 +570,8 @@ mod tests_js_array {
     use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use crate::js::specials::AddSubSpecials;
+    use crate::js::string::CharAt;
     use crate::js::string::ParseString;
 
     fn deobfuscate(input: &str) -> String {
@@ -417,6 +584,8 @@ mod tests_js_array {
             Forward::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
+            AddSubSpecials::default(),
+            CharAt::default(),
         ))
         .unwrap();
 
@@ -429,7 +598,7 @@ mod tests_js_array {
     fn test_array_parsing() {
         assert_eq!(
             deobfuscate("var x = [1, 2, [3, '4']]"),
-            "var x = [1, 2, [3, '4']]",
+            "var x = [1, 2, [3, '4']]"
         );
     }
 
@@ -437,7 +606,7 @@ mod tests_js_array {
     fn test_combine_arrays() {
         assert_eq!(
             deobfuscate("var x = [0, 1,7] + [3, [7, '2', [88]]]"),
-            "var x = '0,1,73,7,2,88'",
+            "var x = '0,1,73,7,2,88'"
         );
     }
 
@@ -445,16 +614,26 @@ mod tests_js_array {
     fn test_get_array_element() {
         assert_eq!(
             deobfuscate("var x = ([1, [2, '3'], 4][1])[0];"),
-            "var x = 2;",
+            "var x = 2;"
         );
     }
 
     #[test]
     fn test_array_plus_minus() {
-        assert_eq!(deobfuscate("var x = +[['455']];"), "var x = 455;",);
+        assert_eq!(deobfuscate("var x = +[['455']];"), "var x = 455;");
 
-        assert_eq!(deobfuscate("var x = +['a'];"), "var x = NaN;",);
+        assert_eq!(deobfuscate("var x = +['a'];"), "var x = NaN;");
 
-        assert_eq!(deobfuscate("var x = [8] - 1;"), "var x = 7;",);
+        assert_eq!(deobfuscate("var x = [8] - 1;"), "var x = 7;");
+    }
+
+    #[test]
+    fn test_jsfuck_from_array_access() {
+        assert_eq!(deobfuscate("var x = ([][[]]+[])[1];"), "var x = 'n';");
+    }
+
+    #[test]
+    fn test_dont_reduce_array_lookup_when_used_as_callee() {
+        assert_eq!(deobfuscate("var x = [][[]]();"), "var x = [][[]]();");
     }
 }

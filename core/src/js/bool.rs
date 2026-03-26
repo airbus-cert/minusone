@@ -3,6 +3,7 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
+use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
@@ -236,13 +237,17 @@ impl<'a> RuleMut<'a> for AddBool {
                     trace!("AddBool (L): {} - {} => {}", l, r, result);
                     node.reduce(Raw(Num(result as f64)));
                 }
-                (Some(Raw(Bool(l))), "+", Some(Array(_))) => {
-                    trace!("AddBool (L): {} + array => '{}'", l, l);
-                    node.reduce(Raw(Str(l.to_string())));
+                (Some(Raw(Bool(l))), "+", Some(Array(r))) => {
+                    let array = flatten_array(r, None);
+                    let result = l.to_string() + &array;
+                    trace!("AddBool (L): {} + array => '{}'", l, result);
+                    node.reduce(Raw(Str(result)));
                 }
-                (Some(Array(_)), "+", Some(Raw(Bool(r)))) => {
-                    trace!("AddBool (L): array + {} => '{}'", r, r);
-                    node.reduce(Raw(Str(r.to_string())));
+                (Some(Array(l)), "+", Some(Raw(Bool(r)))) => {
+                    let array = flatten_array(l, None);
+                    let result = array + &r.to_string();
+                    trace!("AddBool (L): array + {} => '{}'", r, result);
+                    node.reduce(Raw(Str(result)));
                 }
                 (Some(NaN), "+", Some(Raw(Bool(_))))
                 | (Some(NaN), "-", Some(Raw(Bool(_))))
