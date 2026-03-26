@@ -35,6 +35,7 @@ fn constructor_name(value: &JavaScript) -> &'static str {
             BigInt(_) => "BigInt",
         },
         Array(_) => "Array",
+        Regex { .. } => "RegExp",
         Function { .. } => "Function",
         Bytes(_) => "String",
         Null => "null",

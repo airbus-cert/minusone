@@ -10,6 +10,7 @@ pub mod globals;
 pub mod integer;
 pub mod linter;
 pub mod objects;
+pub mod regex;
 pub mod specials;
 pub mod strategy;
 pub mod string;
@@ -27,6 +28,7 @@ use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
 use self::objects::object::*;
+use self::regex::*;
 use self::specials::*;
 use self::string::*;
 use self::var::*;
@@ -77,6 +79,10 @@ impl Display for Value {
 pub enum JavaScript {
     Raw(Value),
     Array(Vec<JavaScript>),
+    Regex {
+        pattern: String,
+        flags: String,
+    },
     Function {
         source: String,
         return_value: Option<Box<JavaScript>>,
@@ -117,6 +123,7 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "[{}]", arr_str)
             }
+            Regex { pattern, flags } => write!(f, "/{}/{}", pattern.replace('/', "\\/"), flags),
             Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),
             NaN => write!(f, "NaN"),
@@ -149,6 +156,7 @@ impl JavaScript {
             },
 
             Array(_) => true,
+            Regex { .. } => true,
             Function { .. } => true,
             Undefined => false,
             NaN => false,
@@ -208,6 +216,7 @@ impl_javascript_ruleset!(
     ParseInt,        // Parse integer literals (decimal, hex, octal, binary)
     ParseBool,       // Parse boolean literals (true, false)
     ParseString,     // Parse string literals (single and double quotes)
+    ParseRegex,      // Parse regex literals and RegExp constructors
     ParseFunction,   // Parse function and arrow-function expressions as first-class values
     ParseArray,      // Parse arrays
     ParseSpecials,   // Parse specials (undefined, NaN, null)
@@ -236,6 +245,7 @@ impl_javascript_ruleset!(
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
     Var,            // Track variable assignments and propagate known values to usage sites
+    RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==
     LooseEq,        // Infer strict equality == and !=
