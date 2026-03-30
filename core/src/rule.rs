@@ -2,9 +2,15 @@ use crate::error::MinusOneResult;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use dyn_clone::DynClone;
 use log::warn;
+use std::any::Any;
 
-pub struct RuleExecutionContext<'a> {
-    pub other_rules: &'a [String],
+pub struct RuleReference<'ctx, 'a, T> {
+    pub name: &'ctx str,
+    pub rule: &'ctx (dyn RuleMut<'a, Language = T> + 'static),
+}
+
+pub struct RuleExecutionContext<'ctx, 'a, T> {
+    pub other_rules: &'ctx [RuleReference<'ctx, 'a, T>],
     pub recursion_depth: usize,
 }
 
@@ -25,7 +31,7 @@ pub trait RuleMut<'a>: DynClone {
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
-        _context: &RuleExecutionContext,
+        _context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
         self.enter(node, flow)
     }
@@ -40,10 +46,16 @@ pub trait RuleMut<'a>: DynClone {
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
-        _context: &RuleExecutionContext,
+        _context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
         self.leave(node, flow)
     }
+
+    fn snapshot_state(&self) -> Option<Box<dyn Any>> {
+        None
+    }
+
+    fn restore_state(&mut self, _snapshot: &dyn Any) {}
 }
 
 dyn_clone::clone_trait_object!(<'a, T> RuleMut<'a, Language = T>);
@@ -119,6 +131,23 @@ impl<'a, T> RuleSet<'a, T> {
 
         Self { rule_names, rules }
     }
+
+    pub fn from_parts(
+        rule_names: Vec<String>,
+        rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
+    ) -> Self {
+        Self { rule_names, rules }
+    }
+
+    pub fn for_each_rule_mut(
+        &mut self,
+        mut handler: impl FnMut(&str, &mut dyn RuleMut<'a, Language = T>),
+    ) {
+        self.rule_names
+            .iter()
+            .zip(self.rules.iter_mut())
+            .for_each(|(name, rule)| handler(name.as_str(), rule.as_mut()));
+    }
 }
 
 pub enum RuleSetBuilderType<'a> {
@@ -145,28 +174,45 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
-        context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
-        let rule_names = self.rule_names.clone();
+        let rule_count = self.rules.len();
 
-        self.rules
-            .iter_mut()
-            .enumerate()
-            .try_for_each(|(idx, rule)| {
-                let other_rules: Vec<String> = rule_names
-                    .iter()
-                    .enumerate()
-                    .filter(|(name_idx, _)| *name_idx != idx)
-                    .map(|(_, name)| name.clone())
-                    .collect();
+        for idx in 0..rule_count {
+            let (left_rules, right_rules) = self.rules.split_at_mut(idx);
+            let (current_rule, right_rules) =
+                right_rules.split_first_mut().expect("valid rule index");
 
-                let nested_context = RuleExecutionContext {
-                    other_rules: &other_rules,
-                    recursion_depth: context.recursion_depth,
-                };
+            let (left_names, right_names) = self.rule_names.split_at(idx);
+            let (_current_name, right_names) = right_names.split_first().expect("valid rule index");
 
-                rule.enter_with_context(node, flow, &nested_context)
-            })
+            let other_rules: Vec<RuleReference<'_, 'a, T>> = left_names
+                .iter()
+                .zip(left_rules.iter())
+                .map(|(name, rule)| RuleReference {
+                    name,
+                    rule: &**rule,
+                })
+                .chain(
+                    right_names
+                        .iter()
+                        .zip(right_rules.iter())
+                        .map(|(name, rule)| RuleReference {
+                            name,
+                            rule: &**rule,
+                        }),
+                )
+                .collect();
+
+            let nested_context = RuleExecutionContext {
+                other_rules: &other_rules,
+                recursion_depth: context.recursion_depth,
+            };
+
+            current_rule.enter_with_context(node, flow, &nested_context)?;
+        }
+
+        Ok(())
     }
 
     fn leave(
@@ -181,28 +227,45 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
-        context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
-        let rule_names = self.rule_names.clone();
+        let rule_count = self.rules.len();
 
-        self.rules
-            .iter_mut()
-            .enumerate()
-            .try_for_each(|(idx, rule)| {
-                let other_rules: Vec<String> = rule_names
-                    .iter()
-                    .enumerate()
-                    .filter(|(name_idx, _)| *name_idx != idx)
-                    .map(|(_, name)| name.clone())
-                    .collect();
+        for idx in 0..rule_count {
+            let (left_rules, right_rules) = self.rules.split_at_mut(idx);
+            let (current_rule, right_rules) =
+                right_rules.split_first_mut().expect("valid rule index");
 
-                let nested_context = RuleExecutionContext {
-                    other_rules: &other_rules,
-                    recursion_depth: context.recursion_depth,
-                };
+            let (left_names, right_names) = self.rule_names.split_at(idx);
+            let (_current_name, right_names) = right_names.split_first().expect("valid rule index");
 
-                rule.leave_with_context(node, flow, &nested_context)
-            })
+            let other_rules: Vec<RuleReference<'_, 'a, T>> = left_names
+                .iter()
+                .zip(left_rules.iter())
+                .map(|(name, rule)| RuleReference {
+                    name,
+                    rule: &**rule,
+                })
+                .chain(
+                    right_names
+                        .iter()
+                        .zip(right_rules.iter())
+                        .map(|(name, rule)| RuleReference {
+                            name,
+                            rule: &**rule,
+                        }),
+                )
+                .collect();
+
+            let nested_context = RuleExecutionContext {
+                other_rules: &other_rules,
+                recursion_depth: context.recursion_depth,
+            };
+
+            current_rule.leave_with_context(node, flow, &nested_context)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -230,7 +293,7 @@ macro_rules! impl_data {
                     Ok(())
                 }
 
-                fn enter_with_context(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow, context: &RuleExecutionContext) -> MinusOneResult<()>{
+                fn enter_with_context(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow, context: &RuleExecutionContext<'_, 'a, Self::Language>) -> MinusOneResult<()>{
                     $(
                         ${ignore($ty)}
                         self.${index()}.enter_with_context(node, flow, context)?;
@@ -246,7 +309,7 @@ macro_rules! impl_data {
                     Ok(())
                 }
 
-                fn leave_with_context(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow, context: &RuleExecutionContext) -> MinusOneResult<()>{
+                fn leave_with_context(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow, context: &RuleExecutionContext<'_, 'a, Self::Language>) -> MinusOneResult<()>{
                     $(
                         ${ignore($ty)}
                         self.${index()}.leave_with_context(node, flow, context)?;

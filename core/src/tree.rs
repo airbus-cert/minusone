@@ -498,7 +498,7 @@ impl<'a, T> NodeMut<'a, T> {
     pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language = T>) -> MinusOneResult<()> {
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize)> = vec![];
-        let other_rules = rule.active_rule_names();
+        let other_rules = [];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
             match node.kind() {
@@ -627,7 +627,7 @@ impl<'a, T> NodeMut<'a, T> {
         strategy: &impl Strategy<T>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
-        let other_rules = rule.active_rule_names();
+        let other_rules = [];
         self.apply_with_strategy_recurcive_internal(rule, strategy, flow, &other_rules, 0)
     }
 
@@ -636,7 +636,7 @@ impl<'a, T> NodeMut<'a, T> {
         rule: &mut impl RuleMut<'a, Language = T>,
         strategy: &impl Strategy<T>,
         flow: ControlFlow,
-        other_rules: &[String],
+        other_rules: &[crate::rule::RuleReference<'_, 'a, T>],
         recursion_depth: usize,
     ) -> MinusOneResult<()> {
         let mut computed_flow = flow;
@@ -741,7 +741,7 @@ impl<'a, T> NodeMut<'a, T> {
         let mut control_flow = flow;
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize, ControlFlow)> = vec![];
-        let other_rules = rule.active_rule_names();
+        let other_rules = [];
 
         for node in traverse(self.inner.walk(), Order::Pre) {
             match node.kind() {

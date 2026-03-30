@@ -41,6 +41,7 @@ use crate::rule::{RuleExecutionContext, RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use log::warn;
 use num::Zero;
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
@@ -254,6 +255,16 @@ impl_javascript_ruleset!(
     CmpOrd          // Infer comparison operators <, >, <= and >=
 );
 
+impl<'a> JavaScriptRuleSet<'a> {
+    pub fn restore_rule_snapshots(&mut self, snapshots: &HashMap<String, Box<dyn Any>>) {
+        self.ruleset.for_each_rule_mut(|name, rule| {
+            if let Some(snapshot) = snapshots.get(name) {
+                rule.restore_state(snapshot.as_ref());
+            }
+        });
+    }
+}
+
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
     type Language = JavaScript;
 
@@ -281,7 +292,7 @@ impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
         flow: crate::tree::ControlFlow,
-        context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
         self.ruleset.enter_with_context(node, flow, context)
     }
@@ -290,7 +301,7 @@ impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
         flow: crate::tree::ControlFlow,
-        context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
         self.ruleset.leave_with_context(node, flow, context)
     }

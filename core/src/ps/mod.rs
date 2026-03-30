@@ -217,7 +217,7 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
         flow: crate::tree::ControlFlow,
-        context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
         self.ruleset.enter_with_context(node, flow, context)
     }
@@ -226,7 +226,7 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
         flow: crate::tree::ControlFlow,
-        context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
         self.ruleset.leave_with_context(node, flow, context)
     }

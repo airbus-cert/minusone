@@ -6,6 +6,7 @@ use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
 use log::trace;
+use std::any::Any;
 
 /// Var is a variable manager that will try to track
 /// static variable assignments and propagate them in the code
@@ -346,6 +347,16 @@ impl<'a> RuleMut<'a> for Var {
             _ => {}
         }
         Ok(())
+    }
+
+    fn snapshot_state(&self) -> Option<Box<dyn Any>> {
+        Some(Box::new(self.snapshot_scope_manager()))
+    }
+
+    fn restore_state(&mut self, snapshot: &dyn Any) {
+        if let Some(scope_manager) = snapshot.downcast_ref::<ScopeManager<JavaScript>>() {
+            self.restore_scope_manager(scope_manager.clone());
+        }
     }
 }
 

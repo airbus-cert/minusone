@@ -1,21 +1,25 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::JavaScriptRuleSet;
 use crate::js::Value::{Num, Str};
-use crate::js::array::{GetArrayElement, ParseArray};
 use crate::js::build_javascript_tree;
-use crate::js::forward::Forward;
-use crate::js::functions::function::ParseFunction;
 use crate::js::functions::function::function_value_from_node;
-use crate::js::integer::{MultInt, NegInt, ParseInt, SubAddInt};
 use crate::js::linter::Linter;
-use crate::js::objects::object::{ObjectField, ParseObject};
 use crate::js::strategy::JavaScriptStrategy;
-use crate::js::string::ParseString;
-use crate::js::var::Var;
-use crate::rule::{RuleExecutionContext, RuleMut};
+use crate::rule::{RuleExecutionContext, RuleMut, RuleReference, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
-use log::trace;
+use log::{trace, warn};
+use std::any::Any;
 use std::collections::HashMap;
+
+#[derive(Clone)]
+struct FnCallSnapshot {
+    function_sources: HashMap<String, String>,
+    vars: HashMap<String, JavaScript>,
+    object_fields: HashMap<(String, String), JavaScript>,
+    member_functions: HashMap<String, JavaScript>,
+    member_aliases: HashMap<String, String>,
+}
 
 /// Tracks function declarations with predictable return values
 ///
@@ -49,6 +53,7 @@ pub struct FnCall {
     member_functions: HashMap<String, JavaScript>,
     member_aliases: HashMap<String, String>,
     reset_on_program_enter: bool,
+    nested_peer_rule_names: Option<Vec<String>>,
     nested_eval_depth: usize,
     max_nested_eval_depth: usize,
 }
@@ -62,6 +67,7 @@ impl Default for FnCall {
             member_functions: HashMap::new(),
             member_aliases: HashMap::new(),
             reset_on_program_enter: true,
+            nested_peer_rule_names: None,
             nested_eval_depth: 0,
             max_nested_eval_depth: 3,
         }
@@ -529,6 +535,7 @@ impl FnCall {
         &self,
         call_node: &Node<JavaScript>,
         function_source: &str,
+        other_rules: &[RuleReference<JavaScript>],
     ) -> Option<JavaScript> {
         if self.nested_eval_depth >= self.max_nested_eval_depth {
             return None;
@@ -552,28 +559,78 @@ impl FnCall {
         nested_source.push_str(&rewritten_body);
         nested_source.push_str("\n__minusone_result;");
 
-        let nested_fncall = self.clone_for_nested_eval();
         let mut tree = build_javascript_tree(&nested_source).ok()?;
-        // todo: pass a copy of the rule so they keep their data
-        tree.apply_mut_with_strategy(
-            &mut (
-                ParseInt::default(),
-                NegInt::default(),
-                SubAddInt::default(),
-                MultInt::default(),
-                ParseString::default(),
-                ParseFunction::default(),
-                ParseArray::default(),
-                ParseObject::default(),
-                Forward::default(),
-                ObjectField::default(),
-                Var::default(),
-                GetArrayElement::default(),
-                nested_fncall,
-            ),
-            JavaScriptStrategy::default(),
-        )
-        .ok()?;
+        let inherited_rule_names = self.nested_peer_rule_names.clone().unwrap_or_default();
+        let selected_rule_names_owned: Vec<String> = if other_rules.is_empty() {
+            inherited_rule_names
+        } else {
+            other_rules
+                .iter()
+                .map(|rule| rule.name.to_string())
+                .collect()
+        };
+
+        let peer_snapshots: HashMap<String, Box<dyn Any>> = if other_rules.is_empty() {
+            HashMap::new()
+        } else {
+            other_rules
+                .iter()
+                .filter_map(|rule| {
+                    rule.rule
+                        .snapshot_state()
+                        .map(|snapshot| (rule.name.to_string(), snapshot))
+                })
+                .collect()
+        };
+
+        if selected_rule_names_owned.is_empty() {
+            warn!(
+                "No other rules were passed, falling back to a few rules. This may lead to limited resolution of the injected function body."
+            );
+            let mut nested_rules = (
+                crate::js::integer::ParseInt::default(),
+                crate::js::integer::NegInt::default(),
+                crate::js::integer::SubAddInt::default(),
+                crate::js::integer::MultInt::default(),
+                crate::js::string::ParseString::default(),
+                crate::js::functions::function::ParseFunction::default(),
+                crate::js::array::ParseArray::default(),
+                crate::js::objects::object::ParseObject::default(),
+                crate::js::forward::Forward::default(),
+                crate::js::array::GetArrayElement::default(),
+                crate::js::objects::object::ObjectField::default(),
+                crate::js::var::Var::default(),
+                self.clone_for_nested_eval(),
+            );
+
+            tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
+                .ok()?;
+            tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
+                .ok()?;
+            tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
+                .ok()?;
+        } else {
+            let mut nested_fncall = self.clone_for_nested_eval();
+            nested_fncall.nested_peer_rule_names = Some(selected_rule_names_owned.clone());
+            let selected_rule_names: Vec<&str> = selected_rule_names_owned
+                .iter()
+                .map(String::as_str)
+                .collect();
+
+            for _ in 0..2 {
+                {
+                    let mut nested_rules = JavaScriptRuleSet::new(RuleSetBuilderType::WithRules(
+                        selected_rule_names.clone(),
+                    ));
+                    nested_rules.restore_rule_snapshots(&peer_snapshots);
+                    tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
+                        .ok()?;
+                }
+
+                tree.apply_mut_with_strategy(&mut nested_fncall, JavaScriptStrategy::default())
+                    .ok()?;
+            }
+        }
 
         let root = tree.root().ok()?;
         for idx in (0..root.child_count()).rev() {
@@ -593,14 +650,18 @@ impl FnCall {
         None
     }
 
-    fn resolve_call_expression(&self, call_node: &Node<JavaScript>) -> Option<JavaScript> {
+    fn resolve_call_expression(
+        &self,
+        call_node: &Node<JavaScript>,
+        other_rules: &[RuleReference<JavaScript>],
+    ) -> Option<JavaScript> {
         let func_node = call_node
             .named_child("function")
             .or_else(|| call_node.child(0))?;
 
         for function_source in self.collect_call_target_sources(&func_node) {
             if let Some(return_value) =
-                self.resolve_call_from_injected_body(call_node, &function_source)
+                self.resolve_call_from_injected_body(call_node, &function_source, other_rules)
             {
                 return Some(return_value);
             }
@@ -745,8 +806,9 @@ impl<'a> RuleMut<'a> for FnCall {
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         _flow: ControlFlow,
-        _context: &RuleExecutionContext,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
     ) -> MinusOneResult<()> {
+        let other_rules = context.other_rules;
         let view = node.view();
         match view.kind() {
             "subscript_expression" => Self::reduce_array_subscript(node),
@@ -756,7 +818,7 @@ impl<'a> RuleMut<'a> for FnCall {
             }
             "assignment_expression" => self.track_assignment_expression(&view)?,
             "call_expression" => {
-                if let Some(return_value) = self.resolve_call_expression(&view) {
+                if let Some(return_value) = self.resolve_call_expression(&view, other_rules) {
                     trace!("FnCall (L): Reduced call expression to {:?}", return_value);
                     node.reduce(return_value);
                 }
@@ -764,6 +826,26 @@ impl<'a> RuleMut<'a> for FnCall {
             _ => {}
         }
         Ok(())
+    }
+
+    fn snapshot_state(&self) -> Option<Box<dyn Any>> {
+        Some(Box::new(FnCallSnapshot {
+            function_sources: self.function_sources.clone(),
+            vars: self.vars.clone(),
+            object_fields: self.object_fields.clone(),
+            member_functions: self.member_functions.clone(),
+            member_aliases: self.member_aliases.clone(),
+        }))
+    }
+
+    fn restore_state(&mut self, snapshot: &dyn Any) {
+        if let Some(snapshot) = snapshot.downcast_ref::<FnCallSnapshot>() {
+            self.function_sources = snapshot.function_sources.clone();
+            self.vars = snapshot.vars.clone();
+            self.object_fields = snapshot.object_fields.clone();
+            self.member_functions = snapshot.member_functions.clone();
+            self.member_aliases = snapshot.member_aliases.clone();
+        }
     }
 }
 
