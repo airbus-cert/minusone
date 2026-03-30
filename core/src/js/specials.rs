@@ -9,7 +9,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 
 /// Parse specials
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseSpecials;
 
 impl<'a> RuleMut<'a> for ParseSpecials {
@@ -80,7 +80,7 @@ impl<'a> RuleMut<'a> for ParseSpecials {
 /// assert_eq!(linter.output, "var x = 'undefined';");
 /// ```
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AddSubSpecials;
 
 impl<'a> RuleMut<'a> for AddSubSpecials {

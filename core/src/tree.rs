@@ -463,7 +463,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::error::MinusOneResult;
     ///
     ///
-    /// #[derive(Default)]
+    /// #[derive(Default, Clone)]
     /// pub struct MyRule;
     /// // This rule will only try to parse the text of each token to recognize a u32
     /// impl<'a> RuleMut<'a> for MyRule {
@@ -577,7 +577,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::tree::BranchFlow::Predictable;
     ///
     ///
-    /// #[derive(Default)]
+    /// #[derive(Default, Clone)]
     /// pub struct MyRule;
     /// // This rule will only try to parse the text of each token to recognize a u32
     /// impl<'a> RuleMut<'a> for MyRule {
@@ -688,7 +688,7 @@ impl<'a, T> NodeMut<'a, T> {
     /// use minusone::tree::BranchFlow::Predictable;
     ///
     ///
-    /// #[derive(Default)]
+    /// #[derive(Default, Clone)]
     /// pub struct MyRule;
     /// // This rule will only try to parse the text of each token to recognize a u32
     /// impl<'a> RuleMut<'a> for MyRule {
@@ -1117,7 +1117,7 @@ where
 
     pub fn apply_mut<'b>(
         &'b mut self,
-        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized),
+        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized + Clone),
     ) -> MinusOneResult<()> {
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
         node.apply(rule)
@@ -1125,7 +1125,7 @@ where
 
     pub fn apply_mut_with_strategy<'b>(
         &'b mut self,
-        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized),
+        rule: &mut (impl RuleMut<'b, Language = S::Component> + Sized + Clone),
         strategy: impl Strategy<S::Component>,
     ) -> MinusOneResult<()> {
         let mut node = NodeMut::new(self.tree_sitter.root_node(), self.source, &mut self.storage);
@@ -1138,7 +1138,7 @@ where
 
     pub fn apply<'b>(
         &'b self,
-        rule: &mut (impl Rule<'b, Language = S::Component> + Sized),
+        rule: &mut (impl Rule<'b, Language = S::Component> + Sized + Clone),
     ) -> MinusOneResult<()> {
         let node = Node::new(self.tree_sitter.root_node(), self.source, &self.storage);
         node.apply(rule)

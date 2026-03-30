@@ -25,7 +25,7 @@ use num::ToPrimitive;
 ///
 /// assert_eq!(linter.output, "var x = 31;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseInt;
 
 impl<'a> RuleMut<'a> for ParseInt {
@@ -338,7 +338,7 @@ fn js_to_f64(value: &JavaScript) -> f64 {
 ///
 /// assert_eq!(linter.output, "var x = -5;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct NegInt;
 
 impl<'a> RuleMut<'a> for NegInt {
@@ -415,7 +415,7 @@ impl<'a> RuleMut<'a> for NegInt {
 ///
 /// assert_eq!(linter.output, "var x = 2;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SubAddInt;
 
 impl<'a> RuleMut<'a> for SubAddInt {
@@ -521,7 +521,7 @@ impl<'a> RuleMut<'a> for SubAddInt {
 ///
 /// assert_eq!(linter.output, "var x = 12;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MultInt;
 
 impl<'a> RuleMut<'a> for MultInt {
@@ -659,7 +659,7 @@ impl<'a> RuleMut<'a> for MultInt {
 ///
 /// assert_eq!(linter.output, "var x = 8;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PowInt;
 
 impl<'a> RuleMut<'a> for PowInt {
@@ -743,7 +743,7 @@ impl<'a> RuleMut<'a> for PowInt {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 8;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ShiftInt;
 
 impl<'a> RuleMut<'a> for ShiftInt {
@@ -884,7 +884,7 @@ impl<'a> RuleMut<'a> for ShiftInt {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 12;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BitwiseInt;
 
 impl<'a> RuleMut<'a> for BitwiseInt {

@@ -8,7 +8,7 @@ use log::{trace, warn};
 
 /// Handle static cast operations
 /// For example [char]0x74 => 't'
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Cast;
 
 /// We will infer cast value using down to top exploring
@@ -227,7 +227,7 @@ impl<'a> RuleMut<'a> for Cast {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CastNull;
 
 impl<'a> RuleMut<'a> for CastNull {

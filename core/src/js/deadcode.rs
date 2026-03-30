@@ -5,7 +5,7 @@ use log::trace;
 use std::collections::HashMap;
 
 /// Tracks which JavaScript identifiers are actually read (used) vs only written to (declared/assigned).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct UnusedVar {
     reads: HashMap<String, bool>,
 }
@@ -89,6 +89,7 @@ fn is_write_target<T>(node: &Node<T>) -> bool {
 ///
 /// assert_eq!(remover.clear().unwrap(), "console.log('world');");
 /// ```
+#[derive(Clone)]
 pub struct RemoveUnusedVar {
     rule: UnusedVar,
     source: String,

@@ -3,7 +3,7 @@ use crate::js::JavaScript;
 use crate::rule::Rule;
 use crate::tree::Node;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct RemoveCode {
     source: String,
     pub output: String,
@@ -32,7 +32,7 @@ impl RemoveCode {
 }
 
 /// Removes single-line (`//`) and multi-line (`/* */`) comments from JavaScript source.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RemoveComment {
     manager: RemoveCode,
 }
@@ -68,7 +68,7 @@ impl<'a> Rule<'a> for RemoveComment {
 }
 
 /// Reconstructs the JavaScript source while preserving original whitespace
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Linter {
     pub output: String,
     source: String,

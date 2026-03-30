@@ -7,7 +7,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 use std::collections::BTreeMap;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseHash;
 
 impl<'a> RuleMut<'a> for ParseHash {

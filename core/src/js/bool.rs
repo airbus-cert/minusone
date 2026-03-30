@@ -9,7 +9,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseBool;
 
 impl<'a> RuleMut<'a> for ParseBool {
@@ -57,7 +57,7 @@ impl<'a> RuleMut<'a> for ParseBool {
 /// assert_eq!(linter.output, "var x = false;");
 /// ```
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct NotBool;
 
 impl<'a> RuleMut<'a> for NotBool {
@@ -121,7 +121,7 @@ impl<'a> RuleMut<'a> for NotBool {
 ///
 /// assert_eq!(linter.output, "var x = true;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BoolAlgebra;
 
 impl<'a> RuleMut<'a> for BoolAlgebra {
@@ -181,7 +181,7 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 /// assert_eq!(linter.output, "var x = 0;");
 /// ```
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AddBool;
 
 impl<'a> RuleMut<'a> for AddBool {
@@ -282,7 +282,7 @@ impl<'a> RuleMut<'a> for AddBool {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 1; var y = 0;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BoolPlusMinus;
 
 impl<'a> RuleMut<'a> for BoolPlusMinus {

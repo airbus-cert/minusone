@@ -141,6 +141,7 @@ impl Display for JavaScript {
     }
 }
 
+#[derive(Clone)]
 pub struct JavaScriptRuleSet<'a> {
     ruleset: RuleSet<'a, JavaScript>,
 }

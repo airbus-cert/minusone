@@ -38,6 +38,7 @@ fn is_inline<T>(node: &Node<T>) -> bool {
     node.get_parent_of_types(vec!["pipeline"]).is_some()
 }
 
+#[derive(Clone)]
 pub struct Linter {
     pub output: String,
     tab: Vec<String>,
@@ -457,7 +458,7 @@ impl Linter {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RemoveCode {
     source: String,
     pub output: String,
@@ -486,7 +487,7 @@ impl RemoveCode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RemoveComment {
     manager: RemoveCode,
 }
@@ -523,6 +524,7 @@ impl<'a> Rule<'a> for RemoveComment {
     }
 }
 
+#[derive(Clone)]
 pub struct RemoveUnusedVar {
     rule: UnusedVar,
     manager: RemoveCode,

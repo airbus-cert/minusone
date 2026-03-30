@@ -14,6 +14,7 @@ pub(crate) fn run_deobf<B: DeobfuscationBackend>(
 ) -> MinusOneResult<()>
 where
     <B as DeobfuscationBackend>::Language: Debug,
+    <B as DeobfuscationBackend>::Language: Clone,
 {
     let cleaned = DeobfuscateEngine::<B>::remove_extra(source)?;
 

@@ -7,7 +7,7 @@ use crate::tree::ControlFlow::{Break, Continue};
 use crate::tree::{ControlFlow, Node, Strategy};
 use log::warn;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PowershellStrategy;
 
 impl Strategy<Powershell> for PowershellStrategy {

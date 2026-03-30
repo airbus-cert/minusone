@@ -11,7 +11,7 @@ use log::{trace, warn};
 use std::collections::HashMap;
 
 /// Parses JavaScript objects into `Object(_)`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseObject;
 
 fn number_key(n: f64) -> String {
@@ -114,7 +114,7 @@ impl<'a> RuleMut<'a> for ParseObject {
 ///
 /// assert_eq!(linter.output, "var a = 'hello'; console.log('hello');");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ObjectField {
     scope_manager: ScopeManager<JavaScript>,
 }

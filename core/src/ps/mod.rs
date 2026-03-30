@@ -117,6 +117,7 @@ pub enum Powershell {
     Unknown,
 }
 
+#[derive(Clone)]
 pub struct PowershellRuleSet<'a> {
     ruleset: RuleSet<'a, Powershell>,
 }

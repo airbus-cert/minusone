@@ -36,7 +36,7 @@ use log::{trace, warn};
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseArrayLiteral;
 
 impl<'a> RuleMut<'a> for ParseArrayLiteral {
@@ -109,7 +109,7 @@ impl<'a> RuleMut<'a> for ParseArrayLiteral {
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseRange;
 
 impl<'a> RuleMut<'a> for ParseRange {
@@ -193,7 +193,7 @@ impl<'a> RuleMut<'a> for ParseRange {
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ComputeArrayExpr;
 
 impl<'a> RuleMut<'a> for ComputeArrayExpr {
@@ -276,7 +276,7 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
 ///
 /// assert_eq!(ps_litter_view.output, "\"fox\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AddArray;
 
 impl<'a> RuleMut<'a> for AddArray {

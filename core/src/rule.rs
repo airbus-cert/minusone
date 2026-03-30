@@ -1,5 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::tree::{ControlFlow, Node, NodeMut};
+use dyn_clone::DynClone;
 use log::warn;
 
 pub struct RuleExecutionContext<'a> {
@@ -7,7 +8,7 @@ pub struct RuleExecutionContext<'a> {
     pub recursion_depth: usize,
 }
 
-pub trait RuleMut<'a> {
+pub trait RuleMut<'a>: DynClone {
     type Language;
 
     fn active_rule_names(&self) -> Vec<String> {
@@ -45,6 +46,8 @@ pub trait RuleMut<'a> {
     }
 }
 
+dyn_clone::clone_trait_object!(<'a, T> RuleMut<'a, Language = T>);
+
 /// Rule that will not change the node component
 /// Use for displaying or statistic
 /// The top down exploring is handling by the enter function
@@ -58,6 +61,19 @@ pub trait Rule<'a> {
 pub struct RuleSet<'a, T> {
     rule_names: Vec<String>,
     rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
+}
+
+impl<'a, T> Clone for RuleSet<'a, T> {
+    fn clone(&self) -> Self {
+        RuleSet {
+            rule_names: self.rule_names.clone(),
+            rules: self
+                .rules
+                .iter()
+                .map(|r| dyn_clone::clone_box(&**r))
+                .collect(),
+        }
+    }
 }
 
 impl<'a, T> RuleSet<'a, T> {
@@ -193,7 +209,7 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
 macro_rules! impl_data {
     ( $($ty:ident),* ) => {
         impl<'a, Data, $($ty),*> RuleMut<'a> for ( $( $ty , )* )
-            where $( $ty : RuleMut<'a, Language=Data>),*
+            where $( $ty : RuleMut<'a, Language=Data> + Clone),*
             {
                 type Language = Data;
 

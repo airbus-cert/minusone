@@ -25,7 +25,7 @@ use log::{trace, warn};
 ///
 /// assert_eq!(linter.output, "var x = 'minusone';");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct B64;
 
 impl<'a> RuleMut<'a> for B64 {

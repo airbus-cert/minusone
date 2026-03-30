@@ -71,7 +71,7 @@ fn is_foreach_command<'a>(command: &Node<'a, Powershell>) -> bool {
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PSItemInferrator;
 
 impl<'a> RuleMut<'a> for PSItemInferrator {
@@ -163,7 +163,7 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
 ///
 /// assert_eq!(ps_litter_view.output, "\"zazbzc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ForEach;
 
 impl<'a> RuleMut<'a> for ForEach {

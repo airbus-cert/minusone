@@ -38,6 +38,7 @@ use log::trace;
 ///
 /// assert_eq!(linter.output, "var a = 'hello'; console.log('hello');");
 /// ```
+#[derive(Clone)]
 pub struct Var {
     scope_manager: ScopeManager<JavaScript>,
 }

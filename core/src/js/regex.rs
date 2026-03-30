@@ -27,7 +27,7 @@ use std::collections::HashSet;
 ///
 /// assert_eq!(linter.output, "var r = /ab+/i;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseRegex;
 
 impl ParseRegex {
@@ -176,7 +176,7 @@ impl<'a> RuleMut<'a> for ParseRegex {
 ///
 /// assert_eq!(linter.output, "var a = true;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RegexExec;
 
 impl RegexExec {
@@ -307,7 +307,7 @@ impl<'a> RuleMut<'a> for RegexExec {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 'Hello, world!1';");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RegexConcat;
 
 impl<'a> RuleMut<'a> for RegexConcat {
