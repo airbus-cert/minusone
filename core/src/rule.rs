@@ -2,18 +2,47 @@ use crate::error::MinusOneResult;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::warn;
 
+pub struct RuleExecutionContext<'a> {
+    pub other_rules: &'a [String],
+    pub recursion_depth: usize,
+}
+
 pub trait RuleMut<'a> {
     type Language;
+
+    fn active_rule_names(&self) -> Vec<String> {
+        vec![]
+    }
+
     fn enter(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()>;
+
+    fn enter_with_context(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+        _context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        self.enter(node, flow)
+    }
+
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()>;
+
+    fn leave_with_context(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+        _context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        self.leave(node, flow)
+    }
 }
 
 /// Rule that will not change the node component
@@ -27,6 +56,7 @@ pub trait Rule<'a> {
 }
 
 pub struct RuleSet<'a, T> {
+    rule_names: Vec<String>,
     rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
 }
 
@@ -59,17 +89,19 @@ impl<'a, T> RuleSet<'a, T> {
             .filter(|s| full_names.contains(s))
             .collect();
 
-        Self {
-            rules: full_names
-                .iter()
-                .zip(full_rules)
-                .filter(|(name, _)| match &ctx {
-                    RuleSetBuilderType::WithRules(_) => low_input.contains(name),
-                    RuleSetBuilderType::WithoutRules(_) => !low_input.contains(name),
-                })
-                .map(|(_, rule)| rule)
-                .collect(),
-        }
+        let selected: Vec<(String, Box<dyn RuleMut<'a, Language = T>>)> = full_names
+            .into_iter()
+            .zip(full_rules)
+            .filter(|(name, _)| match &ctx {
+                RuleSetBuilderType::WithRules(_) => low_input.contains(name),
+                RuleSetBuilderType::WithoutRules(_) => !low_input.contains(name),
+            })
+            .collect();
+
+        let (rule_names, rules): (Vec<String>, Vec<Box<dyn RuleMut<'a, Language = T>>>) =
+            selected.into_iter().unzip();
+
+        Self { rule_names, rules }
     }
 }
 
@@ -81,6 +113,10 @@ pub enum RuleSetBuilderType<'a> {
 impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
     type Language = T;
 
+    fn active_rule_names(&self) -> Vec<String> {
+        self.rule_names.clone()
+    }
+
     fn enter(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
@@ -89,12 +125,68 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
         self.rules.iter_mut().try_for_each(|r| r.enter(node, flow))
     }
 
+    fn enter_with_context(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+        context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        let rule_names = self.rule_names.clone();
+
+        self.rules
+            .iter_mut()
+            .enumerate()
+            .try_for_each(|(idx, rule)| {
+                let other_rules: Vec<String> = rule_names
+                    .iter()
+                    .enumerate()
+                    .filter(|(name_idx, _)| *name_idx != idx)
+                    .map(|(_, name)| name.clone())
+                    .collect();
+
+                let nested_context = RuleExecutionContext {
+                    other_rules: &other_rules,
+                    recursion_depth: context.recursion_depth,
+                };
+
+                rule.enter_with_context(node, flow, &nested_context)
+            })
+    }
+
     fn leave(
         &mut self,
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
         self.rules.iter_mut().try_for_each(|r| r.leave(node, flow))
+    }
+
+    fn leave_with_context(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        flow: ControlFlow,
+        context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        let rule_names = self.rule_names.clone();
+
+        self.rules
+            .iter_mut()
+            .enumerate()
+            .try_for_each(|(idx, rule)| {
+                let other_rules: Vec<String> = rule_names
+                    .iter()
+                    .enumerate()
+                    .filter(|(name_idx, _)| *name_idx != idx)
+                    .map(|(_, name)| name.clone())
+                    .collect();
+
+                let nested_context = RuleExecutionContext {
+                    other_rules: &other_rules,
+                    recursion_depth: context.recursion_depth,
+                };
+
+                rule.leave_with_context(node, flow, &nested_context)
+            })
     }
 }
 
@@ -105,6 +197,15 @@ macro_rules! impl_data {
             {
                 type Language = Data;
 
+                fn active_rule_names(&self) -> Vec<String> {
+                    let mut names = Vec::new();
+                    $(
+                        ${ignore($ty)}
+                        names.extend(self.${index()}.active_rule_names());
+                    )*
+                    names
+                }
+
                 fn enter(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
                     $(
                         ${ignore($ty)}
@@ -113,10 +214,26 @@ macro_rules! impl_data {
                     Ok(())
                 }
 
+                fn enter_with_context(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow, context: &RuleExecutionContext) -> MinusOneResult<()>{
+                    $(
+                        ${ignore($ty)}
+                        self.${index()}.enter_with_context(node, flow, context)?;
+                    )*
+                    Ok(())
+                }
+
                 fn leave(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow) -> MinusOneResult<()>{
                     $(
                         ${ignore($ty)}
                         self.${index()}.leave(node, flow)?;
+                    )*
+                    Ok(())
+                }
+
+                fn leave_with_context(&mut self, node : &mut NodeMut<'a, Self::Language>, flow: ControlFlow, context: &RuleExecutionContext) -> MinusOneResult<()>{
+                    $(
+                        ${ignore($ty)}
+                        self.${index()}.leave_with_context(node, flow, context)?;
                     )*
                     Ok(())
                 }

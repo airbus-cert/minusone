@@ -37,7 +37,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::*;
 #[cfg(test)]
 use crate::js::linter::Linter;
-use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
+use crate::rule::{RuleExecutionContext, RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use log::warn;
 use num::Zero;
@@ -256,6 +256,10 @@ impl_javascript_ruleset!(
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
     type Language = JavaScript;
 
+    fn active_rule_names(&self) -> Vec<String> {
+        self.ruleset.active_rule_names()
+    }
+
     fn enter(
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
@@ -270,6 +274,24 @@ impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
         flow: crate::tree::ControlFlow,
     ) -> MinusOneResult<()> {
         self.ruleset.leave(node, flow)
+    }
+
+    fn enter_with_context(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        flow: crate::tree::ControlFlow,
+        context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        self.ruleset.enter_with_context(node, flow, context)
+    }
+
+    fn leave_with_context(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        flow: crate::tree::ControlFlow,
+        context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        self.ruleset.leave_with_context(node, flow, context)
     }
 }
 

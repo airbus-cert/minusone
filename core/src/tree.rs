@@ -1,5 +1,5 @@
 use crate::error::{Error, MinusOneResult};
-use crate::rule::{Rule, RuleMut};
+use crate::rule::{Rule, RuleExecutionContext, RuleMut};
 use log::{error, trace, warn};
 use std::collections::HashMap;
 use std::ops;
@@ -498,6 +498,7 @@ impl<'a, T> NodeMut<'a, T> {
     pub fn apply(&mut self, rule: &mut impl RuleMut<'a, Language = T>) -> MinusOneResult<()> {
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize)> = vec![];
+        let other_rules = rule.active_rule_names();
 
         for node in traverse(self.inner.walk(), Order::Pre) {
             match node.kind() {
@@ -513,8 +514,16 @@ impl<'a, T> NodeMut<'a, T> {
             // compute strategy
 
             stack.push((node, node.child_count()));
+            let context = RuleExecutionContext {
+                other_rules: &other_rules,
+                recursion_depth: stack.len() - 1,
+            };
 
-            rule.enter(self, ControlFlow::Continue(BranchFlow::Unpredictable))?;
+            rule.enter_with_context(
+                self,
+                ControlFlow::Continue(BranchFlow::Unpredictable),
+                &context,
+            )?;
 
             // clean stack
             loop {
@@ -532,8 +541,16 @@ impl<'a, T> NodeMut<'a, T> {
                 }
 
                 self.inner = head_element.0;
+                let context = RuleExecutionContext {
+                    other_rules: &other_rules,
+                    recursion_depth: stack.len() - 1,
+                };
 
-                rule.leave(self, ControlFlow::Continue(BranchFlow::Unpredictable))?;
+                rule.leave_with_context(
+                    self,
+                    ControlFlow::Continue(BranchFlow::Unpredictable),
+                    &context,
+                )?;
 
                 stack.pop();
 
@@ -610,6 +627,18 @@ impl<'a, T> NodeMut<'a, T> {
         strategy: &impl Strategy<T>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
+        let other_rules = rule.active_rule_names();
+        self.apply_with_strategy_recurcive_internal(rule, strategy, flow, &other_rules, 0)
+    }
+
+    fn apply_with_strategy_recurcive_internal(
+        &mut self,
+        rule: &mut impl RuleMut<'a, Language = T>,
+        strategy: &impl Strategy<T>,
+        flow: ControlFlow,
+        other_rules: &[String],
+        recursion_depth: usize,
+    ) -> MinusOneResult<()> {
         let mut computed_flow = flow;
         computed_flow = computed_flow | strategy.control(self.view())?;
 
@@ -617,17 +646,28 @@ impl<'a, T> NodeMut<'a, T> {
             return Ok(());
         }
 
-        rule.enter(self, computed_flow)?;
+        let context = RuleExecutionContext {
+            other_rules,
+            recursion_depth,
+        };
+
+        rule.enter_with_context(self, computed_flow, &context)?;
 
         let mut cursor = self.inner.walk();
         let current_node = self.inner;
         for child in self.inner.children(&mut cursor) {
             self.inner = child;
-            self.apply_with_strategy(rule, strategy, computed_flow)?;
+            self.apply_with_strategy_recurcive_internal(
+                rule,
+                strategy,
+                computed_flow,
+                other_rules,
+                recursion_depth + 1,
+            )?;
         }
 
         self.inner = current_node;
-        rule.leave(self, computed_flow)?;
+        rule.leave_with_context(self, computed_flow, &context)?;
         Ok(())
     }
 
@@ -701,6 +741,7 @@ impl<'a, T> NodeMut<'a, T> {
         let mut control_flow = flow;
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize, ControlFlow)> = vec![];
+        let other_rules = rule.active_rule_names();
 
         for node in traverse(self.inner.walk(), Order::Pre) {
             match node.kind() {
@@ -717,11 +758,15 @@ impl<'a, T> NodeMut<'a, T> {
             // compute strategy
 
             stack.push((node, node.child_count(), control_flow));
+            let context = RuleExecutionContext {
+                other_rules: &other_rules,
+                recursion_depth: stack.len() - 1,
+            };
 
             control_flow = control_flow | strategy.control(self.view())?;
 
             if control_flow != ControlFlow::Break {
-                rule.enter(self, control_flow)?;
+                rule.enter_with_context(self, control_flow, &context)?;
             }
 
             // clean stack
@@ -740,9 +785,13 @@ impl<'a, T> NodeMut<'a, T> {
                 }
 
                 self.inner = head_element.0;
+                let context = RuleExecutionContext {
+                    other_rules: &other_rules,
+                    recursion_depth: stack.len() - 1,
+                };
 
                 if control_flow != ControlFlow::Break {
-                    rule.leave(self, control_flow)?;
+                    rule.leave_with_context(self, control_flow, &context)?;
                 }
 
                 control_flow = head_element.2;
@@ -910,7 +959,7 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
-    fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
+    pub fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
         let mut is_visiting = true;
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize, bool)> = vec![];

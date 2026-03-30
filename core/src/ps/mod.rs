@@ -18,7 +18,7 @@ use crate::ps::string::{
 use crate::ps::switch::Switch;
 use crate::ps::typing::ParseType;
 use crate::ps::var::{StaticVar, Var};
-use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
+use crate::rule::{RuleExecutionContext, RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -192,6 +192,10 @@ impl_powershell_ruleset!(
 impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
     type Language = Powershell;
 
+    fn active_rule_names(&self) -> Vec<String> {
+        self.ruleset.active_rule_names()
+    }
+
     fn enter(
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Self::Language>,
@@ -206,6 +210,24 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         flow: crate::tree::ControlFlow,
     ) -> MinusOneResult<()> {
         self.ruleset.leave(node, flow)
+    }
+
+    fn enter_with_context(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        flow: crate::tree::ControlFlow,
+        context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        self.ruleset.enter_with_context(node, flow, context)
+    }
+
+    fn leave_with_context(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Self::Language>,
+        flow: crate::tree::ControlFlow,
+        context: &RuleExecutionContext,
+    ) -> MinusOneResult<()> {
+        self.ruleset.leave_with_context(node, flow, context)
     }
 }
 
