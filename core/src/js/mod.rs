@@ -10,6 +10,7 @@ pub mod globals;
 pub mod integer;
 pub mod linter;
 pub mod objects;
+pub mod printer;
 pub mod regex;
 pub mod specials;
 pub mod strategy;

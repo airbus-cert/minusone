@@ -62,9 +62,7 @@ impl DeobfuscationBackend for JavaScriptBackend {
         let linted = crate::printer::code_string(&mut linter, root)?;
 
         // fallback to returning the linted output without cleaning if the clean pass fails
-        match CleanEngine::<JavaScriptBackend>::from_source(&linted)
-            .and_then(|mut e| e.clean())
-        {
+        match CleanEngine::<JavaScriptBackend>::from_source(&linted).and_then(|mut e| e.clean()) {
             Ok(cleaned) => Ok(cleaned),
             Err(e) => {
                 error!(

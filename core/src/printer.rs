@@ -5,7 +5,7 @@ use crate::tree::{Storage, Tree};
 pub enum PrinterMode {
     Pretty,
     Compact,
-    Unchanged
+    Unchanged,
 }
 
 pub trait Printer {
@@ -42,4 +42,3 @@ where
 {
     printer.print(tree, mode)
 }
-
