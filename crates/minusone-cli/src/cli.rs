@@ -9,6 +9,13 @@ pub enum Language {
     Javascript,
 }
 
+#[derive(Debug, Clone, ValueEnum, Copy)]
+pub enum PrinterMode {
+    Pretty,
+    Compact,
+    Unchanged,
+}
+
 pub static INTRO: &str = "
 minusone (-1) is a deobfuscation tool that uses tree-sitter to parse and transform obfuscated code.
 It supports multiple languages and allows users to apply custom rules for deobfuscation.
@@ -59,6 +66,10 @@ pub struct Cli {
     /// Language of the script
     #[arg(long, short, value_enum)]
     pub lang: Option<Language>,
+
+    /// Printer mode for the output code
+    #[arg(long, alias = "pr", value_enum, default_value_t = PrinterMode::Pretty)]
+    pub printer: PrinterMode,
 
     /// List rules available for a language
     #[arg(long, short = 'L', alias = "ls")]

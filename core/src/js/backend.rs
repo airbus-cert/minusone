@@ -5,6 +5,7 @@ use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
     JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
 };
+use crate::printer::PrinterMode;
 use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
 use log::{error, trace};
@@ -57,9 +58,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
     fn lint_tree<'a>(
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         _tab_chr: &str,
+        mode: PrinterMode,
     ) -> MinusOneResult<String> {
-        let mut linter = crate::js::linter::Linter::default();
-        let linted = crate::printer::code_string(&mut linter, root)?;
+        if mode == PrinterMode::Unchanged {
+            return Ok(root.root()?.text()?.to_string());
+        }
+
+        let mut printer = crate::js::printer::JavaScriptPrinter::default();
+        let linted = crate::printer::code_string_with_mode(&mut printer, root, mode)?;
 
         // fallback to returning the linted output without cleaning if the clean pass fails
         match CleanEngine::<JavaScriptBackend>::from_source(&linted).and_then(|mut e| e.clean()) {

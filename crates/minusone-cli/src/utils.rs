@@ -1,4 +1,4 @@
-use crate::cli::{Cli, DebugLevel, Language};
+use crate::cli::{Cli, DebugLevel, Language, PrinterMode};
 use minusone::debug::DebugView;
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
@@ -40,7 +40,13 @@ where
         println!("\n\n");
     }
 
-    println!("{}", engine.lint()?);
+    let mode = match cli.printer {
+        PrinterMode::Pretty => minusone::printer::PrinterMode::Pretty,
+        PrinterMode::Compact => minusone::printer::PrinterMode::Compact,
+        PrinterMode::Unchanged => minusone::printer::PrinterMode::Unchanged,
+    };
+
+    println!("{}", engine.lint_with_mode(mode)?);
     Ok(())
 }
 
