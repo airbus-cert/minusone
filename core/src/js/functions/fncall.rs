@@ -6,20 +6,10 @@ use crate::js::build_javascript_tree;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::linter::Linter;
 use crate::js::strategy::JavaScriptStrategy;
-use crate::rule::{RuleExecutionContext, RuleMut, RuleReference, RuleSetBuilderType};
+use crate::rule::{RuleExecutionContext, RuleMut, RuleReference, RuleSet};
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{trace, warn};
-use std::any::Any;
 use std::collections::HashMap;
-
-#[derive(Clone)]
-struct FnCallSnapshot {
-    function_sources: HashMap<String, String>,
-    vars: HashMap<String, JavaScript>,
-    object_fields: HashMap<(String, String), JavaScript>,
-    member_functions: HashMap<String, JavaScript>,
-    member_aliases: HashMap<String, String>,
-}
 
 /// Tracks function declarations with predictable return values
 ///
@@ -531,6 +521,12 @@ impl FnCall {
         Some(rewritten)
     }
 
+    unsafe fn rebind_rules_lifetime<'a, 'b>(
+        rules: Vec<Box<dyn RuleMut<'a, Language = JavaScript> + 'static>>,
+    ) -> Vec<Box<dyn RuleMut<'b, Language = JavaScript> + 'static>> {
+        unsafe { std::mem::transmute(rules) }
+    }
+
     fn resolve_call_from_injected_body(
         &self,
         call_node: &Node<JavaScript>,
@@ -570,18 +566,14 @@ impl FnCall {
                 .collect()
         };
 
-        let peer_snapshots: HashMap<String, Box<dyn Any>> = if other_rules.is_empty() {
-            HashMap::new()
-        } else {
-            other_rules
-                .iter()
-                .filter_map(|rule| {
-                    rule.rule
-                        .snapshot_state()
-                        .map(|snapshot| (rule.name.to_string(), snapshot))
-                })
-                .collect()
-        };
+        let mut cloned_v: Vec<Box<dyn RuleMut<'_, Language = JavaScript>>> = other_rules
+            .iter()
+            .map(|r| dyn_clone::clone_box(r.rule))
+            .collect();
+
+        cloned_v.push(
+            Box::new(self.clone_for_nested_eval()) as Box<dyn RuleMut<Language = JavaScript>>
+        );
 
         if selected_rule_names_owned.is_empty() {
             warn!(
@@ -607,29 +599,35 @@ impl FnCall {
                 .ok()?;
             tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
                 .ok()?;
-            tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
-                .ok()?;
         } else {
             let mut nested_fncall = self.clone_for_nested_eval();
             nested_fncall.nested_peer_rule_names = Some(selected_rule_names_owned.clone());
-            let selected_rule_names: Vec<&str> = selected_rule_names_owned
-                .iter()
-                .map(String::as_str)
-                .collect();
 
             for _ in 0..2 {
-                {
-                    let mut nested_rules = JavaScriptRuleSet::new(RuleSetBuilderType::WithRules(
-                        selected_rule_names.clone(),
-                    ));
-                    nested_rules.restore_rule_snapshots(&peer_snapshots);
-                    tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
-                        .ok()?;
-                }
+                let mut pass_rule_names: Vec<String> =
+                    other_rules.iter().map(|r| r.name.to_string()).collect();
+                pass_rule_names.push("fncall".to_string());
 
-                tree.apply_mut_with_strategy(&mut nested_fncall, JavaScriptStrategy::default())
+                let mut pass_rules: Vec<Box<dyn RuleMut<Language = JavaScript>>> = other_rules
+                    .iter()
+                    .map(|r| dyn_clone::clone_box(r.rule))
+                    .collect();
+                pass_rules.push(Box::new(self.clone_for_nested_eval())
+                    as Box<dyn RuleMut<Language = JavaScript>>);
+
+                let pass_rules = unsafe { Self::rebind_rules_lifetime(pass_rules) };
+
+                let mut js = JavaScriptRuleSet {
+                    ruleset: RuleSet::<JavaScript> {
+                        rule_names: pass_rule_names,
+                        rules: pass_rules,
+                    },
+                };
+                tree.apply_mut_with_strategy(&mut js, JavaScriptStrategy::default())
                     .ok()?;
             }
+
+            tree.root().ok()?;
         }
 
         let root = tree.root().ok()?;
@@ -826,26 +824,6 @@ impl<'a> RuleMut<'a> for FnCall {
             _ => {}
         }
         Ok(())
-    }
-
-    fn snapshot_state(&self) -> Option<Box<dyn Any>> {
-        Some(Box::new(FnCallSnapshot {
-            function_sources: self.function_sources.clone(),
-            vars: self.vars.clone(),
-            object_fields: self.object_fields.clone(),
-            member_functions: self.member_functions.clone(),
-            member_aliases: self.member_aliases.clone(),
-        }))
-    }
-
-    fn restore_state(&mut self, snapshot: &dyn Any) {
-        if let Some(snapshot) = snapshot.downcast_ref::<FnCallSnapshot>() {
-            self.function_sources = snapshot.function_sources.clone();
-            self.vars = snapshot.vars.clone();
-            self.object_fields = snapshot.object_fields.clone();
-            self.member_functions = snapshot.member_functions.clone();
-            self.member_aliases = snapshot.member_aliases.clone();
-        }
     }
 }
 

@@ -2,7 +2,6 @@ use crate::error::MinusOneResult;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use dyn_clone::DynClone;
 use log::warn;
-use std::any::Any;
 
 pub struct RuleReference<'ctx, 'a, T> {
     pub name: &'ctx str,
@@ -50,12 +49,6 @@ pub trait RuleMut<'a>: DynClone {
     ) -> MinusOneResult<()> {
         self.leave(node, flow)
     }
-
-    fn snapshot_state(&self) -> Option<Box<dyn Any>> {
-        None
-    }
-
-    fn restore_state(&mut self, _snapshot: &dyn Any) {}
 }
 
 dyn_clone::clone_trait_object!(<'a, T> RuleMut<'a, Language = T>);
@@ -71,8 +64,8 @@ pub trait Rule<'a> {
 }
 
 pub struct RuleSet<'a, T> {
-    rule_names: Vec<String>,
-    rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
+    pub rule_names: Vec<String>,
+    pub rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
 }
 
 impl<'a, T> Clone for RuleSet<'a, T> {
