@@ -40,6 +40,15 @@ impl JavaScriptPrinter {
         }
     }
 
+    fn last_non_whitespace_char(output: &str) -> Option<char> {
+        output.chars().rev().find(|c| !c.is_whitespace())
+    }
+
+    fn peek_next_non_whitespace_char(chars: &std::iter::Peekable<std::str::Chars<'_>>) -> Option<char> {
+        let mut clone = chars.clone();
+        clone.find(|c| !c.is_whitespace())
+    }
+
     fn is_control_line(line: &str) -> bool {
         let trimmed = line.trim_start();
         [
@@ -77,6 +86,16 @@ impl JavaScriptPrinter {
         }
 
         if Self::is_control_line(trimmed) {
+            return false;
+        }
+
+        // Avoid adding semicolons to object-literal/destructuring property lines like `execSync: F`
+        // which would break patterns such as `{ execSync: F } = require(...)` when pretty-printing.
+        if trimmed.contains(':')
+            && !trimmed.ends_with(':')
+            && !trimmed.contains('?')
+            && !trimmed.starts_with("http")
+        {
             return false;
         }
 
@@ -239,6 +258,7 @@ impl JavaScriptPrinter {
         let mut escaped = false;
         let mut in_line_comment = false;
         let mut in_block_comment = false;
+        let mut brace_inline_stack: Vec<bool> = vec![];
 
         while let Some(ch) = chars.next() {
             if in_line_comment {
@@ -301,28 +321,52 @@ impl JavaScriptPrinter {
                     output.push(')');
                 }
                 '{' => {
-                    Self::trim_trailing_spaces(&mut output);
-                    if !output.ends_with('\n') && !output.is_empty() {
-                        output.push(' ');
+                    let prev = Self::last_non_whitespace_char(&output);
+                    let is_inline_brace = matches!(
+                        prev,
+                        Some('=') | Some(',') | Some('(') | Some('[') | Some(':')
+                    );
+                    let is_empty_block = !is_inline_brace
+                        && Self::peek_next_non_whitespace_char(&chars) == Some('}');
+
+                    if is_inline_brace || is_empty_block {
+                        Self::trim_trailing_spaces(&mut output);
+                        if is_empty_block && !output.ends_with('\n') && !output.is_empty() {
+                            output.push(' ');
+                        }
+                        output.push('{');
+                        brace_inline_stack.push(true);
+                    } else {
+                        Self::trim_trailing_spaces(&mut output);
+                        if !output.ends_with('\n') && !output.is_empty() {
+                            output.push(' ');
+                        }
+                        output.push('{');
+                        output.push('\n');
+                        indent_level += 1;
+                        Self::write_indent(&mut output, indent_level, &self.indent);
+                        brace_inline_stack.push(false);
                     }
-                    output.push('{');
-                    output.push('\n');
-                    indent_level += 1;
-                    Self::write_indent(&mut output, indent_level, &self.indent);
                 }
                 '}' => {
-                    Self::trim_trailing_spaces(&mut output);
-                    Self::ensure_newline(&mut output);
-                    indent_level = indent_level.saturating_sub(1);
-                    Self::write_indent(&mut output, indent_level, &self.indent);
-                    output.push('}');
-
-                    if matches!(chars.peek(), Some(';')) {
-                        continue;
-                    }
-                    if chars.peek().is_some() {
-                        output.push('\n');
+                    let is_inline_brace = brace_inline_stack.pop().unwrap_or(false);
+                    if is_inline_brace {
+                        Self::trim_trailing_spaces(&mut output);
+                        output.push('}');
+                    } else {
+                        Self::trim_trailing_spaces(&mut output);
+                        Self::ensure_newline(&mut output);
+                        indent_level = indent_level.saturating_sub(1);
                         Self::write_indent(&mut output, indent_level, &self.indent);
+                        output.push('}');
+
+                        if matches!(chars.peek(), Some(';')) {
+                            continue;
+                        }
+                        if chars.peek().is_some() {
+                            output.push('\n');
+                            Self::write_indent(&mut output, indent_level, &self.indent);
+                        }
                     }
                 }
                 ';' => {
@@ -427,7 +471,6 @@ mod tests {
         let mut printer = JavaScriptPrinter::with_indent("  ");
 
         let output = printer.print(&tree, PrinterMode::Pretty).unwrap();
-        println!("Pretty Printed Output:\n{}", output);
 
         assert!(output.contains("function a() {"));
         assert!(output.contains("\n  if(true) {"));
@@ -443,5 +486,31 @@ mod tests {
         let output = printer.print(&tree, PrinterMode::Pretty).unwrap();
 
         assert!(output.contains("console.log(a(0));\nconsole.log(a(1));\nconsole.log(a(2));"));
+    }
+
+    #[test]
+    fn test_js_printer_pretty_keeps_object_property_in_destructuring_assignment() {
+        let src = "const {execSync:F}=require('x')";
+        let tree = build_javascript_tree(src).unwrap();
+        let mut printer = JavaScriptPrinter::default();
+
+        let output = printer.print(&tree, PrinterMode::Pretty).unwrap();
+
+        assert!(output.contains("execSync: F"));
+        assert!(!output.contains("execSync: F;"));
+    }
+
+    #[test]
+    fn test_js_printer_pretty_keeps_empty_block_inline() {
+        let src = "if(a){ } function b(){} try{}catch{}";
+        let tree = build_javascript_tree(src).unwrap();
+        let mut printer = JavaScriptPrinter::default();
+
+        let output = printer.print(&tree, PrinterMode::Pretty).unwrap();
+
+        assert!(output.contains("if(a) {}"));
+        assert!(output.contains("function b() {}"));
+        assert!(output.contains("try {}"));
+        assert!(output.contains("catch {}"));
     }
 }
