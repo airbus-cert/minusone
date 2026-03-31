@@ -1,4 +1,4 @@
-use crate::error::{Error, MinusOneErrorKind, MinusOneResult};
+use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::printer::{Printer, PrinterMode};
 use crate::tree::{Storage, Tree};
@@ -38,6 +38,194 @@ impl JavaScriptPrinter {
         if !output.ends_with('\n') {
             output.push('\n');
         }
+    }
+
+    fn is_control_line(line: &str) -> bool {
+        let trimmed = line.trim_start();
+        [
+            "if(",
+            "if ",
+            "for(",
+            "for ",
+            "while(",
+            "while ",
+            "switch(",
+            "switch ",
+            "catch(",
+            "catch ",
+            "function ",
+            "class ",
+            "try",
+            "else",
+            "do",
+            "finally",
+            "case ",
+            "default",
+        ]
+        .iter()
+        .any(|k| trimmed.starts_with(k))
+    }
+
+    fn should_add_semicolon(line: &str) -> bool {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+            return false;
+        }
+
+        if Self::is_control_line(trimmed) {
+            return false;
+        }
+
+        if [
+            "+", "-", "*", "/", "%", "=", "==", "===", "!=", "!==", "<", ">", "<=", ">=", "&&",
+            "||", "??", "?", ":", "&", "|", "^", "<<", ">>", ">>>", ",", ".",
+        ]
+        .iter()
+        .any(|op| trimmed.ends_with(op))
+        {
+            return false;
+        }
+
+        !trimmed.ends_with(';')
+            && !trimmed.ends_with('{')
+            && !trimmed.ends_with('}')
+            && !trimmed.ends_with(':')
+            && !trimmed.ends_with(',')
+    }
+
+    fn add_missing_semicolons_multiline(source: &str) -> String {
+        let mut output = String::new();
+        for line in source.lines() {
+            let trimmed_right = line.trim_end();
+            if Self::should_add_semicolon(trimmed_right) {
+                output.push_str(trimmed_right);
+                output.push(';');
+            } else {
+                output.push_str(trimmed_right);
+            }
+            output.push('\n');
+        }
+
+        output.trim().to_string()
+    }
+
+    fn compact_source(source: &str) -> String {
+        let mut out = String::new();
+        let mut chars = source.chars().peekable();
+        let mut logical_line = String::new();
+
+        let mut in_string: Option<char> = None;
+        let mut escaped = false;
+        let mut in_line_comment = false;
+        let mut in_block_comment = false;
+
+        while let Some(ch) = chars.next() {
+            if in_line_comment {
+                if ch == '\n' {
+                    let candidate = logical_line.trim_end();
+                    if Self::should_add_semicolon(candidate) && !out.ends_with(';') {
+                        out.push(';');
+                    }
+                    logical_line.clear();
+                    in_line_comment = false;
+                    if !out.ends_with(' ') && !out.ends_with(';') {
+                        out.push(' ');
+                    }
+                } else {
+                    out.push(ch);
+                }
+                continue;
+            }
+
+            if in_block_comment {
+                out.push(ch);
+                if ch == '*' && chars.peek() == Some(&'/') {
+                    out.push('/');
+                    let _ = chars.next();
+                    in_block_comment = false;
+                }
+                continue;
+            }
+
+            if let Some(quote) = in_string {
+                out.push(ch);
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == quote {
+                    in_string = None;
+                }
+                continue;
+            }
+
+            match ch {
+                '\'' | '"' | '`' => {
+                    out.push(ch);
+                    logical_line.push(ch);
+                    in_string = Some(ch);
+                }
+                '/' => {
+                    if chars.peek() == Some(&'/') {
+                        out.push('/');
+                        out.push('/');
+                        let _ = chars.next();
+                        in_line_comment = true;
+                    } else if chars.peek() == Some(&'*') {
+                        out.push('/');
+                        out.push('*');
+                        let _ = chars.next();
+                        in_block_comment = true;
+                    } else {
+                        out.push('/');
+                        logical_line.push('/');
+                    }
+                }
+                '}' => {
+                    let candidate = logical_line.trim_end();
+                    let tail_statement = candidate.rsplit('{').next().unwrap_or(candidate).trim();
+                    if Self::should_add_semicolon(tail_statement) && !out.ends_with(';') {
+                        out.push(';');
+                    }
+                    out.push('}');
+                    logical_line.clear();
+                    logical_line.push('}');
+                }
+                '\n' | '\r' => {
+                    let candidate = logical_line.trim_end();
+                    if Self::should_add_semicolon(candidate) && !out.ends_with(';') {
+                        out.push(';');
+                    }
+                    logical_line.clear();
+                }
+                '\t' | ' ' => {
+                    let next = chars.peek().copied().unwrap_or('\0');
+                    let prev = out.chars().last().unwrap_or('\0');
+                    let prev_word = prev.is_ascii_alphanumeric() || prev == '_' || prev == '$';
+                    let next_word = next.is_ascii_alphanumeric() || next == '_' || next == '$';
+
+                    if prev_word && next_word && !out.ends_with(' ') {
+                        out.push(' ');
+                        logical_line.push(' ');
+                    }
+                }
+                _ => {
+                    out.push(ch);
+                    logical_line.push(ch);
+                }
+            }
+        }
+
+        let candidate = logical_line.trim_end();
+        if Self::should_add_semicolon(candidate) && !out.ends_with(';') {
+            out.push(';');
+        }
+
+        out.trim().to_string()
     }
 
     fn pretty_print_source(&self, source: &str) -> String {
@@ -154,7 +342,18 @@ impl JavaScriptPrinter {
                         output.push(' ');
                     }
                 }
-                '\n' | '\r' | '\t' | ' ' => {
+                '\n' | '\r' => {
+                    if paren_depth == 0 {
+                        Self::trim_trailing_spaces(&mut output);
+                        if !output.ends_with('\n') {
+                            output.push('\n');
+                            Self::write_indent(&mut output, indent_level, &self.indent);
+                        }
+                    } else if !output.ends_with(' ') && !output.ends_with('\n') {
+                        output.push(' ');
+                    }
+                }
+                '\t' | ' ' => {
                     if !output.ends_with(' ') && !output.ends_with('\n') {
                         output.push(' ');
                     }
@@ -163,7 +362,8 @@ impl JavaScriptPrinter {
             }
         }
 
-        output.trim().to_string()
+        let pretty = output.trim().to_string();
+        Self::add_missing_semicolons_multiline(&pretty)
     }
 }
 
@@ -178,10 +378,7 @@ impl Printer for JavaScriptPrinter {
 
         match mode {
             PrinterMode::Pretty => Ok(self.pretty_print_source(&source)),
-            PrinterMode::Compact => Err(Error::new(
-                MinusOneErrorKind::Unknown,
-                "Compact JavaScript printer mode is not implemented",
-            )),
+            PrinterMode::Compact => Ok(Self::compact_source(&source)),
             PrinterMode::Unchanged => Ok(source),
         }
     }
@@ -189,7 +386,6 @@ impl Printer for JavaScriptPrinter {
 
 #[cfg(test)]
 mod tests {
-    use crate::error::Error;
     use crate::js::build_javascript_tree;
     use crate::js::printer::JavaScriptPrinter;
     use crate::printer::{Printer, PrinterMode};
@@ -206,19 +402,23 @@ mod tests {
     }
 
     #[test]
-    fn test_js_printer_compact_is_unimplemented() {
-        let tree = build_javascript_tree("const x=1;").unwrap();
+    fn test_js_printer_compact_oneline_and_trim_spaces() {
+        let tree = build_javascript_tree("const x = 1\nconst y = x + 2").unwrap();
         let mut printer = JavaScriptPrinter::default();
 
-        let result = printer.print(&tree, PrinterMode::Compact);
+        let output = printer.print(&tree, PrinterMode::Compact).unwrap();
 
-        assert!(result.is_err());
-        match result {
-            Err(Error::MinusOneError(err)) => {
-                assert!(err.message.contains("not implemented"));
-            }
-            _ => panic!("Expected MinusOneError for compact mode"),
-        }
+        assert_eq!(output, "const x=1;const y=x+2;");
+    }
+
+    #[test]
+    fn test_js_printer_compact_adds_missing_semicolon_before_closing_brace() {
+        let tree = build_javascript_tree("function a(){return 1+2}").unwrap();
+        let mut printer = JavaScriptPrinter::default();
+
+        let output = printer.print(&tree, PrinterMode::Compact).unwrap();
+
+        assert!(output.contains("return 1+2;"));
     }
 
     #[test]
@@ -232,5 +432,16 @@ mod tests {
         assert!(output.contains("function a() {"));
         assert!(output.contains("\n  if(true) {"));
         assert!(output.contains("\n    x=1;"));
+    }
+
+    #[test]
+    fn test_js_printer_pretty_keeps_newline_statements_without_semicolons() {
+        let src = "console.log(a(0))\nconsole.log(a(1))\nconsole.log(a(2))";
+        let tree = build_javascript_tree(src).unwrap();
+        let mut printer = JavaScriptPrinter::default();
+
+        let output = printer.print(&tree, PrinterMode::Pretty).unwrap();
+
+        assert!(output.contains("console.log(a(0));\nconsole.log(a(1));\nconsole.log(a(2));"));
     }
 }
