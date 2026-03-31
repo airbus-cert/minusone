@@ -59,10 +59,10 @@ impl DeobfuscationBackend for JavaScriptBackend {
         _tab_chr: &str,
     ) -> MinusOneResult<String> {
         let mut linter = crate::js::linter::Linter::default();
-        root.apply(&mut linter)?;
+        let linted = crate::printer::code_string(&mut linter, root)?;
 
         // fallback to returning the linted output without cleaning if the clean pass fails
-        match CleanEngine::<JavaScriptBackend>::from_source(&linter.output)
+        match CleanEngine::<JavaScriptBackend>::from_source(&linted)
             .and_then(|mut e| e.clean())
         {
             Ok(cleaned) => Ok(cleaned),
@@ -71,7 +71,7 @@ impl DeobfuscationBackend for JavaScriptBackend {
                     "Clean pass failed during linting: {:?}. Returning linted output without cleaning.",
                     e
                 );
-                Ok(linter.output)
+                Ok(linted)
             }
         }
     }

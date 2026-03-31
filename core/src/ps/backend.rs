@@ -57,9 +57,9 @@ impl DeobfuscationBackend for PowershellBackend {
         tab_chr: &str,
     ) -> MinusOneResult<String> {
         let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
-        root.apply(&mut ps_linter_view)?;
+        let linted = crate::printer::code_string(&mut ps_linter_view, root)?;
 
-        CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?.clean()
+        CleanEngine::<PowershellBackend>::from_source(&linted)?.clean()
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {

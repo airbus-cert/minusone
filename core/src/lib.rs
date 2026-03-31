@@ -22,3 +22,4 @@ pub mod init;
 pub mod rule;
 pub mod scope;
 pub mod tree;
+pub mod printer;
