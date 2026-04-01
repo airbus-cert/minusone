@@ -117,8 +117,16 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         );
     }
 
-    if matches!(value, Array(_)) {
+    if let Array(array) = value {
         map.insert("at".to_string(), native_function("at"));
+        let reversed_array = array.clone().iter().rev().cloned().collect();
+        map.insert(
+            "reverse".to_string(),
+            Function {
+                source: "function reverse() {}".to_string(),
+                return_value: Some(Box::new(Array(reversed_array))),
+            },
+        );
     }
 
     if let Function { source, .. } = value {
