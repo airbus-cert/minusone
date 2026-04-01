@@ -327,12 +327,12 @@ impl<'a> RuleMut<'a> for CharCodeAt {
 /// use minusone::js::integer::ParseInt;
 /// use minusone::js::linter::Linter;
 ///
-/// let mut tree = build_javascript_tree("var x = String.fromCharCode(0x4f, 0x72, 0x44);").unwrap();
+/// let mut tree = build_javascript_tree("var x = String.fromCharCode(65, 66, 67);").unwrap();
 /// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), FromCharCode::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = 'OrD';");
+/// assert_eq!(linter.output, "var x = 'ABC';");
 /// ```
 #[derive(Default)]
 pub struct FromCharCode;
@@ -406,6 +406,71 @@ impl<'a> RuleMut<'a> for FromCharCode {
             out
         );
         node.reduce(Raw(Str(out)));
+        Ok(())
+    }
+}
+
+/// Infers `String(...)` coercion calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, StringConstructor};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = String(1);").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), StringConstructor::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = '1';");
+/// ```
+#[derive(Default)]
+pub struct StringConstructor;
+
+impl<'a> RuleMut<'a> for StringConstructor {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        if callee.kind() != "identifier" {
+            return Ok(());
+        }
+        if callee.text()? != "String" {
+            return Ok(());
+        }
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let result = match positional_args.first().and_then(|a| a.data()) {
+            None => String::new(),
+            Some(Raw(Str(s))) => s.clone(),
+            Some(value) => value.to_string(),
+        };
+
+        trace!("StringConstructor: reducing String(...) to '{}'", result);
+        node.reduce(Raw(Str(result)));
         Ok(())
     }
 }
@@ -1082,6 +1147,7 @@ mod tests_js_string {
             CharAt::default(),
             CharCodeAt::default(),
             FromCharCode::default(),
+            StringConstructor::default(),
             Concat::default(),
             Split::default(),
             Replace::default(),
@@ -1162,13 +1228,21 @@ mod tests_js_string {
     #[test]
     fn test_from_char_code() {
         assert_eq!(
-            deobfuscate_string("var x = String.fromCharCode(0x4f, 0x72, 0x44);"),
-            "var x = 'OrD';"
+            deobfuscate_string(
+                "var x = String.fromCharCode(0x4f, 0x72, 0x44, 0x65, 0x52, 0x5f, 0x37, 0x30, 0x37, 0x37);"
+            ),
+            "var x = 'OrDeR_7077';"
         );
         assert_eq!(
             deobfuscate_string("var x = String['fromCharCode'](65, 66, 67);"),
             "var x = 'ABC';"
         );
+    }
+
+    #[test]
+    fn test_string_constructor() {
+        assert_eq!(deobfuscate_string("var x = String(1);"), "var x = '1';");
+        assert_eq!(deobfuscate_string("var x = String();"), "var x = '';");
     }
 
     #[test]
