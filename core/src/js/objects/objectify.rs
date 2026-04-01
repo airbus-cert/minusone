@@ -107,6 +107,15 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         "constructor".to_string(),
         native_function(constructor_name(value)),
     );
+    if !matches!(value, NaN | Undefined) {
+        map.insert(
+            "toString".to_string(),
+            Function {
+                source: "function toString() {}".to_string(),
+                return_value: Some(Box::new(Raw(Str(value.to_string())))),
+            },
+        );
+    }
 
     if matches!(value, Array(_)) {
         map.insert("at".to_string(), native_function("at"));

@@ -6,11 +6,11 @@ use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
+use crate::js::regex::RegexExec;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
-use crate::js::regex::RegexExec;
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -503,89 +503,111 @@ impl<'a> RuleMut<'a> for ToString {
             return Ok(());
         }
 
-        if let (Some(subscript_expression), Some(arguments)) = (view.child(0), view.child(1)) {
-            if subscript_expression.kind() == "subscript_expression" {
-                if let (Some(object), Some(property)) =
-                    (subscript_expression.child(0), subscript_expression.child(2))
-                {
-                    if property.data() == Some(&Raw(Str("toString".to_string()))) {
-                        // get radix argument if exists
-                        let radix = if arguments.child_count() > 2 {
-                            if let Some(arg) = arguments.child(1) {
-                                if let Some(Raw(Num(radix))) = arg.data() {
-                                    *radix as i64
-                                } else if let Some(Raw(Str(radix_str))) = arg.data() {
-                                    if let Ok(radix) = radix_str.parse::<i64>() {
-                                        radix
-                                    } else {
-                                        warn!(
-                                            "ToString: cannot parse radix argument '{}' as number, defaulting to 10",
-                                            radix_str
-                                        );
-                                        10
-                                    }
-                                } else {
-                                    warn!(
-                                        "ToString: unsupported radix argument type, defaulting to 10"
-                                    );
-                                    10
-                                }
-                            } else {
-                                10
-                            }
-                        } else {
-                            10
-                        };
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
 
-                        let result = match object.data() {
-                            Some(Raw(Num(n))) => {
-                                if radix == 10 {
-                                    n.to_string()
-                                } else if radix >= 2 && radix <= 36 {
-                                    let mut num = *n as i64;
-                                    let mut result = String::new();
-                                    let negative = num < 0;
-                                    if negative {
-                                        num = -num;
-                                    }
-                                    while num > 0 {
-                                        let digit = (num % radix) as u8;
-                                        result.push(if digit < 10 {
-                                            (b'0' + digit) as char
-                                        } else {
-                                            (b'a' + digit - 10) as char
-                                        });
-                                        num /= radix;
-                                    }
-                                    if negative {
-                                        result.push('-');
-                                    }
-                                    result.chars().rev().collect()
-                                } else {
-                                    warn!("ToString: invalid radix {}, defaulting to 10", radix);
-                                    n.to_string()
-                                }
-                            }
-                            Some(Raw(Bool(b))) => b.to_string(),
-                            Some(Raw(Str(s))) => s.to_string(),
-                            Some(Array(array)) => flatten_array(array, None),
-                            _ => {
-                                warn!("ToString: unsupported object type for toString call");
-                                return Ok(());
-                            }
-                        };
+        let is_to_string = match callee.kind() {
+            "subscript_expression" => callee
+                .child(2)
+                .map(|property| {
+                    property.data() == Some(&Raw(Str("toString".to_string())))
+                        || property
+                            .text()
+                            .ok()
+                            .map(|t| t.trim_matches(['\'', '"']).to_string())
+                            .as_deref()
+                            == Some("toString")
+                })
+                .unwrap_or(false),
+            "member_expression" => callee
+                .named_child("property")
+                .and_then(|p| p.text().ok().map(|t| t == "toString"))
+                .unwrap_or(false),
+            _ => false,
+        };
 
-                        trace!(
-                            "ToString: reducing {:?}['toString']({}) to '{}'",
-                            object.data(),
-                            radix,
-                            result
-                        );
-                        node.reduce(Raw(Str(result)));
+        if !is_to_string {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        // get radix argument if exists
+        let radix = if let Some(arg) = positional_args.first() {
+            if let Some(Raw(Num(radix))) = arg.data() {
+                *radix as i64
+            } else if let Some(Raw(Str(radix_str))) = arg.data() {
+                if let Ok(radix) = radix_str.parse::<i64>() {
+                    radix
+                } else {
+                    warn!(
+                        "ToString: cannot parse radix argument '{}' as number, defaulting to 10",
+                        radix_str
+                    );
+                    10
+                }
+            } else {
+                warn!("ToString: unsupported radix argument type, defaulting to 10");
+                10
+            }
+        } else {
+            10
+        };
+
+        let object_value = object
+            .data()
+            .cloned()
+            .or_else(|| object.iter().find_map(|child| child.data().cloned()));
+
+        let result = match object_value.as_ref() {
+            Some(Raw(Num(n))) => {
+                if radix == 10 {
+                    n.to_string()
+                } else if (2..=36).contains(&radix) {
+                    let mut num = *n as i64;
+                    let mut result = String::new();
+                    let negative = num < 0;
+                    if negative {
+                        num = -num;
                     }
+                    while num > 0 {
+                        let digit = (num % radix) as u8;
+                        result.push(if digit < 10 {
+                            (b'0' + digit) as char
+                        } else {
+                            (b'a' + digit - 10) as char
+                        });
+                        num /= radix;
+                    }
+                    if negative {
+                        result.push('-');
+                    }
+                    result.chars().rev().collect()
+                } else {
+                    warn!("ToString: invalid radix {}, defaulting to 10", radix);
+                    n.to_string()
                 }
             }
-        }
+            Some(Raw(Bool(b))) => b.to_string(),
+            Some(Raw(Str(s))) => s.to_string(),
+            Some(Array(array)) => flatten_array(array, None),
+            _ => {
+                warn!("ToString: unsupported object type for toString call");
+                return Ok(());
+            }
+        };
+
+        trace!(
+            "ToString: reducing {:?}.toString({}) to '{}'",
+            object_value, radix, result
+        );
+        node.reduce(Raw(Str(result)));
 
         Ok(())
     }
@@ -645,7 +667,7 @@ impl<'a> RuleMut<'a> for Split {
             return Ok(());
         }
 
-        let Some(object) = callee.named_child("object") else {
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
             return Ok(());
         };
         let Some(Raw(Str(input))) = object.data() else {
@@ -740,7 +762,7 @@ impl<'a> RuleMut<'a> for Replace {
             return Ok(());
         }
 
-        let Some(object) = callee.named_child("object") else {
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
             return Ok(());
         };
         let Some(Raw(Str(input))) = object.data() else {
@@ -750,19 +772,17 @@ impl<'a> RuleMut<'a> for Replace {
         let args = view.named_child("arguments");
         let positional_args = get_positional_arguments(args);
 
-
         let replacement = match positional_args.get(1).and_then(|a| a.data()) {
             None => "undefined".to_string(),
             Some(Raw(Str(s))) => s.clone(),
             Some(js) => js.to_string(),
         };
 
-
         match positional_args.first().and_then(|a| a.data()) {
             None => Ok(()),
             Some(Regex { pattern, flags }) => {
                 let Some(regex) = RegexExec::compile(pattern, flags) else {
-                    return Ok(())
+                    return Ok(());
                 };
 
                 //let result = regex.replace_all(input, &replacement);+
@@ -770,20 +790,21 @@ impl<'a> RuleMut<'a> for Replace {
                     "replace" => match flags.contains("g") {
                         true => regex.replace_all(input, &replacement),
                         false => regex.replace(input, &replacement),
-                    }
+                    },
                     "replaceAll" => match flags.contains("g") {
                         true => regex.replace_all(input, &replacement),
                         false => {
-                            error!("Replace: replaceAll called with regex without global flag, treating as replace. This should crash the engine, skipping.");
-                            return Ok(())
+                            error!(
+                                "Replace: replaceAll called with regex without global flag, treating as replace. This should crash the engine, skipping."
+                            );
+                            return Ok(());
                         }
-                    }
+                    },
                     _ => unreachable!(),
                 };
                 trace!(
                     "Replace: reducing regex replace call on '{}' => '{}'",
-                    input,
-                    result
+                    input, result
                 );
                 node.reduce(Raw(Str(result.to_string())));
                 Ok(())
@@ -792,12 +813,13 @@ impl<'a> RuleMut<'a> for Replace {
                 let pattern = s.clone();
                 let result = match method.as_str() {
                     "replace" => input.replacen(&pattern, &replacement, 1),
-                    "replaceAll" => {
-                        input.replace(&pattern, &replacement)
-                    },
+                    "replaceAll" => input.replace(&pattern, &replacement),
                     _ => unreachable!(),
                 };
-                trace!("Replace: reducing string replace call on '{}' => '{}'", input, result);
+                trace!(
+                    "Replace: reducing string replace call on '{}' => '{}'",
+                    input, result
+                );
                 node.reduce(Raw(Str(result.to_string())));
                 Ok(())
             }
@@ -805,12 +827,13 @@ impl<'a> RuleMut<'a> for Replace {
                 let pattern = js.to_string();
                 let result = match method.as_str() {
                     "replace" => input.replacen(&pattern, &replacement, 1),
-                    "replaceAll" => {
-                        input.replace(&pattern, &replacement)
-                    },
+                    "replaceAll" => input.replace(&pattern, &replacement),
                     _ => unreachable!(),
                 };
-                trace!("Replace: reducing string replace call on '{}' => '{}'", input, result);
+                trace!(
+                    "Replace: reducing string replace call on '{}' => '{}'",
+                    input, result
+                );
                 node.reduce(Raw(Str(result.to_string())));
                 Ok(())
             }
@@ -830,6 +853,7 @@ fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
 mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
     use crate::js::regex::ParseRegex;
@@ -844,6 +868,7 @@ mod tests_js_string {
             ParseInt::default(),
             ParseArray::default(),
             ParseRegex::default(),
+            Forward::default(),
             StringPlusMinus::default(),
             CharAt::default(),
             Concat::default(),
@@ -923,6 +948,18 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
             "var x = 'baNaNa'"
+        );
+    }
+
+    #[test]
+    fn test_to_string_dot_and_subscript() {
+        assert_eq!(
+            deobfuscate_string("var x = (1)['toString']();"),
+            "var x = '1';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = (1).toString();"),
+            "var x = '1';"
         );
     }
 
