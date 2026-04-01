@@ -231,6 +231,93 @@ pub fn escape_js_string(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
+/// Infers Split calls on strings
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Split, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'a,b'.split(',');").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), Split::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = ['a', 'b'];");
+/// ```
+#[derive(Default)]
+pub struct CharCodeAt;
+
+impl<'a> RuleMut<'a> for CharCodeAt {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "charCodeAt" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let index: usize = match positional_args.first().and_then(|a| a.data()) {
+            None => 0,
+            Some(Raw(Str(s))) => s.parse::<f64>().ok().map(|n| n as usize).unwrap_or(0),
+            Some(Raw(Num(n))) => *n as usize,
+            _ => 0,
+        };
+
+        let result = if index < input.len() {
+            Raw(Num(input.chars().nth(index).unwrap() as u32 as f64))
+        } else {
+            NaN
+        };
+
+        trace!(
+            "InferCharCodeAt: reducing '{}'.charCodeAt({}) to {}",
+            input, index, result
+        );
+        node.reduce(result);
+
+        Ok(())
+    }
+}
+
 /// Infers unary `+` and `-` on string literals
 ///
 /// # Example
@@ -871,6 +958,7 @@ mod tests_js_string {
             Forward::default(),
             StringPlusMinus::default(),
             CharAt::default(),
+            CharCodeAt::default(),
             Concat::default(),
             Split::default(),
             Replace::default(),
@@ -933,6 +1021,18 @@ mod tests_js_string {
                 "var x = 'minusone'[0] + 'minusone'[1] + 'minusone'[2] + 'minusone'[3] + 'minusone'[4] + 'minusone'[5] + 'minusone'[6] + 'minusone'[7];"
             ),
             "var x = 'minusone';"
+        );
+    }
+
+    #[test]
+    fn test_charcodeat() {
+        assert_eq!(
+            deobfuscate_string("var x = 'ABC'.charCodeAt(0);"),
+            "var x = 65;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'ABC'.charCodeAt(14);"),
+            "var x = NaN;"
         );
     }
 
