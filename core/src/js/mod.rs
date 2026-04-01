@@ -234,6 +234,7 @@ impl_javascript_ruleset!(
     CombineArrays,   // Infer + operations on two arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
+    FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
     Forward,    // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus, // Infer unary plus and minus on arrays

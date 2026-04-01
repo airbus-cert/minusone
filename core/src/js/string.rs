@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Object, Raw, Regex};
+use crate::js::JavaScript::{Array, Null, Object, Raw, Regex};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
@@ -315,6 +315,128 @@ impl<'a> RuleMut<'a> for CharCodeAt {
         node.reduce(result);
 
         Ok(())
+    }
+}
+
+/// Infers `String.fromCharCode(...)` static calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{FromCharCode, ParseString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = String.fromCharCode(0x4f, 0x72, 0x44);").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), FromCharCode::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'OrD';");
+/// ```
+#[derive(Default)]
+pub struct FromCharCode;
+
+impl<'a> RuleMut<'a> for FromCharCode {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "fromCharCode" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Ok(object_name) = object.text() else {
+            return Ok(());
+        };
+        if object_name != "String" {
+            return Ok(());
+        }
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let mut code_units = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data() else {
+                return Ok(());
+            };
+            let Some(num) = js_to_number_for_from_char_code(value) else {
+                return Ok(());
+            };
+            code_units.push(to_uint16(num));
+        }
+
+        let mut out = String::new();
+        for ch in std::char::decode_utf16(code_units.into_iter()) {
+            let Ok(ch) = ch else {
+                return Ok(());
+            };
+            out.push(ch);
+        }
+
+        trace!(
+            "FromCharCode: reducing String.fromCharCode(...) to '{}'",
+            out
+        );
+        node.reduce(Raw(Str(out)));
+        Ok(())
+    }
+}
+
+fn to_uint16(n: f64) -> u16 {
+    if !n.is_finite() || n == 0.0 {
+        return 0;
+    }
+    (n.trunc() as i64).rem_euclid(65536) as u16
+}
+
+fn js_to_number_for_from_char_code(value: &JavaScript) -> Option<f64> {
+    match value {
+        Raw(Num(n)) => Some(*n),
+        Raw(Str(s)) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Some(0.0)
+            } else if let Ok(n) = t.parse::<f64>() {
+                Some(n)
+            } else {
+                match ParseInt::from_str(t) {
+                    Raw(Num(n)) => Some(n),
+                    _ => None,
+                }
+            }
+        }
+        Raw(Bool(b)) => Some(if *b { 1.0 } else { 0.0 }),
+        Undefined | NaN => Some(f64::NAN),
+        Null => Some(0.0),
+        _ => None,
     }
 }
 
@@ -959,6 +1081,7 @@ mod tests_js_string {
             StringPlusMinus::default(),
             CharAt::default(),
             CharCodeAt::default(),
+            FromCharCode::default(),
             Concat::default(),
             Split::default(),
             Replace::default(),
@@ -1033,6 +1156,18 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'ABC'.charCodeAt(14);"),
             "var x = NaN;"
+        );
+    }
+
+    #[test]
+    fn test_from_char_code() {
+        assert_eq!(
+            deobfuscate_string("var x = String.fromCharCode(0x4f, 0x72, 0x44);"),
+            "var x = 'OrD';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = String['fromCharCode'](65, 66, 67);"),
+            "var x = 'ABC';"
         );
     }
 
