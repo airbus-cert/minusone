@@ -241,6 +241,7 @@ impl_javascript_ruleset!(
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
     Split,          // Infer string split calls on literal strings
+    Replace,        // Infer string replace calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls

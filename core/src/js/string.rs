@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Object, Raw};
+use crate::js::JavaScript::{Array, Object, Raw, Regex};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
@@ -9,7 +9,8 @@ use crate::js::integer::ParseInt;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::{trace, warn};
+use log::{error, trace, warn};
+use crate::js::regex::RegexExec;
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -612,16 +613,6 @@ impl<'a> RuleMut<'a> for ToString {
 #[derive(Default)]
 pub struct Split;
 
-impl Split {
-    fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
-        match separator {
-            None => vec![input.to_string()],
-            Some("") => input.chars().map(|c| c.to_string()).collect(),
-            Some(sep) => input.split(sep).map(|s| s.to_string()).collect(),
-        }
-    }
-}
-
 impl<'a> RuleMut<'a> for Split {
     type Language = JavaScript;
 
@@ -679,7 +670,7 @@ impl<'a> RuleMut<'a> for Split {
             _ => return Ok(()),
         };
 
-        let mut parts = Self::split_parts(input, separator_owned.as_deref());
+        let mut parts = split_parts(input, separator_owned.as_deref());
         if let Some(limit) = limit {
             parts.truncate(limit);
         }
@@ -695,12 +686,153 @@ impl<'a> RuleMut<'a> for Split {
     }
 }
 
+/// Infers replace and replaceAll calls on strings with string or regex patterns and reduces them to single string literals
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Replace, Split, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'a,b,c'.replace(',', '');").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), Replace::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'ab,c';");
+/// ```
+#[derive(Default)]
+pub struct Replace;
+
+impl<'a> RuleMut<'a> for Replace {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "replace" && method != "replaceAll" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.named_child("object") else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+
+        let replacement = match positional_args.get(1).and_then(|a| a.data()) {
+            None => "undefined".to_string(),
+            Some(Raw(Str(s))) => s.clone(),
+            Some(js) => js.to_string(),
+        };
+
+
+        match positional_args.first().and_then(|a| a.data()) {
+            None => Ok(()),
+            Some(Regex { pattern, flags }) => {
+                let Some(regex) = RegexExec::compile(pattern, flags) else {
+                    return Ok(())
+                };
+
+                //let result = regex.replace_all(input, &replacement);+
+                let result = match method.as_str() {
+                    "replace" => match flags.contains("g") {
+                        true => regex.replace_all(input, &replacement),
+                        false => regex.replace(input, &replacement),
+                    }
+                    "replaceAll" => match flags.contains("g") {
+                        true => regex.replace_all(input, &replacement),
+                        false => {
+                            error!("Replace: replaceAll called with regex without global flag, treating as replace. This should crash the engine, skipping.");
+                            return Ok(())
+                        }
+                    }
+                    _ => unreachable!(),
+                };
+                trace!(
+                    "Replace: reducing regex replace call on '{}' => '{}'",
+                    input,
+                    result
+                );
+                node.reduce(Raw(Str(result.to_string())));
+                Ok(())
+            }
+            Some(Raw(Str(s))) => {
+                let pattern = s.clone();
+                let result = match method.as_str() {
+                    "replace" => input.replacen(&pattern, &replacement, 1),
+                    "replaceAll" => {
+                        input.replace(&pattern, &replacement)
+                    },
+                    _ => unreachable!(),
+                };
+                trace!("Replace: reducing string replace call on '{}' => '{}'", input, result);
+                node.reduce(Raw(Str(result.to_string())));
+                Ok(())
+            }
+            Some(js) => {
+                let pattern = js.to_string();
+                let result = match method.as_str() {
+                    "replace" => input.replacen(&pattern, &replacement, 1),
+                    "replaceAll" => {
+                        input.replace(&pattern, &replacement)
+                    },
+                    _ => unreachable!(),
+                };
+                trace!("Replace: reducing string replace call on '{}' => '{}'", input, result);
+                node.reduce(Raw(Str(result.to_string())));
+                Ok(())
+            }
+        }
+    }
+}
+
+fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
+    match separator {
+        None => vec![input.to_string()],
+        Some("") => input.chars().map(|c| c.to_string()).collect(),
+        Some(sep) => input.split(sep).map(|s| s.to_string()).collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::*;
     use crate::js::string::{escape_js_string, unescaped_js_string};
@@ -711,10 +843,12 @@ mod tests_js_string {
             ParseString::default(),
             ParseInt::default(),
             ParseArray::default(),
+            ParseRegex::default(),
             StringPlusMinus::default(),
             CharAt::default(),
             Concat::default(),
             Split::default(),
+            Replace::default(),
             GetArrayElement::default(),
             ToString::default(),
             AddSubSpecials::default(),
@@ -801,6 +935,43 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'a,b,c'.split(',', 2)[1];"),
             "var x = 'b';"
+        );
+    }
+
+    #[test]
+    fn test_replace() {
+        // string
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replace(',', '');"),
+            "var x = 'ab,c';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replaceAll(',', '');"),
+            "var x = 'abc';"
+        );
+
+        // num
+        assert_eq!(
+            deobfuscate_string("var x = '124'.replaceAll(4, 3);"),
+            "var x = '123';"
+        );
+
+        // regex
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/g, '');"),
+            "var x = 'abc';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/, '');"),
+            "var x = 'a,b,c'.replaceAll(/,/, '');"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replace(/,/g, '');"),
+            "var x = 'abc';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replace(/,/, '');"),
+            "var x = 'ab,c';"
         );
     }
 }
