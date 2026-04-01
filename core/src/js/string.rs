@@ -168,31 +168,12 @@ impl<'a> RuleMut<'a> for CharAt {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "subscript_expression" {
-            return Ok(());
-        }
-
-        if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
-            match (string.data(), index.data()) {
-                (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
-                    return if *i >= 0.0 && (*i as usize) < s.len() {
-                        let ch = s.chars().nth(*i as usize).unwrap();
-                        trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
-                        node.reduce(Raw(Str(ch.to_string())));
-                        Ok(())
-                    } else {
-                        trace!(
-                            "InferCharAt: index {} out of bounds, setting to undefined",
-                            i
-                        );
-                        node.reduce(Undefined);
-                        Ok(())
-                    };
-                }
-                (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
-                    if let Ok(i) = i.parse::<f64>() {
-                        return if i >= 0.0 && (i as usize) < s.len() {
-                            let ch = s.chars().nth(i as usize).unwrap();
+        if view.kind() == "subscript_expression" {
+            if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
+                match (string.data(), index.data()) {
+                    (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
+                        return if *i >= 0.0 && (*i as usize) < s.chars().count() {
+                            let ch = s.chars().nth(*i as usize).unwrap();
                             trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
                             node.reduce(Raw(Str(ch.to_string())));
                             Ok(())
@@ -204,13 +185,111 @@ impl<'a> RuleMut<'a> for CharAt {
                             node.reduce(Undefined);
                             Ok(())
                         };
-                    } else {
-                        warn!("InferCharAt: cannot parse index '{}' as number", i);
+                    }
+                    (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
+                        if let Ok(i) = i.parse::<f64>() {
+                            return if i >= 0.0 && (i as usize) < s.chars().count() {
+                                let ch = s.chars().nth(i as usize).unwrap();
+                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                                node.reduce(Raw(Str(ch.to_string())));
+                                Ok(())
+                            } else {
+                                trace!(
+                                    "InferCharAt: index {} out of bounds, setting to undefined",
+                                    i
+                                );
+                                node.reduce(Undefined);
+                                Ok(())
+                            };
+                        } else {
+                            warn!("InferCharAt: cannot parse index '{}' as number", i);
+                        }
+                    }
+                    _ => {}
+                }
+
+                if let Some(Raw(Str(s))) = string.data() {
+                    if let Ok(t) = index.text() {
+                        if let Ok(i) = t.trim_matches(['\'', '"']).parse::<f64>() {
+                            return if i >= 0.0 && (i as usize) < s.chars().count() {
+                                let ch = s.chars().nth(i as usize).unwrap();
+                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                                node.reduce(Raw(Str(ch.to_string())));
+                                Ok(())
+                            } else {
+                                trace!(
+                                    "InferCharAt: index {} out of bounds, setting to undefined",
+                                    i
+                                );
+                                node.reduce(Undefined);
+                                Ok(())
+                            };
+                        }
                     }
                 }
-                _ => {}
             }
+            return Ok(());
         }
+
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "charAt" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let index = match positional_args.first() {
+            None => 0.0,
+            Some(arg) => match arg.data() {
+                Some(Raw(Num(n))) => *n,
+                Some(Raw(Str(s))) => s.parse::<f64>().ok().unwrap_or(f64::NAN),
+                _ => arg
+                    .text()
+                    .ok()
+                    .and_then(|t| t.trim_matches(['\'', '"']).parse::<f64>().ok())
+                    .unwrap_or(f64::NAN),
+            },
+        };
+
+        let result = if index.is_finite() && index >= 0.0 {
+            input
+                .chars()
+                .nth(index as usize)
+                .map(|c| c.to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        trace!(
+            "InferCharAt: reducing '{}'.charAt({}) to '{}'",
+            input,
+            if positional_args.is_empty() {
+                "".to_string()
+            } else {
+                index.to_string()
+            },
+            result
+        );
+        node.reduce(Raw(Str(result)));
 
         Ok(())
     }
@@ -1196,9 +1275,42 @@ mod tests_js_string {
 
     #[test]
     fn test_charat() {
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt();"),
+            "var x = 'a';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt(1);"),
+            "var x = 'b';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'['charAt'](2);"),
+            "var x = 'c';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt(3);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt(-3);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt('1');"),
+            "var x = 'b';"
+        );
         assert_eq!(deobfuscate_string("var x = 'test'[1];"), "var x = 'e';");
         assert_eq!(
             deobfuscate_string("var x = 'test'[10];"),
+            "var x = undefined;"
+        );
+        assert_eq!(deobfuscate_string("var x = 'abc'[0];"), "var x = 'a';");
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'[-1];"),
+            "var x = undefined;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'[3];"),
             "var x = undefined;"
         );
     }
