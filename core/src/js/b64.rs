@@ -52,7 +52,8 @@ impl<'a> RuleMut<'a> for B64 {
                         if let Some(encoded_string) = arguments.child(1) {
                             if let Some(Raw(Str(encoded))) = encoded_string.data() {
                                 let config = GeneralPurposeConfig::new()
-                                    .with_decode_padding_mode(DecodePaddingMode::Indifferent);
+                                    .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+                                    .with_decode_allow_trailing_bits(true);
 
                                 let engine = GeneralPurpose::new(&alphabet::STANDARD, config);
 

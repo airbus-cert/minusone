@@ -381,8 +381,10 @@ impl<'a> RuleMut<'a> for CharCodeAt {
             _ => 0,
         };
 
-        let result = if index < input.len() {
-            Raw(Num(input.chars().nth(index).unwrap() as u32 as f64))
+        let bytes = input.as_bytes();
+
+        let result = if index < bytes.len() {
+            Raw(Num(bytes[index] as f64))
         } else {
             NaN
         };
