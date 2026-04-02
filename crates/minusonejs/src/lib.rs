@@ -1,18 +1,26 @@
 extern crate minusone;
+
+use minusone::engine::DeobfuscationBackend;
+use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use minusone::{engine::DeobfuscateEngine, error::Error as MinusoneError};
+use std::fmt::{Debug, Display};
 
 enum MinusonejsError {
     MinusoneError(MinusoneError),
     JsError(String),
 }
 
-impl ToString for MinusonejsError {
-    fn to_string(&self) -> String {
-        match self {
+impl Display for MinusonejsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
             MinusonejsError::JsError(e) => e.clone(),
-            MinusonejsError::MinusoneError(e) => format!("{e:?}"),
-        }
+            MinusonejsError::MinusoneError(e) => match e {
+                MinusoneError::MinusOneError(inner) => inner.message.clone(),
+                MinusoneError::Utf8Error(u) => u.to_string(),
+            },
+        };
+        write!(f, "{}", str)
     }
 }
 
@@ -20,51 +28,46 @@ wit_bindgen::generate!({
     world: "minusone",
 });
 
-const LANGUAGES: [&str; 1] = ["Powershell"];
+const LANGUAGES: [&str; 2] = ["Powershell", "JavaScript"];
 
 fn return_res(res: String) -> (String, String) {
     (res, String::from(""))
 }
 
 fn return_err(err: String) -> (String, String) {
-    (String::from(""), format!("{err:?}"))
+    (String::from(""), err)
 }
 
-fn deobfuscate(
-    source: String,
-    language: String,
-    ruleset: Vec<String>,
-    with: bool,
-) -> Result<String, MinusonejsError> {
-    match language.to_lowercase().as_str() {
-        "powershell" => deobfuscate_powershell(source, ruleset, with)
-            .map_err(|e| MinusonejsError::MinusoneError(e)),
-        _ => Err(MinusonejsError::JsError(format!(
-            "Unsupported language: {}",
-            language,
-        ))),
+pub(crate) fn run_deobf<B: DeobfuscationBackend>(
+    source: &str,
+    rule_set: Option<Vec<String>>,
+    skip_rule_set: Option<Vec<String>>,
+) -> Result<String, MinusonejsError>
+where
+    <B as DeobfuscationBackend>::Language: Debug,
+{
+    let cleaned = DeobfuscateEngine::<B>::remove_extra(source)
+        .map_err(|e| MinusonejsError::MinusoneError(e))?;
+    let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)
+        .map_err(|e| MinusonejsError::MinusoneError(e))?;
+
+    if let Some(rules) = rule_set {
+        engine
+            .deobfuscate_with_custom_ruleset(rules.iter().map(AsRef::as_ref).collect())
+            .map_err(|e| MinusonejsError::MinusoneError(e))?;
+    } else if let Some(skip_rules) = skip_rule_set {
+        engine
+            .deobfuscate_without_custom_ruleset(skip_rules.iter().map(AsRef::as_ref).collect())
+            .map_err(|e| MinusonejsError::MinusoneError(e))?;
+    } else {
+        engine
+            .deobfuscate()
+            .map_err(|e| MinusonejsError::MinusoneError(e))?;
     }
-}
 
-fn deobfuscate_powershell(
-    source: String,
-    ruleset: Vec<String>,
-    with: bool,
-) -> Result<String, MinusoneError> {
-    let without_comments = DeobfuscateEngine::<PowershellBackend>::remove_extra(&source)?;
-    let mut engine = DeobfuscateEngine::from_powershell(&without_comments)?;
-
-    match (ruleset.len(), with) {
-        (0, _) => engine.deobfuscate(),
-        (_, true) => {
-            engine.deobfuscate_with_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
-        }
-        (_, false) => {
-            engine.deobfuscate_without_custom_ruleset(ruleset.iter().map(AsRef::as_ref).collect())
-        }
-    }?;
-
-    engine.lint()
+    Ok(engine
+        .lint()
+        .map_err(|e| MinusonejsError::MinusoneError(e))?)
 }
 
 struct Minusone;
@@ -74,7 +77,16 @@ impl Guest for Minusone {
     }
 
     fn deobfuscate(source: String, language: String) -> (String, String) {
-        match deobfuscate(source, language, vec![], false) {
+        let result = match language.to_lowercase().as_str() {
+            "ps" | "ps1" | "powershell" => run_deobf::<PowershellBackend>(&source, None, None),
+            "js" | "javascript" => run_deobf::<JavaScriptBackend>(&source, None, None),
+            _ => Err(MinusonejsError::JsError(format!(
+                "Unsupported language: {}. Supported languages are: {:?}",
+                language, LANGUAGES
+            ))),
+        };
+
+        match result {
             Ok(r) => return_res(r),
             Err(e) => return_err(e.to_string()),
         }
@@ -85,7 +97,18 @@ impl Guest for Minusone {
         language: String,
         ruleset: Vec<String>,
     ) -> (String, String) {
-        match deobfuscate(source, language, ruleset, true) {
+        let result = match language.to_lowercase().as_str() {
+            "ps" | "ps1" | "powershell" => {
+                run_deobf::<PowershellBackend>(&source, Some(ruleset), None)
+            }
+            "js" | "javascript" => run_deobf::<JavaScriptBackend>(&source, Some(ruleset), None),
+            _ => Err(MinusonejsError::JsError(format!(
+                "Unsupported language: {}. Supported languages are: {:?}",
+                language, LANGUAGES
+            ))),
+        };
+
+        match result {
             Ok(r) => return_res(r),
             Err(e) => return_err(e.to_string()),
         }
@@ -96,7 +119,18 @@ impl Guest for Minusone {
         language: String,
         ruleset: Vec<String>,
     ) -> (String, String) {
-        match deobfuscate(source, language, ruleset, false) {
+        let result = match language.to_lowercase().as_str() {
+            "ps" | "ps1" | "powershell" => {
+                run_deobf::<PowershellBackend>(&source, None, Some(ruleset))
+            }
+            "js" | "javascript" => run_deobf::<JavaScriptBackend>(&source, None, Some(ruleset)),
+            _ => Err(MinusonejsError::JsError(format!(
+                "Unsupported language: {}. Supported languages are: {:?}",
+                language, LANGUAGES
+            ))),
+        };
+
+        match result {
             Ok(r) => return_res(r),
             Err(e) => return_err(e.to_string()),
         }
