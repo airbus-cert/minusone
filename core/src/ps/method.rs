@@ -31,7 +31,7 @@ use log::{trace, warn};
 ///
 /// assert_eq!(ps_litter_view.output, "3");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Length;
 
 impl<'a> RuleMut<'a> for Length {
@@ -117,7 +117,7 @@ impl<'a> RuleMut<'a> for Length {
 ///
 /// assert_eq!(ps_litter_view.output, "\"foo\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DecodeBase64;
 
 impl<'a> RuleMut<'a> for DecodeBase64 {
@@ -248,7 +248,7 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
 ///
 /// assert_eq!(ps_litter_view.output, "\"foo\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FromUTF;
 
 impl<'a> RuleMut<'a> for FromUTF {

@@ -1,10 +1,14 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::JavaScriptRuleSet;
 use crate::js::Value::{Num, Str};
+use crate::js::build_javascript_tree;
 use crate::js::functions::function::function_value_from_node;
-use crate::rule::RuleMut;
+use crate::js::linter::Linter;
+use crate::js::strategy::JavaScriptStrategy;
+use crate::rule::{RuleExecutionContext, RuleMut, RuleReference, RuleSet};
 use crate::tree::{ControlFlow, Node, NodeMut};
-use log::trace;
+use log::{trace, warn};
 use std::collections::HashMap;
 
 /// Tracks function declarations with predictable return values
@@ -31,56 +35,137 @@ use std::collections::HashMap;
 ///
 /// assert_eq!(linter.output, "function test() { return 'hello'; } console.log('hello');");
 /// ```
+#[derive(Clone)]
 pub struct FnCall {
-    functions: HashMap<String, JavaScript>,
+    function_sources: HashMap<String, String>,
     vars: HashMap<String, JavaScript>,
     object_fields: HashMap<(String, String), JavaScript>,
-    var_shapes: HashMap<String, FunctionShape>,
-    object_field_shapes: HashMap<(String, String), FunctionShape>,
-    shapes_by_source: HashMap<String, FunctionShape>,
-}
-
-#[derive(Clone)]
-enum ReturnExpr {
-    Literal(JavaScript),
-    Symbol(String),
-    BinOp {
-        op: String,
-        left: Box<ReturnExpr>,
-        right: Box<ReturnExpr>,
-    },
-    Subscript {
-        array: Box<ReturnExpr>,
-        index: Box<ReturnExpr>,
-    },
-}
-
-#[derive(Clone)]
-struct FunctionShape {
-    params: Vec<String>,
-    steps: Vec<EvalStep>,
-    return_expr: Option<ReturnExpr>,
-}
-
-#[derive(Clone)]
-enum EvalStep {
-    Assign { name: String, expr: ReturnExpr },
+    member_functions: HashMap<String, JavaScript>,
+    member_aliases: HashMap<String, String>,
+    reset_on_program_enter: bool,
+    nested_peer_rule_names: Option<Vec<String>>,
+    nested_eval_depth: usize,
+    max_nested_eval_depth: usize,
 }
 
 impl Default for FnCall {
     fn default() -> Self {
         FnCall {
-            functions: HashMap::new(),
+            function_sources: HashMap::new(),
             vars: HashMap::new(),
             object_fields: HashMap::new(),
-            var_shapes: HashMap::new(),
-            object_field_shapes: HashMap::new(),
-            shapes_by_source: HashMap::new(),
+            member_functions: HashMap::new(),
+            member_aliases: HashMap::new(),
+            reset_on_program_enter: true,
+            nested_peer_rule_names: None,
+            nested_eval_depth: 0,
+            max_nested_eval_depth: 3,
         }
     }
 }
 
 impl FnCall {
+    fn is_function_like_kind(kind: &str) -> bool {
+        matches!(
+            kind,
+            "function"
+                | "function_expression"
+                | "function_declaration"
+                | "arrow_function"
+                | "generator_function"
+                | "generator_function_declaration"
+        )
+    }
+
+    fn render_node_source(node: &Node<JavaScript>) -> Option<String> {
+        let mut linter = Linter::default();
+        node.apply(&mut linter).ok()?;
+        Some(linter.output)
+    }
+
+    fn with_rendered_function_source(
+        value: JavaScript,
+        source_node: &Node<JavaScript>,
+    ) -> JavaScript {
+        let JavaScript::Function { return_value, .. } = value else {
+            return value;
+        };
+
+        let source = Self::render_node_source(source_node)
+            .unwrap_or_else(|| source_node.text().unwrap_or_default().to_string());
+        JavaScript::Function {
+            source,
+            return_value,
+        }
+    }
+
+    fn clear_state(&mut self) {
+        self.function_sources.clear();
+        self.vars.clear();
+        self.object_fields.clear();
+        self.member_functions.clear();
+        self.member_aliases.clear();
+    }
+
+    fn clone_for_nested_eval(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned.reset_on_program_enter = false;
+        cloned.nested_eval_depth += 1;
+        cloned
+    }
+
+    fn track_function_binding(&mut self, name: String, value: JavaScript) {
+        if let Some(source) = Self::function_source_from_value(&value) {
+            self.function_sources
+                .insert(name.clone(), source.to_string());
+            self.vars.insert(name, value);
+        }
+    }
+
+    fn resolve_function_value_from_identifier(&self, identifier: &str) -> Option<JavaScript> {
+        self.vars.get(identifier).cloned().or_else(|| {
+            self.function_sources
+                .get(identifier)
+                .map(|source| JavaScript::Function {
+                    source: source.clone(),
+                    return_value: None,
+                })
+        })
+    }
+
+    fn resolve_function_value_from_node(&self, node: &Node<JavaScript>) -> Option<JavaScript> {
+        node.data()
+            .cloned()
+            .or_else(|| function_value_from_node(node))
+            .or_else(|| {
+                if node.kind() == "identifier" {
+                    node.text().ok().and_then(|identifier| {
+                        self.resolve_function_value_from_identifier(identifier)
+                    })
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn resolve_inline_callable_value(&self, node: &Node<JavaScript>) -> Option<JavaScript> {
+        if let Some(value @ JavaScript::Function { .. }) =
+            self.resolve_function_value_from_node(node)
+        {
+            return Some(value);
+        }
+
+        match node.kind() {
+            "parenthesized_expression" => node
+                .child(1)
+                .and_then(|inner| self.resolve_inline_callable_value(&inner)),
+            "assignment_expression" => node
+                .child(2)
+                .and_then(|right| self.resolve_inline_callable_value(&right)),
+            _ => None,
+        }
+    }
+
     fn reduce_array_subscript(node: &mut NodeMut<JavaScript>) {
         let view = node.view();
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
@@ -102,81 +187,6 @@ impl FnCall {
                 && idx < arr.len()
             {
                 node.reduce(arr[idx].clone());
-            }
-        }
-    }
-
-    fn find_single_return_value(body: &Node<JavaScript>) -> Option<JavaScript> {
-        let mut return_value: Option<JavaScript> = None;
-        let mut found_count = 0;
-
-        Self::walk_for_returns(body, &mut return_value, &mut found_count);
-
-        if found_count == 1 { return_value } else { None }
-    }
-
-    fn walk_for_returns<'a>(
-        node: &Node<'a, JavaScript>,
-        return_value: &mut Option<JavaScript>,
-        found_count: &mut usize,
-    ) {
-        for child in node.iter() {
-            match child.kind() {
-                "return_statement" => {
-                    *found_count += 1;
-                    if *found_count == 1 {
-                        // first named child after "return"
-                        for i in 0..child.child_count() {
-                            if let Some(c) = child.child(i) {
-                                if c.kind() != "return" && c.kind() != ";" {
-                                    if let Some(data) = c.data() {
-                                        *return_value = Some(data.clone());
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                "function_declaration"
-                | "function"
-                | "arrow_function"
-                | "generator_function_declaration"
-                | "generator_function" => {
-                    // skip nested fn having their own returns
-                }
-                // skip loops and conditionals
-                "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                | "for_in_statement" | "switch_statement" | "try_statement" => {
-                    let mut inner_count = 0;
-                    Self::count_returns_in_subtree(&child, &mut inner_count);
-                    if inner_count > 0 {
-                        *found_count += inner_count;
-                    }
-                }
-                _ => {
-                    Self::walk_for_returns(&child, return_value, found_count);
-                }
-            }
-        }
-    }
-
-    fn count_returns_in_subtree<'a>(node: &Node<'a, JavaScript>, count: &mut usize) {
-        for child in node.iter() {
-            match child.kind() {
-                "return_statement" => {
-                    *count += 1;
-                }
-                "function_declaration"
-                | "function"
-                | "arrow_function"
-                | "generator_function_declaration"
-                | "generator_function" => {
-                    // skip nested fn
-                }
-                _ => {
-                    Self::count_returns_in_subtree(&child, count);
-                }
             }
         }
     }
@@ -207,641 +217,563 @@ impl FnCall {
         }
     }
 
-    fn collect_identifiers(node: &Node<JavaScript>, out: &mut Vec<String>) {
-        for child in node.iter() {
-            if child.kind() == "identifier"
-                && let Ok(name) = child.text()
-            {
-                out.push(name.to_string());
-            }
-            Self::collect_identifiers(&child, out);
-        }
-    }
-
-    fn extract_params(function_node: &Node<JavaScript>) -> Vec<String> {
-        if let Some(params_node) = function_node.named_child("parameters") {
-            let mut params = Vec::new();
-            Self::collect_identifiers(&params_node, &mut params);
-            if !params.is_empty() {
-                return params;
-            }
-        }
-
-        vec![]
-    }
-
-    fn parse_return_expr(node: &Node<JavaScript>) -> Option<ReturnExpr> {
-        if let Some(data) = node.data() {
-            return Some(ReturnExpr::Literal(data.clone()));
-        }
-
-        match node.kind() {
-            "identifier" => {
-                let name = node.text().ok()?.to_string();
-                Some(ReturnExpr::Symbol(name))
-            }
-            "parenthesized_expression" => {
-                for child in node.iter() {
-                    if child.kind() != "(" && child.kind() != ")" {
-                        if let Some(expr) = Self::parse_return_expr(&child) {
-                            return Some(expr);
-                        }
-                    }
-                }
-                None
-            }
-            "binary_expression" => {
-                let left = node.child(0)?;
-                let operator = node.child(1)?.text().ok()?.to_string();
-                let right = node.child(2)?;
-
-                Some(ReturnExpr::BinOp {
-                    op: operator,
-                    left: Box::new(Self::parse_return_expr(&left)?),
-                    right: Box::new(Self::parse_return_expr(&right)?),
-                })
-            }
-            "subscript_expression" => {
-                let array = node.child(0)?;
-                let index = node.child(2)?;
-
-                Some(ReturnExpr::Subscript {
-                    array: Box::new(Self::parse_return_expr(&array)?),
-                    index: Box::new(Self::parse_return_expr(&index)?),
-                })
-            }
-            _ => None,
-        }
-    }
-
-    fn parse_return_statement_expr(return_statement: &Node<JavaScript>) -> Option<ReturnExpr> {
-        for i in 0..return_statement.child_count() {
-            if let Some(c) = return_statement.child(i)
-                && c.kind() != "return"
-                && c.kind() != ";"
-            {
-                return Self::parse_return_expr(&c);
-            }
-        }
-        None
-    }
-
-    fn find_single_return_expr(body: &Node<JavaScript>) -> Option<ReturnExpr> {
-        let mut return_expr: Option<ReturnExpr> = None;
-        let mut found_count = 0;
-
-        fn walk(
-            node: &Node<JavaScript>,
-            return_expr: &mut Option<ReturnExpr>,
-            found_count: &mut usize,
-        ) {
-            for child in node.iter() {
-                match child.kind() {
-                    "return_statement" => {
-                        *found_count += 1;
-                        if *found_count == 1 {
-                            *return_expr = FnCall::parse_return_statement_expr(&child);
-                        }
-                    }
-                    "function_declaration"
-                    | "function"
-                    | "arrow_function"
-                    | "generator_function_declaration"
-                    | "generator_function" => {}
-                    "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                    | "for_in_statement" | "switch_statement" | "try_statement" => {
-                        let mut inner_count = 0;
-                        FnCall::count_returns_in_subtree(&child, &mut inner_count);
-                        if inner_count > 0 {
-                            *found_count += inner_count;
-                        }
-                    }
-                    _ => walk(&child, return_expr, found_count),
-                }
-            }
-        }
-
-        walk(body, &mut return_expr, &mut found_count);
-        if found_count == 1 { return_expr } else { None }
-    }
-
-    fn parse_assignment_step(statement: &Node<JavaScript>) -> Option<EvalStep> {
-        if matches!(
-            statement.kind(),
-            "variable_declaration" | "lexical_declaration"
-        ) {
-            for child in statement.iter() {
-                if child.kind() == "variable_declarator"
-                    && let Some(name_node) = child.named_child("name")
-                    && name_node.kind() == "identifier"
-                    && let Some(value_node) = child.named_child("value").or_else(|| child.child(2))
-                {
-                    let name = name_node.text().ok()?.to_string();
-                    let expr = Self::parse_return_expr(&value_node)?;
-                    return Some(EvalStep::Assign { name, expr });
-                }
-            }
-            return None;
-        }
-
-        if statement.kind() == "expression_statement" {
-            for child in statement.iter() {
-                if child.kind() == "assignment_expression" {
-                    let left = child.child(0)?;
-                    let right = child.child(2)?;
-                    if left.kind() != "identifier" {
-                        return None;
-                    }
-
-                    let name = left.text().ok()?.to_string();
-                    let expr = Self::parse_return_expr(&right)?;
-                    return Some(EvalStep::Assign { name, expr });
-                }
-            }
-        }
-
-        None
-    }
-
-    fn collect_simple_steps_and_return(
-        body: &Node<JavaScript>,
-    ) -> Option<(Vec<EvalStep>, ReturnExpr)> {
-        let mut steps = vec![];
-        let mut return_expr = None;
-        let mut return_count = 0usize;
-
-        for statement in body.iter() {
-            match statement.kind() {
-                "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                | "for_in_statement" | "switch_statement" | "try_statement" => return None,
-                "return_statement" => {
-                    return_count += 1;
-                    if return_count == 1 {
-                        return_expr = Self::parse_return_statement_expr(&statement);
-                    }
-                }
-                _ => {
-                    if let Some(step) = Self::parse_assignment_step(&statement) {
-                        steps.push(step);
-                    }
-                }
-            }
-        }
-
-        if return_count == 1 {
-            return_expr.map(|ret| (steps, ret))
-        } else {
-            None
-        }
-    }
-
-    fn function_shape_from_node(function_node: &Node<JavaScript>) -> Option<FunctionShape> {
-        if !matches!(
-            function_node.kind(),
-            "function"
-                | "function_expression"
-                | "function_declaration"
-                | "arrow_function"
-                | "generator_function"
-                | "generator_function_declaration"
-        ) {
-            return None;
-        }
-
-        let params = Self::extract_params(function_node);
-        let (steps, return_expr) = if let Some(body) = function_node.named_child("body") {
-            if body.kind() == "statement_block" {
-                if let Some((steps, ret)) = Self::collect_simple_steps_and_return(&body) {
-                    (steps, Some(ret))
-                } else {
-                    (vec![], Self::find_single_return_expr(&body))
-                }
-            } else {
-                (vec![], Self::parse_return_expr(&body))
-            }
-        } else {
-            (vec![], None)
-        };
-
-        Some(FunctionShape {
-            params,
-            steps,
-            return_expr,
-        })
-    }
-
-    fn extract_call_args(call_node: &Node<JavaScript>) -> Vec<JavaScript> {
-        let mut args = Vec::new();
-        if let Some(arguments_node) = call_node.named_child("arguments") {
-            for child in arguments_node.iter() {
-                if let Some(data) = child.data() {
-                    args.push(data.clone());
-                }
-            }
-        }
-        args
-    }
-
-    fn eval_return_expr(
-        expr: &ReturnExpr,
-        env: &HashMap<String, JavaScript>,
-    ) -> Option<JavaScript> {
-        match expr {
-            ReturnExpr::Literal(value) => Some(value.clone()),
-            ReturnExpr::Symbol(name) => env.get(name).cloned(),
-            ReturnExpr::BinOp { op, left, right } => {
-                let lhs = Self::eval_return_expr(left, env)?;
-                let rhs = Self::eval_return_expr(right, env)?;
-                match (lhs, rhs) {
-                    (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => {
-                        let result = match op.as_str() {
-                            "+" => a + b,
-                            "-" => a - b,
-                            "*" => a * b,
-                            "/" => a / b,
-                            _ => return None,
-                        };
-                        Some(JavaScript::Raw(Num(result)))
-                    }
-                    _ => None,
-                }
-            }
-            ReturnExpr::Subscript { array, index } => {
-                let array = Self::eval_return_expr(array, env)?;
-                let index = Self::eval_return_expr(index, env)?;
-
-                match (array, index) {
-                    (JavaScript::Array(arr), JavaScript::Raw(Num(i))) if i >= 0.0 => {
-                        arr.get(i as usize).cloned()
-                    }
-                    (JavaScript::Array(arr), JavaScript::Raw(Str(i))) => {
-                        let idx = i.parse::<usize>().ok()?;
-                        arr.get(idx).cloned()
-                    }
-                    _ => None,
-                }
-            }
-        }
-    }
-
-    fn eval_shape(shape: &FunctionShape, call_node: &Node<JavaScript>) -> Option<JavaScript> {
-        let args = Self::extract_call_args(call_node);
-        let mut env: HashMap<String, JavaScript> = HashMap::new();
-        for (idx, param) in shape.params.iter().enumerate() {
-            if let Some(arg) = args.get(idx) {
-                env.insert(param.clone(), arg.clone());
-            }
-        }
-
-        for step in &shape.steps {
-            match step {
-                EvalStep::Assign { name, expr } => {
-                    let value = Self::eval_return_expr(expr, &env)?;
-                    env.insert(name.clone(), value);
-                }
-            }
-        }
-
-        let expr = shape.return_expr.as_ref()?;
-        Self::eval_return_expr(expr, &env)
-    }
-
-    fn shape_from_value(&self, value: &JavaScript) -> Option<FunctionShape> {
+    fn function_source_from_value(value: &JavaScript) -> Option<&str> {
         match value {
-            JavaScript::Function { source, .. } => self.shapes_by_source.get(source).cloned(),
+            JavaScript::Function { source, .. } => Some(source.as_str()),
             _ => None,
         }
     }
 
-    fn find_program_node<'a>(node: &Node<'a, JavaScript>) -> Option<Node<'a, JavaScript>> {
-        let mut current = node.parent();
-        while let Some(parent) = current {
-            if parent.kind() == "program" {
-                return Some(parent);
+    fn push_unique_source(sources: &mut Vec<String>, source: Option<&str>) {
+        if let Some(source) = source {
+            let source = source.to_string();
+            if !sources.contains(&source) {
+                sources.push(source);
             }
-            current = parent.parent();
-        }
-        None
-    }
-
-    fn build_shapes_until<'a>(
-        node: &Node<'a, JavaScript>,
-        stop_abs: usize,
-        var_shapes: &mut HashMap<String, FunctionShape>,
-        object_field_shapes: &mut HashMap<(String, String), FunctionShape>,
-        aliases: &mut HashMap<String, String>,
-    ) {
-        if node.start_abs() >= stop_abs {
-            return;
-        }
-
-        match node.kind() {
-            "variable_declarator" => {
-                if let Some(name_node) = node.named_child("name")
-                    && name_node.kind() == "identifier"
-                    && let Ok(name) = name_node.text()
-                    && let Some(value_node) = node.named_child("value").or_else(|| node.child(2))
-                {
-                    if let Some(shape) = Self::function_shape_from_node(&value_node) {
-                        var_shapes.insert(name.to_string(), shape);
-                    } else if value_node.kind() == "identifier"
-                        && let Ok(rhs_name) = value_node.text()
-                    {
-                        aliases.insert(name.to_string(), rhs_name.to_string());
-                        if let Some(shape) = var_shapes.get(rhs_name).cloned() {
-                            var_shapes.insert(name.to_string(), shape);
-                        }
-                    }
-                }
-            }
-            "function_declaration" | "generator_function_declaration" => {
-                if let Some(name_node) = node.named_child("name")
-                    && name_node.kind() == "identifier"
-                    && let Ok(name) = name_node.text()
-                    && let Some(shape) = Self::function_shape_from_node(node)
-                {
-                    var_shapes.insert(name.to_string(), shape);
-                }
-            }
-            "assignment_expression" => {
-                if let (Some(left), Some(right)) = (node.child(0), node.child(2)) {
-                    if left.kind() == "identifier"
-                        && let Ok(var_name) = left.text()
-                    {
-                        if let Some(shape) = Self::function_shape_from_node(&right) {
-                            var_shapes.insert(var_name.to_string(), shape);
-                        } else if right.kind() == "identifier"
-                            && let Ok(rhs_name) = right.text()
-                        {
-                            aliases.insert(var_name.to_string(), rhs_name.to_string());
-                            if let Some(shape) = var_shapes.get(rhs_name).cloned() {
-                                var_shapes.insert(var_name.to_string(), shape);
-                            }
-                        }
-                    } else if let Some((base, key)) = Self::extract_member_access(&left) {
-                        if let Some(shape) = Self::function_shape_from_node(&right) {
-                            object_field_shapes.insert((base, key), shape);
-                        } else if right.kind() == "identifier"
-                            && let Ok(rhs_name) = right.text()
-                            && let Some(shape) = var_shapes.get(rhs_name).cloned()
-                        {
-                            object_field_shapes.insert((base, key), shape);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        for child in node.iter() {
-            Self::build_shapes_until(&child, stop_abs, var_shapes, object_field_shapes, aliases);
         }
     }
 
-    fn resolve_shape_with_aliases(
-        name: &str,
-        var_shapes: &HashMap<String, FunctionShape>,
-        aliases: &HashMap<String, String>,
-    ) -> Option<FunctionShape> {
-        if let Some(shape) = var_shapes.get(name) {
-            return Some(shape.clone());
-        }
+    fn collect_call_target_sources(&self, func_node: &Node<JavaScript>) -> Vec<String> {
+        let mut sources = Vec::new();
 
-        let mut current = name;
-        for _ in 0..16 {
-            let next = aliases.get(current)?;
-            if let Some(shape) = var_shapes.get(next) {
-                return Some(shape.clone());
+        if func_node.kind() == "identifier" {
+            if let Ok(identifier) = func_node.text() {
+                if let Some(source) = self.function_sources.get(identifier) {
+                    Self::push_unique_source(&mut sources, Some(source));
+                }
+
+                if let Some(value) = self.vars.get(identifier) {
+                    Self::push_unique_source(&mut sources, Self::function_source_from_value(value));
+                }
             }
-            current = next;
         }
 
-        None
-    }
+        if let Ok(member_key) = func_node.text() {
+            if let Some(value) = self.member_functions.get(member_key) {
+                Self::push_unique_source(&mut sources, Self::function_source_from_value(value));
+            }
 
-    fn resolve_member_call_semantic_fallback<'a>(
-        call_node: &Node<'a, JavaScript>,
-        base: &str,
-        key: &str,
-    ) -> Option<JavaScript> {
-        let program = Self::find_program_node(call_node)?;
-        let mut var_shapes = HashMap::new();
-        let mut object_field_shapes = HashMap::new();
-        let mut aliases = HashMap::new();
+            if let Some(alias) = self.member_aliases.get(member_key) {
+                if let Some(source) = self.function_sources.get(alias) {
+                    Self::push_unique_source(&mut sources, Some(source));
+                }
 
-        Self::build_shapes_until(
-            &program,
-            call_node.start_abs(),
-            &mut var_shapes,
-            &mut object_field_shapes,
-            &mut aliases,
+                if let Some(value) = self.vars.get(alias) {
+                    Self::push_unique_source(&mut sources, Self::function_source_from_value(value));
+                }
+            }
+        }
+
+        if let Some((base, key)) = Self::extract_member_access(func_node)
+            && let Some(value) = self.object_fields.get(&(base, key))
+        {
+            Self::push_unique_source(&mut sources, Self::function_source_from_value(value));
+        }
+
+        Self::push_unique_source(
+            &mut sources,
+            func_node.data().and_then(Self::function_source_from_value),
         );
 
-        let shape = object_field_shapes.get(&(base.to_string(), key.to_string()))?;
-        Self::eval_shape(shape, call_node)
-    }
-
-    fn resolve_identifier_call_semantic_fallback<'a>(
-        call_node: &Node<'a, JavaScript>,
-        fn_name: &str,
-    ) -> Option<JavaScript> {
-        let program = Self::find_program_node(call_node)?;
-        let mut var_shapes = HashMap::new();
-        let mut object_field_shapes = HashMap::new();
-        let mut aliases = HashMap::new();
-
-        Self::build_shapes_until(
-            &program,
-            call_node.start_abs(),
-            &mut var_shapes,
-            &mut object_field_shapes,
-            &mut aliases,
-        );
-
-        if !aliases.contains_key(fn_name) {
-            return None;
+        if let Some(inline_value) = self.resolve_inline_callable_value(func_node) {
+            Self::push_unique_source(
+                &mut sources,
+                Self::function_source_from_value(&inline_value),
+            );
         }
 
-        let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
-        Self::eval_shape(&shape, call_node)
+        sources
     }
 
-    fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
-        let return_idx = source.find("return")?;
-        let after_return = &source[return_idx + "return".len()..];
-        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
-        let literal = after_return[..end_idx].trim();
+    fn collect_call_target_return_values(&self, func_node: &Node<JavaScript>) -> Vec<JavaScript> {
+        let mut returns = Vec::new();
 
-        if literal.starts_with('"') && literal.ends_with('"') && literal.len() >= 2 {
-            return Some(JavaScript::Raw(Str(
-                literal[1..literal.len() - 1].to_string()
-            )));
+        if func_node.kind() == "identifier"
+            && let Ok(identifier) = func_node.text()
+            && let Some(value) = self.vars.get(identifier)
+            && let Some(return_value) = Self::function_return_from_value(value)
+        {
+            returns.push(return_value);
         }
 
-        if literal.starts_with('\'') && literal.ends_with('\'') && literal.len() >= 2 {
-            return Some(JavaScript::Raw(Str(
-                literal[1..literal.len() - 1].to_string()
-            )));
-        }
-
-        literal.parse::<f64>().ok().map(|n| JavaScript::Raw(Num(n)))
-    }
-
-    fn extract_return_expr(source: &str) -> Option<String> {
-        let return_idx = source.find("return")?;
-        let after_return = &source[return_idx + "return".len()..];
-        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
-        Some(after_return[..end_idx].trim().to_string())
-    }
-
-    fn extract_first_param_name(source: &str) -> Option<String> {
-        let open = source.find('(')?;
-        let close = source[open + 1..].find(')')? + open + 1;
-        let first = source[open + 1..close].split(',').next()?.trim();
-        if first.is_empty() {
-            None
-        } else {
-            Some(first.to_string())
-        }
-    }
-
-    fn extract_first_numeric_arg(call: &Node<JavaScript>) -> Option<f64> {
-        if let Some(args) = call.named_child("arguments") {
-            for child in args.iter() {
-                if let Some(JavaScript::Raw(Num(n))) = child.data() {
-                    return Some(*n);
-                }
-            }
-        }
-
-        let text = call.text().ok()?;
-        let open = text.find('(')?;
-        let close = text[open + 1..].find(')')? + open + 1;
-        let first = text[open + 1..close].split(',').next()?.trim();
-        first.parse::<f64>().ok()
-    }
-
-    fn eval_simple_numeric_expr(expr: &str, param: &str, arg: f64) -> Option<f64> {
-        let expr = expr.replace(' ', "");
-        if expr == param {
-            return Some(arg);
-        }
-
-        for op in ['+', '-', '*', '/'] {
-            if let Some(idx) = expr.find(op) {
-                let left = &expr[..idx];
-                let right = &expr[idx + 1..];
-
-                if left == param {
-                    let rhs = right.parse::<f64>().ok()?;
-                    return Some(match op {
-                        '+' => arg + rhs,
-                        '-' => arg - rhs,
-                        '*' => arg * rhs,
-                        '/' => arg / rhs,
-                        _ => return None,
-                    });
-                }
-
-                if right == param {
-                    let lhs = left.parse::<f64>().ok()?;
-                    return Some(match op {
-                        '+' => lhs + arg,
-                        '-' => lhs - arg,
-                        '*' => lhs * arg,
-                        '/' => lhs / arg,
-                        _ => return None,
-                    });
-                }
-            }
-        }
-
-        None
-    }
-
-    fn parse_simple_return_with_arg(source: &str, call: &Node<JavaScript>) -> Option<JavaScript> {
-        let param = Self::extract_first_param_name(source)?;
-        let arg = Self::extract_first_numeric_arg(call)?;
-        let expr = Self::extract_return_expr(source)?;
-        let value = Self::eval_simple_numeric_expr(&expr, &param, arg)?;
-        Some(JavaScript::Raw(Num(value)))
-    }
-
-    fn find_initializer_source(prefix: &str, name: &str) -> Option<String> {
-        fn extract_function_source(rhs: &str) -> Option<String> {
-            let trimmed = rhs.trim_start();
-            if !(trimmed.starts_with("function")
-                || trimmed.starts_with("async function")
-                || trimmed.contains("=>"))
+        if let Ok(member_key) = func_node.text() {
+            if let Some(value) = self.member_functions.get(member_key)
+                && let Some(return_value) = Self::function_return_from_value(value)
             {
-                return None;
+                returns.push(return_value);
             }
 
-            if let Some(open_idx) = trimmed.find('{') {
-                let mut depth = 0usize;
-                for (i, ch) in trimmed.char_indices().skip(open_idx) {
-                    match ch {
-                        '{' => depth += 1,
-                        '}' => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                return Some(trimmed[..=i].trim().to_string());
-                            }
-                        }
-                        _ => {}
+            if let Some(alias) = self.member_aliases.get(member_key)
+                && let Some(value) = self.vars.get(alias)
+                && let Some(return_value) = Self::function_return_from_value(value)
+            {
+                returns.push(return_value);
+            }
+        }
+
+        if let Some((base, key)) = Self::extract_member_access(func_node)
+            && let Some(value) = self.object_fields.get(&(base, key))
+            && let Some(return_value) = Self::function_return_from_value(value)
+        {
+            returns.push(return_value);
+        }
+
+        if let Some(return_value) = func_node.data().and_then(Self::function_return_from_value) {
+            returns.push(return_value);
+        }
+
+        if let Some(inline_value) = self.resolve_inline_callable_value(func_node)
+            && let Some(return_value) = Self::function_return_from_value(&inline_value)
+        {
+            returns.push(return_value);
+        }
+
+        returns
+    }
+
+    fn extract_known_call_arg_sources(call_node: &Node<JavaScript>) -> Option<Vec<String>> {
+        let mut rendered_args = Vec::new();
+        let arguments = call_node.named_child("arguments")?;
+
+        for idx in 0..arguments.child_count() {
+            let child = arguments.child(idx)?;
+            if matches!(child.kind(), "(" | ")" | ",") {
+                continue;
+            }
+
+            let value = child.data()?;
+            rendered_args.push(value.to_string());
+        }
+
+        Some(rendered_args)
+    }
+
+    fn is_simple_identifier(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+
+        if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
+            return false;
+        }
+
+        chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    }
+
+    fn extract_function_parts(function_source: &str) -> Option<(Vec<String>, String)> {
+        let open_paren = function_source.find('(')?;
+        let mut paren_depth = 0usize;
+        let mut close_paren = None;
+        for (idx, ch) in function_source.char_indices().skip(open_paren) {
+            match ch {
+                '(' => paren_depth += 1,
+                ')' => {
+                    paren_depth = paren_depth.saturating_sub(1);
+                    if paren_depth == 0 {
+                        close_paren = Some(idx);
+                        break;
                     }
                 }
-            }
-
-            let end = trimmed.find(';').unwrap_or(trimmed.len());
-            Some(trimmed[..end].trim().to_string())
-        }
-
-        for kw in ["let", "var", "const"] {
-            let pattern = format!("{kw} {name} =");
-            if let Some(idx) = prefix.rfind(&pattern) {
-                let rhs = &prefix[idx + pattern.len()..];
-                return extract_function_source(rhs);
+                _ => {}
             }
         }
+
+        let close_paren = close_paren?;
+        let params_src = &function_source[open_paren + 1..close_paren];
+        let params = params_src
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .filter(|param| Self::is_simple_identifier(param))
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+
+        let open_brace = function_source[close_paren..]
+            .find('{')
+            .map(|idx| idx + close_paren)?;
+        let mut brace_depth = 0usize;
+        let mut close_brace = None;
+        for (idx, ch) in function_source.char_indices().skip(open_brace) {
+            match ch {
+                '{' => brace_depth += 1,
+                '}' => {
+                    brace_depth = brace_depth.saturating_sub(1);
+                    if brace_depth == 0 {
+                        close_brace = Some(idx);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let close_brace = close_brace?;
+        let body = function_source[open_brace + 1..close_brace].to_string();
+        Some((params, body))
+    }
+
+    fn rewrite_body_for_nested_eval(body: &str) -> Option<String> {
+        fn is_ident_byte(b: u8) -> bool {
+            b.is_ascii_alphanumeric() || b == b'_'
+        }
+
+        fn has_top_level_keyword(body: &[u8], keyword: &[u8]) -> bool {
+            let mut depth = 0usize;
+            let mut i = 0usize;
+            while i < body.len() {
+                match body[i] {
+                    b'{' => depth += 1,
+                    b'}' => depth = depth.saturating_sub(1),
+                    _ => {}
+                }
+
+                if depth == 0
+                    && i + keyword.len() <= body.len()
+                    && &body[i..i + keyword.len()] == keyword
+                    && (i == 0 || !is_ident_byte(body[i - 1]))
+                    && (i + keyword.len() == body.len() || !is_ident_byte(body[i + keyword.len()]))
+                {
+                    return true;
+                }
+
+                i += 1;
+            }
+            false
+        }
+
+        let bytes = body.as_bytes();
+        if has_top_level_keyword(bytes, b"if")
+            || has_top_level_keyword(bytes, b"for")
+            || has_top_level_keyword(bytes, b"while")
+            || has_top_level_keyword(bytes, b"switch")
+            || has_top_level_keyword(bytes, b"try")
+        {
+            return None;
+        }
+
+        let mut depth = 0usize;
+        let mut return_start: Option<usize> = None;
+        let mut return_expr_end: Option<usize> = None;
+        let mut return_stmt_end: Option<usize> = None;
+
+        let mut i = 0usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'{' => depth += 1,
+                b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+
+            if depth == 0
+                && i + 6 <= bytes.len()
+                && &bytes[i..i + 6] == b"return"
+                && (i == 0 || !is_ident_byte(bytes[i - 1]))
+                && (i + 6 == bytes.len() || !is_ident_byte(bytes[i + 6]))
+            {
+                if return_start.is_some() {
+                    return None;
+                }
+
+                let mut j = i + 6;
+                while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+
+                let mut expr_end = j;
+                while expr_end < bytes.len() && bytes[expr_end] != b';' {
+                    expr_end += 1;
+                }
+
+                let stmt_end = if expr_end < bytes.len() {
+                    expr_end + 1
+                } else {
+                    expr_end
+                };
+
+                return_start = Some(i);
+                return_expr_end = Some(expr_end);
+                return_stmt_end = Some(stmt_end);
+                i = expr_end;
+            }
+
+            i += 1;
+        }
+
+        let return_start = return_start?;
+        let return_expr_end = return_expr_end?;
+        let return_stmt_end = return_stmt_end?;
+        let expr_start = return_start + 6;
+        let expr = body[expr_start..return_expr_end].trim();
+        if expr.is_empty() {
+            return None;
+        }
+
+        let prefix = &body[..return_start];
+        let suffix = &body[return_stmt_end..];
+
+        let mut rewritten = String::new();
+        rewritten.push_str(prefix);
+        rewritten.push_str("__minusone_result = ");
+        rewritten.push_str(expr);
+        rewritten.push(';');
+        rewritten.push_str(suffix);
+        Some(rewritten)
+    }
+
+    unsafe fn rebind_rules_lifetime<'a, 'b>(
+        rules: Vec<Box<dyn RuleMut<'a, Language = JavaScript> + 'static>>,
+    ) -> Vec<Box<dyn RuleMut<'b, Language = JavaScript> + 'static>> {
+        unsafe { std::mem::transmute(rules) }
+    }
+
+    fn resolve_call_from_injected_body(
+        &self,
+        call_node: &Node<JavaScript>,
+        function_source: &str,
+        other_rules: &[RuleReference<JavaScript>],
+    ) -> Option<JavaScript> {
+        if self.nested_eval_depth >= self.max_nested_eval_depth {
+            return None;
+        }
+
+        let args = Self::extract_known_call_arg_sources(call_node)?;
+        let (params, body) = Self::extract_function_parts(function_source)?;
+        let rewritten_body = Self::rewrite_body_for_nested_eval(&body)?;
+
+        let mut nested_source = String::from("let __minusone_result = undefined;\n");
+        for (idx, arg) in args.iter().enumerate() {
+            nested_source.push_str(format!("let __minusone_arg_{idx} = {arg};\n").as_str());
+        }
+        for (idx, param) in params.iter().enumerate() {
+            if idx < args.len() {
+                nested_source.push_str(format!("let {param} = __minusone_arg_{idx};\n").as_str());
+            } else {
+                nested_source.push_str(format!("let {param} = undefined;\n").as_str());
+            }
+        }
+        nested_source.push_str(&rewritten_body);
+        nested_source.push_str("\n__minusone_result;");
+
+        let mut tree = build_javascript_tree(&nested_source).ok()?;
+        let inherited_rule_names = self.nested_peer_rule_names.clone().unwrap_or_default();
+        let selected_rule_names_owned: Vec<String> = if other_rules.is_empty() {
+            inherited_rule_names
+        } else {
+            other_rules
+                .iter()
+                .map(|rule| rule.name.to_string())
+                .collect()
+        };
+
+        let mut cloned_v: Vec<Box<dyn RuleMut<'_, Language = JavaScript>>> = other_rules
+            .iter()
+            .map(|r| dyn_clone::clone_box(r.rule))
+            .collect();
+
+        cloned_v.push(
+            Box::new(self.clone_for_nested_eval()) as Box<dyn RuleMut<Language = JavaScript>>
+        );
+
+        if selected_rule_names_owned.is_empty() {
+            warn!(
+                "No other rules were passed, falling back to a few rules. This may lead to limited resolution of the injected function body."
+            );
+            let mut nested_rules = (
+                crate::js::integer::ParseInt::default(),
+                crate::js::integer::NegInt::default(),
+                crate::js::integer::SubAddInt::default(),
+                crate::js::integer::MultInt::default(),
+                crate::js::string::ParseString::default(),
+                crate::js::functions::function::ParseFunction::default(),
+                crate::js::array::ParseArray::default(),
+                crate::js::objects::object::ParseObject::default(),
+                crate::js::forward::Forward::default(),
+                crate::js::array::GetArrayElement::default(),
+                crate::js::objects::object::ObjectField::default(),
+                crate::js::var::Var::default(),
+                self.clone_for_nested_eval(),
+            );
+
+            tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
+                .ok()?;
+            tree.apply_mut_with_strategy(&mut nested_rules, JavaScriptStrategy::default())
+                .ok()?;
+        } else {
+            let mut nested_fncall = self.clone_for_nested_eval();
+            nested_fncall.nested_peer_rule_names = Some(selected_rule_names_owned.clone());
+
+            for _ in 0..2 {
+                let mut pass_rule_names: Vec<String> =
+                    other_rules.iter().map(|r| r.name.to_string()).collect();
+                pass_rule_names.push("fncall".to_string());
+
+                let mut pass_rules: Vec<Box<dyn RuleMut<Language = JavaScript>>> = other_rules
+                    .iter()
+                    .map(|r| dyn_clone::clone_box(r.rule))
+                    .collect();
+                pass_rules.push(Box::new(self.clone_for_nested_eval())
+                    as Box<dyn RuleMut<Language = JavaScript>>);
+
+                let pass_rules = unsafe { Self::rebind_rules_lifetime(pass_rules) };
+
+                let mut js = JavaScriptRuleSet {
+                    ruleset: RuleSet::<JavaScript> {
+                        rule_names: pass_rule_names,
+                        rules: pass_rules,
+                    },
+                };
+                tree.apply_mut_with_strategy(&mut js, JavaScriptStrategy::default())
+                    .ok()?;
+            }
+
+            tree.root().ok()?;
+        }
+
+        let root = tree.root().ok()?;
+        for idx in (0..root.child_count()).rev() {
+            let statement = root.child(idx)?;
+            if statement.kind() == "expression_statement" {
+                let expr = statement.child(0)?;
+                if let Some(value) = expr
+                    .data()
+                    .cloned()
+                    .or_else(|| expr.smallest_child().data().cloned())
+                {
+                    return Some(value);
+                }
+            }
+        }
+
         None
     }
 
-    fn resolve_member_call_from_source(call: &Node<JavaScript>) -> Option<JavaScript> {
-        let callee = call.named_child("function").or_else(|| call.child(0))?;
-        if callee.kind() != "member_expression" {
-            return None;
+    fn resolve_call_expression(
+        &self,
+        call_node: &Node<JavaScript>,
+        other_rules: &[RuleReference<JavaScript>],
+    ) -> Option<JavaScript> {
+        let func_node = call_node
+            .named_child("function")
+            .or_else(|| call_node.child(0))?;
+
+        for function_source in self.collect_call_target_sources(&func_node) {
+            if let Some(return_value) =
+                self.resolve_call_from_injected_body(call_node, &function_source, other_rules)
+            {
+                return Some(return_value);
+            }
         }
 
-        let object = callee.named_child("object")?;
-        let property = callee.named_child("property")?;
-        if object.kind() != "identifier" {
-            return None;
-        }
+        self.collect_call_target_return_values(&func_node)
+            .into_iter()
+            .next()
+    }
 
-        let base = object.text().ok()?.to_string();
-        let key = property.text().ok()?.to_string();
-        let program = Self::find_program_node(call)?;
-        let source = program.text().ok()?;
-        let prefix_end = call.start_abs().saturating_sub(program.start_abs());
-        let prefix = &source[..prefix_end];
-
-        let assign_pattern = format!("{base}.{key} =");
-        let assign_idx = prefix.rfind(&assign_pattern)?;
-        let rhs_text = {
-            let rhs = &prefix[assign_idx + assign_pattern.len()..];
-            let end = rhs.find(';')?;
-            rhs[..end].trim().to_string()
+    fn track_variable_declarator(&mut self, view: &Node<JavaScript>) -> MinusOneResult<()> {
+        let Some(name_node) = view.named_child("name") else {
+            return Ok(());
         };
 
-        let function_source = if rhs_text.starts_with("function") || rhs_text.contains("=>") {
-            rhs_text
+        if name_node.kind() != "identifier" {
+            return Ok(());
+        }
+
+        let Some(value_node) = view.named_child("value").or_else(|| view.child(2)) else {
+            return Ok(());
+        };
+
+        let name = name_node.text()?.to_string();
+        if let Some(value @ JavaScript::Function { .. }) =
+            self.resolve_function_value_from_node(&value_node)
+        {
+            let value = if Self::is_function_like_kind(value_node.kind()) {
+                Self::with_rendered_function_source(value, &value_node)
+            } else {
+                value
+            };
+            self.track_function_binding(name, value);
+        }
+
+        Ok(())
+    }
+
+    fn track_function_declaration(&mut self, view: &Node<JavaScript>) -> MinusOneResult<()> {
+        let Some(name_node) = view.named_child("name") else {
+            return Ok(());
+        };
+
+        if name_node.kind() != "identifier" {
+            return Ok(());
+        }
+
+        let name = name_node.text()?.to_string();
+        if let Some(value @ JavaScript::Function { .. }) =
+            self.resolve_function_value_from_node(view)
+        {
+            let value = Self::with_rendered_function_source(value, view);
+            self.track_function_binding(name, value);
+        } else if let Ok(source) = view.text() {
+            self.function_sources.insert(name, source.to_string());
+        }
+
+        Ok(())
+    }
+
+    fn track_assignment_expression(&mut self, view: &Node<JavaScript>) -> MinusOneResult<()> {
+        let (Some(left), Some(right)) = (view.child(0), view.child(2)) else {
+            return Ok(());
+        };
+
+        if left.kind() == "identifier" {
+            let var_name = left.text()?.to_string();
+            if let Some(value @ JavaScript::Function { .. }) =
+                self.resolve_function_value_from_node(&right)
+            {
+                let value = if Self::is_function_like_kind(right.kind()) {
+                    Self::with_rendered_function_source(value, &right)
+                } else {
+                    value
+                };
+                self.track_function_binding(var_name, value);
+            }
+            return Ok(());
+        }
+
+        if left.kind() != "member_expression" {
+            return Ok(());
+        }
+
+        let member_key = left.text().ok().map(str::to_string);
+        let right_identifier = if right.kind() == "identifier" {
+            right.text().ok().map(str::to_string)
         } else {
-            Self::find_initializer_source(prefix, &rhs_text)?
+            None
         };
 
-        Self::parse_simple_return_with_arg(&function_source, call)
-            .or_else(|| Self::parse_simple_return_literal(&function_source))
+        if let (Some(member_key), Some(alias)) = (member_key.clone(), right_identifier) {
+            self.member_aliases.insert(member_key, alias);
+        }
+
+        if let Some(value @ JavaScript::Function { .. }) =
+            self.resolve_function_value_from_node(&right)
+        {
+            let value = if Self::is_function_like_kind(right.kind()) {
+                Self::with_rendered_function_source(value, &right)
+            } else {
+                value
+            };
+
+            if let Some(member_key) = member_key {
+                self.member_functions.insert(member_key, value.clone());
+            }
+
+            if let Some((base, key)) = Self::extract_member_access(&left) {
+                self.object_fields.insert((base, key), value);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -854,240 +786,39 @@ impl<'a> RuleMut<'a> for FnCall {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "program" {
-            self.functions.clear();
-            self.vars.clear();
-            self.object_fields.clear();
-            self.var_shapes.clear();
-            self.object_field_shapes.clear();
-            self.shapes_by_source.clear();
+        if self.reset_on_program_enter && view.kind() == "program" {
+            self.clear_state();
         }
         Ok(())
     }
 
     fn leave(
         &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
+        _node: &mut NodeMut<'a, Self::Language>,
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave_with_context(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+        context: &RuleExecutionContext<'_, 'a, Self::Language>,
+    ) -> MinusOneResult<()> {
+        let other_rules = context.other_rules;
         let view = node.view();
         match view.kind() {
-            "subscript_expression" => {
-                Self::reduce_array_subscript(node);
+            "subscript_expression" => Self::reduce_array_subscript(node),
+            "variable_declarator" => self.track_variable_declarator(&view)?,
+            "function_declaration" | "generator_function_declaration" => {
+                self.track_function_declaration(&view)?;
             }
-            "function" | "function_expression" | "arrow_function" | "generator_function" => {
-                if let Some(shape) = Self::function_shape_from_node(&view)
-                    && let Ok(source) = view.text()
-                {
-                    self.shapes_by_source.insert(source.to_string(), shape);
-                }
-            }
-            "variable_declarator" => {
-                if let Some(name_node) = view.named_child("name")
-                    && name_node.kind() == "identifier"
-                {
-                    let name = name_node.text()?.to_string();
-                    if let Some(value_node) = view.named_child("value").or_else(|| view.child(2)) {
-                        let value = value_node
-                            .data()
-                            .cloned()
-                            .or_else(|| function_value_from_node(&value_node));
-
-                        if let Some(shape) = Self::function_shape_from_node(&value_node) {
-                            self.var_shapes.insert(name.clone(), shape);
-                        } else if let Some(value) = value.as_ref()
-                            && let Some(shape) = self.shape_from_value(value)
-                        {
-                            self.var_shapes.insert(name.clone(), shape);
-                        }
-
-                        if let Some(value @ JavaScript::Function { .. }) = value {
-                            self.vars.insert(name, value);
-                        }
-                    }
-                }
-            }
-            "function_declaration" => {
-                if let Some(name_node) = view.named_child("name") {
-                    if name_node.kind() == "identifier" {
-                        let fn_name = name_node.text()?.to_string();
-
-                        if let Some(body) = view.named_child("body") {
-                            if let Some(return_data) = Self::find_single_return_value(&body) {
-                                trace!(
-                                    "FnCall (L): Recorded function '{}' with return value: {:?}",
-                                    fn_name, return_data
-                                );
-                                self.functions.insert(fn_name, return_data);
-                            }
-                        }
-                    }
-                }
-            }
-            "assignment_expression" => {
-                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
-                    if left.kind() == "identifier" {
-                        let var_name = left.text()?.to_string();
-                        let value = right
-                            .data()
-                            .cloned()
-                            .or_else(|| function_value_from_node(&right))
-                            .or_else(|| {
-                                if right.kind() == "identifier" {
-                                    right
-                                        .text()
-                                        .ok()
-                                        .and_then(|name| self.vars.get(name).cloned())
-                                } else {
-                                    None
-                                }
-                            });
-
-                        if let Some(shape) = Self::function_shape_from_node(&right) {
-                            self.var_shapes.insert(var_name.clone(), shape);
-                        } else if right.kind() == "identifier"
-                            && let Some(name) = right.text().ok()
-                            && let Some(shape) = self.var_shapes.get(name).cloned()
-                        {
-                            self.var_shapes.insert(var_name.clone(), shape);
-                        } else if let Some(value) = value.as_ref()
-                            && let Some(shape) = self.shape_from_value(value)
-                        {
-                            self.var_shapes.insert(var_name.clone(), shape);
-                        }
-
-                        if let Some(value @ JavaScript::Function { .. }) = value {
-                            self.vars.insert(var_name, value);
-                        }
-                    } else if let Some((base, key)) = Self::extract_member_access(&left) {
-                        let value = right
-                            .data()
-                            .cloned()
-                            .or_else(|| function_value_from_node(&right))
-                            .or_else(|| {
-                                if right.kind() == "identifier" {
-                                    right
-                                        .text()
-                                        .ok()
-                                        .and_then(|name| self.vars.get(name).cloned())
-                                } else {
-                                    None
-                                }
-                            });
-
-                        if let Some(shape) = Self::function_shape_from_node(&right) {
-                            self.object_field_shapes
-                                .insert((base.clone(), key.clone()), shape);
-                        } else if right.kind() == "identifier"
-                            && let Some(name) = right.text().ok()
-                            && let Some(shape) = self.var_shapes.get(name).cloned()
-                        {
-                            self.object_field_shapes
-                                .insert((base.clone(), key.clone()), shape);
-                        } else if let Some(value) = value.as_ref()
-                            && let Some(shape) = self.shape_from_value(value)
-                        {
-                            self.object_field_shapes
-                                .insert((base.clone(), key.clone()), shape);
-                        }
-
-                        if let Some(value @ JavaScript::Function { .. }) = value {
-                            self.object_fields.insert((base, key), value);
-                        }
-                    }
-                }
-            }
+            "assignment_expression" => self.track_assignment_expression(&view)?,
             "call_expression" => {
-                // check known fn
-                if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
-                    if func_node.kind() == "identifier" {
-                        let fn_name = func_node.text()?.to_string();
-
-                        if let Some(return_data) = self.functions.get(&fn_name) {
-                            trace!(
-                                "FnCall (L): Resolving call to '{}' with: {:?}",
-                                fn_name, return_data
-                            );
-                            node.reduce(return_data.clone());
-                        } else if let Some(shape) = self.var_shapes.get(&fn_name)
-                            && let Some(value) = Self::eval_shape(shape, &view)
-                        {
-                            trace!(
-                                "FnCall (L): Resolving call to semantic variable function with: {:?}",
-                                value
-                            );
-                            node.reduce(value);
-                        } else if let Some(value) = self.vars.get(&fn_name)
-                            && let Some(return_value) = Self::function_return_from_value(value)
-                        {
-                            trace!(
-                                "FnCall (L): Resolving call to variable function value with: {:?}",
-                                return_value
-                            );
-                            node.reduce(return_value);
-                        } else if let Some(value) =
-                            Self::resolve_identifier_call_semantic_fallback(&view, &fn_name)
-                        {
-                            trace!(
-                                "FnCall (L): Resolving call to semantic identifier fallback with: {:?}",
-                                value
-                            );
-                            node.reduce(value);
-                        } else if let Some(JavaScript::Function {
-                            return_value: Some(return_value),
-                            ..
-                        }) = func_node.data()
-                        {
-                            trace!(
-                                "FnCall (L): Resolving call to identifier function value with: {:?}",
-                                return_value
-                            );
-                            node.reduce(return_value.as_ref().clone());
-                        }
-                    } else if let Some(return_value) =
-                        func_node.data().and_then(Self::function_return_from_value)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to function value with: {:?}",
-                            return_value
-                        );
-                        node.reduce(return_value);
-                    } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(shape) =
-                            self.object_field_shapes.get(&(base.clone(), key.clone()))
-                        && let Some(value) = Self::eval_shape(shape, &view)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to semantic object field function with: {:?}",
-                            value
-                        );
-                        node.reduce(value);
-                    } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(value) = self.object_fields.get(&(base, key))
-                        && let Some(return_value) = Self::function_return_from_value(value)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to object field function with: {:?}",
-                            return_value
-                        );
-                        node.reduce(return_value);
-                    } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(value) =
-                            Self::resolve_member_call_semantic_fallback(&view, &base, &key)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to semantic fallback object field function with: {:?}",
-                            value
-                        );
-                        node.reduce(value);
-                    } else if let Some(return_value) = Self::resolve_member_call_from_source(&view)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to object field function from source fallback with: {:?}",
-                            return_value
-                        );
-                        node.reduce(return_value);
-                    }
+                if let Some(return_value) = self.resolve_call_expression(&view, other_rules) {
+                    trace!("FnCall (L): Reduced call expression to {:?}", return_value);
+                    node.reduce(return_value);
                 }
             }
             _ => {}
@@ -1160,7 +891,7 @@ mod tests {
     fn test_fncall_does_not_resolve_param_dependent_return() {
         assert_eq!(
             deobfuscate("function test(x) { return x; } console.log(test('hello'));"),
-            "function test(x) { return x; } console.log(test('hello'));"
+            "function test(x) { return x; } console.log('hello');"
         );
     }
 
@@ -1217,6 +948,14 @@ mod tests {
     }
 
     #[test]
+    fn test_fncall_param_injected_eval() {
+        assert_eq!(
+            deobfuscate("function test(num) { return num + 1; } test(1);"),
+            "function test(num) { return num + 1; } 2;"
+        );
+    }
+
+    #[test]
     fn test_fncall_unknown_return_not_resolved() {
         assert_eq!(
             deobfuscate("function test() { return foo(); } console.log(test());"),
@@ -1230,7 +969,7 @@ mod tests {
             deobfuscate(
                 "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(a.t());"
             ),
-            "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(0);"
+            "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(a.t());"
         );
     }
 
@@ -1238,9 +977,46 @@ mod tests {
     fn test_fncall_object_stored_function_param_dependent_return() {
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(a.t(1)); console.log(a.t(2));"
+                "let a = {};
+let x = function (n) {
+    return n + 1;
+}
+a.t = x;
+console.log(a.t(1));
+console.log(a.t(2));"
             ),
-            "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(2); console.log(3);"
+            "let a = {};
+let x = function (n) {
+    return n + 1;
+}
+a.t = x;
+console.log(2);
+console.log(3);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_alias_array_subscript() {
+        let output = deobfuscate(
+            "function _0x51e9(_0x2aa0e4, _0x111bec) { _0x2aa0e4 = _0x2aa0e4 - 0; var _0x361bb4 = ['log', '0 1 2 3 4 5 6 7 8 9'][_0x2aa0e4]; return _0x361bb4; } var _0x5aa3f9 = _0x51e9; console[_0x5aa3f9(0)](_0x5aa3f9(1));",
+        );
+
+        assert!(
+            output.ends_with("console['log']('0 1 2 3 4 5 6 7 8 9');")
+                || output.ends_with("console.log('0 1 2 3 4 5 6 7 8 9');"),
+            "unexpected output: {output}"
+        );
+    }
+
+    #[test]
+    fn test_fncall_single_pass_reduction() {
+        let output = deobfuscate(
+            "function _0x4c7c() { var _0x4c602b = ['log', '0\\x201\\x202\\x203\\x204\\x205\\x206\\x207\\x208\\x209']; _0x4c7c = function () { return _0x4c602b; }; return _0x4c7c(); } function _0x51e9(_0x2aa0e4, _0x111bec) { _0x2aa0e4 = _0x2aa0e4 - (0xbcc * 0x2 + 0x3 * 0x959 + -0x33a3); var _0x243f78 = _0x4c7c(); var _0x361bb4 = _0x243f78[_0x2aa0e4]; return _0x361bb4; } var _0x5aa3f9 = _0x51e9; console[_0x5aa3f9(0x0)](_0x5aa3f9(0x1));",
+        );
+
+        assert!(
+            output.ends_with("console['log']('0 1 2 3 4 5 6 7 8 9');")
+                || output.ends_with("console.log('0 1 2 3 4 5 6 7 8 9');")
         );
     }
 
@@ -1250,6 +1026,9 @@ mod tests {
             "function _0x45a5(){return(_0x45a5=function(){return'minusone'})()}console.log(_0x45a5());",
         );
 
-        assert!(output.ends_with("console.log('minusone');"));
+        assert!(
+            output.ends_with("console.log('minusone');"),
+            "unexpected output: {output}"
+        );
     }
 }

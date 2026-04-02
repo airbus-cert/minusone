@@ -120,6 +120,7 @@ impl<T: Clone> Scope<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct ScopeManager<T: Clone> {
     scopes: Vec<Scope<T>>,
 }

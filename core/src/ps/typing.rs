@@ -5,7 +5,7 @@ use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseType;
 
 impl<'a> RuleMut<'a> for ParseType {

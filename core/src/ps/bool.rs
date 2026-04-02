@@ -30,7 +30,7 @@ use log::trace;
 ///
 /// assert_eq!(ps_litter_view.output, "$true");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseBool;
 
 impl<'a> RuleMut<'a> for ParseBool {
@@ -93,7 +93,7 @@ impl<'a> RuleMut<'a> for ParseBool {
 ///
 /// assert_eq!(ps_litter_view.output, "$false");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BoolAlgebra;
 
 impl<'a> RuleMut<'a> for BoolAlgebra {
@@ -175,7 +175,7 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 ///
 /// assert_eq!(ps_litter_view.output, "$true");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Comparison;
 
 impl<'a> RuleMut<'a> for Comparison {
@@ -213,7 +213,7 @@ impl<'a> RuleMut<'a> for Comparison {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Not;
 
 impl<'a> RuleMut<'a> for Not {

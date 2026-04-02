@@ -11,7 +11,7 @@ use log::trace;
 ///
 /// This keeps function-valued object fields lossless (source-preserving)
 /// while still allowing object propagation to carry them around.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseFunction;
 
 fn is_function_kind(kind: &str) -> bool {
@@ -155,7 +155,7 @@ impl<'a> RuleMut<'a> for ParseFunction {
 }
 
 /// Infers function source concatenation with `+` and reduces them to single string literals
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ConcatFunction;
 
 impl<'a> RuleMut<'a> for ConcatFunction {

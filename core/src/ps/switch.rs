@@ -30,11 +30,12 @@ use log::{trace, warn};
 ///
 /// assert_eq!(ps_litter_view.output, "2");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Switch {
     ctx: Vec<SwitchCtx>, // Holds last infered (or not) switch condition
 }
 
+#[derive(Clone)]
 struct SwitchCtx {
     condition: Option<Powershell>,
     predictable: bool,

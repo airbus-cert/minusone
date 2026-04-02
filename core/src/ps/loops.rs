@@ -8,6 +8,7 @@ use crate::{
 };
 use log::trace;
 
+#[derive(Clone)]
 struct IteratorVariable {
     name: String,
     value: Value,
@@ -56,7 +57,7 @@ impl IteratorVariable {
 ///
 /// assert_eq!(ps_litter_view.output, "");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ForStatementCondition {
     loop_id: Option<usize>,
 }
@@ -139,7 +140,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 ///
 /// assert_eq!(clean.trim(), "42");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ForStatementFlowControl {
     iterators: Vec<IteratorVariable>,
     loop_id: Option<usize>,

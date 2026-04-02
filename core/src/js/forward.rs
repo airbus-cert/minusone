@@ -5,7 +5,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 
 /// Forward inferred type in the most simple cases
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Forward;
 
 impl<'a> RuleMut<'a> for Forward {

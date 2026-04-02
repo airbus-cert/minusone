@@ -25,7 +25,7 @@ use log::{trace, warn};
 ///
 /// assert_eq!(ps_litter_view.output, "4 + 5");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseInt;
 
 impl<'a> RuleMut<'a> for ParseInt {
@@ -100,7 +100,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 ///
 /// assert_eq!(ps_litter_view.output, "7");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AddInt;
 
 impl<'a> RuleMut<'a> for AddInt {
@@ -170,7 +170,7 @@ impl<'a> RuleMut<'a> for AddInt {
 ///
 /// assert_eq!(ps_litter_view.output, "1");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MultInt;
 
 impl<'a> RuleMut<'a> for MultInt {

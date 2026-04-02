@@ -12,7 +12,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseString;
 
 impl<'a> RuleMut<'a> for ParseString {
@@ -147,7 +147,7 @@ fn unescaped_js_string(s: &str) -> String {
 ///
 /// assert_eq!(linter.output, "var x = 'e';");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CharAt;
 
 impl<'a> RuleMut<'a> for CharAt {
@@ -244,7 +244,7 @@ pub fn escape_js_string(s: &str) -> String {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 42; var y = -42;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StringPlusMinus;
 
 impl<'a> RuleMut<'a> for StringPlusMinus {
@@ -312,7 +312,7 @@ impl<'a> RuleMut<'a> for StringPlusMinus {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 'Hello, world!1';");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Concat;
 
 impl<'a> RuleMut<'a> for Concat {
@@ -478,7 +478,7 @@ impl<'a> RuleMut<'a> for Concat {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 'v';");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ToString;
 
 impl<'a> RuleMut<'a> for ToString {
@@ -609,7 +609,7 @@ impl<'a> RuleMut<'a> for ToString {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = ['a', 'b'];");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Split;
 
 impl Split {

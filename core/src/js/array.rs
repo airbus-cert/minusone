@@ -10,7 +10,7 @@ use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
 
 /// Parses JavaScript array literals into `Array(_)`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseArray;
 
 impl<'a> RuleMut<'a> for ParseArray {
@@ -68,7 +68,7 @@ impl<'a> RuleMut<'a> for ParseArray {
 /// assert_eq!(linter.output, "var x = '1,23,4'");
 /// ```
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CombineArrays;
 
 impl<'a> RuleMut<'a> for CombineArrays {
@@ -214,7 +214,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = [2, '3'];");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GetArrayElement;
 
 impl GetArrayElement {
@@ -410,7 +410,7 @@ fn combine_arrays(left: &Vec<JavaScript>, right: &Vec<JavaScript>) -> String {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 455;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ArrayPlusMinus;
 
 impl<'a> RuleMut<'a> for ArrayPlusMinus {
@@ -498,7 +498,7 @@ fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 'a,b';");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ArrayJoin;
 
 impl<'a> RuleMut<'a> for ArrayJoin {

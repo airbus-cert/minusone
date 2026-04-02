@@ -6,6 +6,7 @@ use std::fmt::Debug;
 
 /// A debug view is used to print the tree nodes
 /// with associated inferred type
+#[derive(Clone)]
 pub struct DebugView<T> {
     tab_depth: u32,
     tab_size: u32,

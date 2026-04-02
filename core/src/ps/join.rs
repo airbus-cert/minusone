@@ -38,7 +38,7 @@ use log::trace;
 ///
 /// assert_eq!(ps_litter_view.output, "\"invoke-expression\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct JoinComparison;
 
 impl<'a> RuleMut<'a> for JoinComparison {
@@ -115,7 +115,7 @@ impl<'a> RuleMut<'a> for JoinComparison {
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct JoinStringMethod;
 
 impl<'a> RuleMut<'a> for JoinStringMethod {
@@ -218,7 +218,7 @@ impl<'a> RuleMut<'a> for JoinStringMethod {
 ///
 /// assert_eq!(ps_litter_view.output, "\"abc\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct JoinOperator;
 
 impl<'a> RuleMut<'a> for JoinOperator {

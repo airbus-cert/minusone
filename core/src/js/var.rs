@@ -38,6 +38,7 @@ use log::trace;
 ///
 /// assert_eq!(linter.output, "var a = 'hello'; console.log('hello');");
 /// ```
+#[derive(Clone)]
 pub struct Var {
     scope_manager: ScopeManager<JavaScript>,
 }
@@ -51,6 +52,18 @@ impl Default for Var {
 }
 
 impl Var {
+    pub fn from_scope_manager(scope_manager: ScopeManager<JavaScript>) -> Self {
+        Self { scope_manager }
+    }
+
+    pub fn snapshot_scope_manager(&self) -> ScopeManager<JavaScript> {
+        self.scope_manager.clone()
+    }
+
+    pub fn restore_scope_manager(&mut self, scope_manager: ScopeManager<JavaScript>) {
+        self.scope_manager = scope_manager;
+    }
+
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             match child.kind() {
@@ -347,7 +360,6 @@ mod tests {
     use crate::js::var::Var;
 
     fn deobfuscate(input: &str) -> String {
-        // todo: same method on other js tests with logic scopes
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut_with_strategy(
             &mut (

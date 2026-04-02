@@ -7,7 +7,7 @@ use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ParseString;
 
 impl<'a> RuleMut<'a> for ParseString {
@@ -108,7 +108,7 @@ impl<'a> RuleMut<'a> for ParseString {
 ///
 /// assert_eq!(ps_litter_view.output, "\"foobar\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ConcatString;
 
 impl<'a> RuleMut<'a> for ConcatString {
@@ -143,7 +143,7 @@ impl<'a> RuleMut<'a> for ConcatString {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StringReplaceMethod;
 
 impl<'a> RuleMut<'a> for StringReplaceMethod {
@@ -200,7 +200,7 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StringReplaceOp;
 
 impl<'a> RuleMut<'a> for StringReplaceOp {
@@ -268,7 +268,7 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
 ///
 /// assert_eq!(ps_litter_view.output, "\"hello world\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct FormatString;
 
 impl<'a> RuleMut<'a> for FormatString {
@@ -313,7 +313,7 @@ impl<'a> RuleMut<'a> for FormatString {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StringSplitMethod;
 
 impl<'a> RuleMut<'a> for StringSplitMethod {

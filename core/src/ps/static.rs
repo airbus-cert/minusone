@@ -27,7 +27,7 @@ pub trait Detection {
     fn get_nodes(&self) -> &Vec<Pattern>;
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Static;
 
 impl<'a> RuleMut<'a> for Static {
@@ -113,7 +113,7 @@ impl<'a> RuleMut<'a> for Static {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StaticArray {
     detected_nodes : Vec<Pattern>
 }
@@ -142,7 +142,7 @@ impl Detection for StaticArray {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StaticFormat {
     detected_nodes : Vec<Pattern>
 }

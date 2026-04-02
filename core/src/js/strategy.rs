@@ -6,7 +6,7 @@ use crate::tree::BranchFlow::{Predictable, Unpredictable};
 use crate::tree::ControlFlow::{Break, Continue};
 use crate::tree::{ControlFlow, Node, Strategy};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct JavaScriptStrategy;
 
 impl Strategy<JavaScript> for JavaScriptStrategy {

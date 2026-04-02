@@ -37,6 +37,7 @@ use std::ops::Add;
 /// Write-Debug 4\
 /// ");
 /// ```
+#[derive(Clone)]
 pub struct Var {
     scope_manager: ScopeManager<Powershell>,
 }
@@ -691,7 +692,7 @@ fn assign_handler(
 /// Write-Debug 4\
 /// ");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StaticVar;
 
 impl<'a> RuleMut<'a> for StaticVar {
@@ -742,7 +743,7 @@ impl<'a> RuleMut<'a> for StaticVar {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct UnusedVar {
     pub vars: HashMap<String, bool>,
 }

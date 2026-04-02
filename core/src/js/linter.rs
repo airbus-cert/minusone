@@ -3,7 +3,7 @@ use crate::js::JavaScript;
 use crate::rule::Rule;
 use crate::tree::Node;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct RemoveCode {
     source: String,
     pub output: String,
@@ -32,7 +32,7 @@ impl RemoveCode {
 }
 
 /// Removes single-line (`//`) and multi-line (`/* */`) comments from JavaScript source.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RemoveComment {
     manager: RemoveCode,
 }
@@ -68,11 +68,13 @@ impl<'a> Rule<'a> for RemoveComment {
 }
 
 /// Reconstructs the JavaScript source while preserving original whitespace
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Linter {
     pub output: String,
     source: String,
     last_index: usize,
+    base_offset: usize,
+    root_node_id: Option<usize>,
 }
 
 impl Linter {
@@ -94,8 +96,23 @@ impl Linter {
         }
         self.last_index = end;
     }
+
     fn skip_until(&mut self, end: usize) {
         self.last_index = end;
+    }
+
+    fn to_local_index(&self, abs_index: usize) -> usize {
+        abs_index
+            .saturating_sub(self.base_offset)
+            .min(self.source.len())
+    }
+
+    fn initialize_for_root(&mut self, node: &Node<'_, JavaScript>) -> MinusOneResult<()> {
+        self.source = node.text()?.to_string();
+        self.last_index = 0;
+        self.base_offset = node.start_abs();
+        self.root_node_id = Some(node.id());
+        Ok(())
     }
 }
 
@@ -105,16 +122,25 @@ impl<'a> Rule<'a> for Linter {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                self.initialize_for_root(node)?;
                 return Ok(true);
             }
             "comment" => {
-                self.copy_until(node.start_abs());
-                self.skip_until(node.end_abs());
+                if self.source.is_empty() {
+                    self.initialize_for_root(node)?;
+                }
+
+                let start = self.to_local_index(node.start_abs());
+                let end = self.to_local_index(node.end_abs());
+                self.copy_until(start);
+                self.skip_until(end);
                 return Ok(false);
             }
             _ => (),
+        }
+
+        if self.source.is_empty() {
+            self.initialize_for_root(node)?;
         }
 
         if let Some(data) = node.data() {
@@ -128,7 +154,9 @@ impl<'a> Rule<'a> for Linter {
                 return Ok(true);
             }
 
-            self.copy_until(node.start_abs());
+            let start = self.to_local_index(node.start_abs());
+            let end = self.to_local_index(node.end_abs());
+            self.copy_until(start);
             // Preserve parentheses for conditions in control-flow statements to keep the output as valid JavaScript
             if node.kind() == "parenthesized_expression" {
                 if let Some(parent) = node.parent() {
@@ -136,7 +164,7 @@ impl<'a> Rule<'a> for Linter {
                         "if_statement" | "while_statement" | "do_statement" | "for_statement"
                         | "switch_statement" => {
                             self.output += &format!("({})", data);
-                            self.skip_until(node.end_abs());
+                            self.skip_until(end);
                             return Ok(false);
                         }
                         _ => {}
@@ -144,7 +172,7 @@ impl<'a> Rule<'a> for Linter {
                 }
             }
             self.output += &data.to_string();
-            self.skip_until(node.end_abs());
+            self.skip_until(end);
             return Ok(false);
         }
 
@@ -152,7 +180,7 @@ impl<'a> Rule<'a> for Linter {
     }
 
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-        if node.kind() == "program" {
+        if self.root_node_id == Some(node.id()) {
             let len = self.source.len();
             self.copy_until(len);
         }

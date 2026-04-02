@@ -28,7 +28,7 @@ use std::cmp::Ordering::*;
 ///
 /// assert_eq!(linter.output, "var x = true;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StrictEq;
 
 impl<'a> RuleMut<'a> for StrictEq {
@@ -142,7 +142,7 @@ impl<'a> RuleMut<'a> for StrictEq {
 ///
 /// assert_eq!(linter.output, "var x = true;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct LooseEq;
 
 impl<'a> RuleMut<'a> for LooseEq {
@@ -291,7 +291,7 @@ fn parse_js_bigint(s: &str) -> Option<num_bigint::BigInt> {
 ///
 /// assert_eq!(linter.output, "var x = true;");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CmpOrd;
 
 impl<'a> RuleMut<'a> for CmpOrd {

@@ -64,7 +64,7 @@ fn get_array_at_index(s: &[Value], index: i64) -> Option<&Value> {
 ///
 /// assert_eq!(ps_litter_view.output, "\"cba\"");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AccessString;
 
 impl<'a> RuleMut<'a> for AccessString {
@@ -128,7 +128,7 @@ impl<'a> RuleMut<'a> for AccessString {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AccessArray;
 
 impl<'a> RuleMut<'a> for AccessArray {
@@ -226,7 +226,7 @@ impl<'a> RuleMut<'a> for AccessArray {
 ///
 /// assert_eq!(ps_litter_view.output, "6");
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AccessHashMap;
 
 impl<'a> RuleMut<'a> for AccessHashMap {

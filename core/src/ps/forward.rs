@@ -7,7 +7,7 @@ use log::trace;
 
 /// The forward rule is use to forward
 /// inferedtype in the most simple case : where there is nothing to do
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Forward;
 
 /// Forward will just forward inferred type in case of very simple
