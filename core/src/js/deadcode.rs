@@ -245,6 +245,73 @@ impl RemoveUnusedVar {
         Some(parts.join(" "))
     }
 
+    fn parse_simple_string_literal(text: &str) -> Option<String> {
+        let bytes = text.as_bytes();
+        if bytes.len() < 2 {
+            return None;
+        }
+
+        let quote = *bytes.first()?;
+        if (quote != b'\'' && quote != b'"') || *bytes.last()? != quote {
+            return None;
+        }
+
+        let inner = &text[1..text.len() - 1];
+        if inner.contains('\\') {
+            return None;
+        }
+
+        Some(inner.to_string())
+    }
+
+    fn is_ascii_identifier_name(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+
+        if !(first == '_' || first == '$' || first.is_ascii_alphabetic()) {
+            return false;
+        }
+
+        chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
+    }
+
+    // TODO: when first pass system will be added, apply this at first so we only have to deal with "classic" call in all the rules. This will reduce the code A LOT.
+    fn bracket_call_to_member_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "call_expression" {
+            return None;
+        }
+
+        let callee = node.child(0)?;
+        if callee.kind() != "subscript_expression" {
+            return None;
+        }
+
+        let object = callee.child(0)?;
+        let index = callee.named_child("index").or_else(|| callee.child(2))?;
+        if index.kind() != "string" {
+            return None;
+        }
+
+        let key = Self::parse_simple_string_literal(index.text().ok()?.trim())?;
+        if !Self::is_ascii_identifier_name(&key) {
+            return None;
+        }
+
+        let args = node.child(1)?;
+        if args.kind() != "arguments" {
+            return None;
+        }
+
+        Some(format!(
+            "{}.{}{}",
+            object.text().ok()?.trim(),
+            key,
+            args.text().ok()?.trim()
+        ))
+    }
+
     fn is_literal_bool(node: &Node<()>, expected: bool) -> bool {
         let kind = if expected { "true" } else { "false" };
 
@@ -308,6 +375,13 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
             "program" => {
                 self.source = node.text()?.to_string();
                 self.last_index = 0;
+            }
+            "call_expression" => {
+                if let Some(replacement) = Self::bracket_call_to_member_text(node) {
+                    trace!("RemoveUnusedVar: rewriting bracket call to member call");
+                    self.replace_node_with_text(node, &replacement)?;
+                    return Ok(false);
+                }
             }
             // var x = ...; / let x = ...; / const x = ...;
             "variable_declaration" | "lexical_declaration" => {
@@ -603,10 +677,7 @@ mod test_js_deadcode {
 
     #[test]
     fn test_split_chained_const_declaration() {
-        assert_eq!(
-            clean("const a = 1, b = 2;"),
-            "const a = 1; const b = 2;"
-        );
+        assert_eq!(clean("const a = 1, b = 2;"), "const a = 1; const b = 2;");
     }
 
     #[test]
@@ -628,9 +699,21 @@ mod test_js_deadcode {
     #[test]
     fn test_split_sequence_expression_statement_with_calls() {
         assert_eq!(
-            clean("S = S.replaceAll(a, q), S = S.replaceAll(E, r), t.writeFileSync(r, S), n = transform(stq[10], ord), n = n.replaceAll(E, r);"),
+            clean(
+                "S = S.replaceAll(a, q), S = S.replaceAll(E, r), t.writeFileSync(r, S), n = transform(stq[10], ord), n = n.replaceAll(E, r);"
+            ),
             "S = S.replaceAll(a, q); S = S.replaceAll(E, r); t.writeFileSync(r, S); n = transform(stq[10], ord); n = n.replaceAll(E, r);"
         );
+    }
+
+    #[test]
+    fn test_rewrite_bracket_call_to_member_call() {
+        assert_eq!(clean("console['log'](a);"), "console.log(a);");
+    }
+
+    #[test]
+    fn test_keep_bracket_call_when_key_not_identifier() {
+        assert_eq!(clean("console['x-y'](a);"), "console['x-y'](a);");
     }
 
     #[test]
