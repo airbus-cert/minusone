@@ -4,6 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::js::objects::objectify::as_object;
+use crate::js::utils::get_positional_arguments;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -454,6 +455,23 @@ impl<'a> RuleMut<'a> for ObjectField {
                     if let Some(base) = base
                         && let Some(value) = Self::get_by_path(&base, &access.keys)
                     {
+                        if access.keys.last().map(|k| k.as_str()) == Some("toString")
+                            && let Some(parent) = view.parent()
+                            && parent.kind() == "call_expression"
+                            && parent
+                                .named_child("function")
+                                .or_else(|| parent.child(0))
+                                .map(|callee| {
+                                    callee.start_abs() == view.start_abs()
+                                        && callee.end_abs() == view.end_abs()
+                                })
+                                .unwrap_or(false)
+                            && !get_positional_arguments(parent.named_child("arguments")).is_empty()
+                        {
+                            // let the dedicated ToString rule resolve radix-aware calls for integers
+                            return Ok(());
+                        }
+
                         if matches!(&value, Function { source, .. } if source.contains("[native code]"))
                             && !Self::is_string_concat_target(&view)
                         {
@@ -661,6 +679,11 @@ mod tests {
             deobfuscate("[]['at']['constructor']('return eval')();"),
             "[]['at']['constructor']('return eval')();"
         );
+    }
+
+    #[test]
+    fn test_number_literal_to_string_dot_call() {
+        assert_eq!(deobfuscate("var x = (1).toString();"), "var x = '1';");
     }
 
     #[test]
