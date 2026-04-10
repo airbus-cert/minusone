@@ -171,6 +171,80 @@ impl RemoveUnusedVar {
         name
     }
 
+    fn declaration_keyword(node: &Node<()>) -> Option<&'static str> {
+        match node.kind() {
+            "variable_declaration" => Some("var"),
+            "lexical_declaration" => {
+                for child in node.iter() {
+                    match child.kind() {
+                        "let" => return Some("let"),
+                        "const" => return Some("const"),
+                        _ => {}
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn in_for_header(node: &Node<()>) -> bool {
+        node.parent().is_some_and(|parent| {
+            matches!(
+                parent.kind(),
+                "for_statement" | "for_in_statement" | "for_of_statement"
+            )
+        })
+    }
+
+    fn split_declaration_text(node: &Node<()>) -> Option<String> {
+        let keyword = Self::declaration_keyword(node)?;
+        let mut declarators = Vec::new();
+
+        for child in node.iter() {
+            if child.kind() == "variable_declarator" {
+                declarators.push(child.text().ok()?.trim().to_string());
+            }
+        }
+
+        if declarators.len() <= 1 {
+            return None;
+        }
+
+        Some(
+            declarators
+                .into_iter()
+                .map(|decl| format!("{} {};", keyword, decl))
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    }
+
+    fn split_sequence_statement_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "expression_statement" {
+            return None;
+        }
+
+        let expr = node.child(0)?;
+        if expr.kind() != "sequence_expression" {
+            return None;
+        }
+
+        let mut parts = Vec::new();
+        for child in expr.iter() {
+            if child.kind() == "," {
+                continue;
+            }
+            parts.push(format!("{};", child.text().ok()?.trim()));
+        }
+
+        if parts.len() <= 1 {
+            return None;
+        }
+
+        Some(parts.join(" "))
+    }
+
     fn is_literal_bool(node: &Node<()>, expected: bool) -> bool {
         let kind = if expected { "true" } else { "false" };
 
@@ -237,6 +311,15 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
             }
             // var x = ...; / let x = ...; / const x = ...;
             "variable_declaration" | "lexical_declaration" => {
+                // split chained declarations so clean output emits one var/let/const per statement.
+                if !Self::in_for_header(node) {
+                    if let Some(replacement) = Self::split_declaration_text(node) {
+                        trace!("RemoveUnusedVar: splitting chained declaration");
+                        self.replace_node_with_text(node, &replacement)?;
+                        return Ok(false);
+                    }
+                }
+
                 if let Some(var_name) = Self::single_declarator_name(node) {
                     if self.rule.is_unused(&var_name) {
                         trace!("RemoveUnusedVar: removing declaration of '{}'", var_name);
@@ -248,6 +331,12 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
             // x = ...;  (expression_statement wrapping an assignment_expression)
             // also removes bare literal expression statements (e.g. 1;, 'hello';, true;)
             "expression_statement" => {
+                if let Some(replacement) = Self::split_sequence_statement_text(node) {
+                    trace!("RemoveUnusedVar: splitting comma sequence expression statement");
+                    self.replace_node_with_text(node, &replacement)?;
+                    return Ok(false);
+                }
+
                 if let Some(child) = node.child(0) {
                     match child.kind() {
                         "assignment_expression" => {
@@ -501,6 +590,46 @@ mod test_js_deadcode {
         assert_eq!(
             clean("function drop() { var a = 1; a = 2; 1; } console.log('ok');"),
             "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_split_chained_let_declaration() {
+        assert_eq!(
+            clean("let r = 4027, E = 'A', S = 'B';"),
+            "let r = 4027; let E = 'A'; let S = 'B';"
+        );
+    }
+
+    #[test]
+    fn test_split_chained_const_declaration() {
+        assert_eq!(
+            clean("const a = 1, b = 2;"),
+            "const a = 1; const b = 2;"
+        );
+    }
+
+    #[test]
+    fn test_keep_for_header_chained_declaration() {
+        assert_eq!(
+            clean("for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"),
+            "for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"
+        );
+    }
+
+    #[test]
+    fn test_split_sequence_expression_statement() {
+        assert_eq!(
+            clean("a = 1, b = 2, console.log(b);"),
+            "a = 1; b = 2; console.log(b);"
+        );
+    }
+
+    #[test]
+    fn test_split_sequence_expression_statement_with_calls() {
+        assert_eq!(
+            clean("S = S.replaceAll(a, q), S = S.replaceAll(E, r), t.writeFileSync(r, S), n = transform(stq[10], ord), n = n.replaceAll(E, r);"),
+            "S = S.replaceAll(a, q); S = S.replaceAll(E, r); t.writeFileSync(r, S); n = transform(stq[10], ord); n = n.replaceAll(E, r);"
         );
     }
 
