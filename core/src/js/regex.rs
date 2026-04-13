@@ -180,7 +180,7 @@ impl<'a> RuleMut<'a> for ParseRegex {
 pub struct RegexExec;
 
 impl RegexExec {
-    fn compile(pattern: &str, flags: &str) -> Option<regex::Regex> {
+    pub fn compile(pattern: &str, flags: &str) -> Option<regex::Regex> {
         let mut builder = RegexBuilder::new(pattern);
         for flag in flags.chars() {
             match flag {

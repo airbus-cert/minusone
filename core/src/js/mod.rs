@@ -213,34 +213,39 @@ macro_rules! impl_javascript_ruleset {
 }
 
 impl_javascript_ruleset!(
-    ParseInt,        // Parse integer literals (decimal, hex, octal, binary)
-    ParseBool,       // Parse boolean literals (true, false)
-    ParseString,     // Parse string literals (single and double quotes)
-    ParseRegex,      // Parse regex literals and RegExp constructors
-    ParseFunction,   // Parse function and arrow-function expressions as first-class values
-    ParseArray,      // Parse arrays
-    ParseSpecials,   // Parse specials (undefined, NaN, null)
-    ParseObject,     // Parse objects
-    NegInt,          // Infer unary - operations on integers
-    SubAddInt,       // Infer + and - operations on integers
-    MultInt,         // Infer *, / and % operations on integers
-    PowInt,          // Infer ** operations on integers
-    ShiftInt,        // Infer <<, >> and >>> operations on integers
-    BitwiseInt,      // Infer &, |, ^ and ~ operations on integers
-    ObjectField,     // Track objects field assignments and access
-    NotBool,         // Infer unary ! operations on booleans
-    BoolAlgebra,     // Infer boolean algebra operations (&&, ||)
-    AddBool,         // Infer + and - operations on booleans
-    CombineArrays,   // Infer + operations on two arrays
+    ParseInt,          // Parse integer literals (decimal, hex, octal, binary)
+    ParseBool,         // Parse boolean literals (true, false)
+    ParseString,       // Parse string literals (single and double quotes)
+    ParseRegex,        // Parse regex literals and RegExp constructors
+    ParseFunction,     // Parse function and arrow-function expressions as first-class values
+    ParseArray,        // Parse arrays
+    ParseSpecials,     // Parse specials (undefined, NaN, null)
+    ParseObject,       // Parse objects
+    NegInt,            // Infer unary - operations on integers
+    SubAddInt,         // Infer + and - operations on integers
+    MultInt,           // Infer *, / and % operations on integers
+    PowInt,            // Infer ** operations on integers
+    ShiftInt,          // Infer <<, >> and >>> operations on integers
+    BitwiseInt,        // Infer &, |, ^ and ~ operations on integers
+    ObjectField,       // Track objects field assignments and access
+    NotBool,           // Infer unary ! operations on booleans
+    BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
+    AddBool,           // Infer + and - operations on booleans
+    CombineArrays,     // Infer + operations on two arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
-    Forward, // Forward inferred type in the most simple cases
+    CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
+    FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
+    StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
+    Forward,    // Forward inferred type in the most simple cases
     StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus, // Infer unary plus and minus on arrays
+    ArrayJoin,  // Infer array join calls on literal arrays and reduce them to string literals
     BoolPlusMinus, // Infer + and - operations on booleans
-    Concat, // Infer string concatenation with + operator on string literals
+    Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
     Split,          // Infer string split calls on literal strings
+    Replace,        // Infer string replace calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls

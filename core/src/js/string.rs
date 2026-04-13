@@ -1,15 +1,16 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Object, Raw};
+use crate::js::JavaScript::{Array, Null, Object, Raw, Regex};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
+use crate::js::regex::RegexExec;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-use log::{trace, warn};
+use log::{error, trace, warn};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
 #[derive(Default)]
@@ -167,31 +168,12 @@ impl<'a> RuleMut<'a> for CharAt {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "subscript_expression" {
-            return Ok(());
-        }
-
-        if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
-            match (string.data(), index.data()) {
-                (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
-                    return if *i >= 0.0 && (*i as usize) < s.len() {
-                        let ch = s.chars().nth(*i as usize).unwrap();
-                        trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
-                        node.reduce(Raw(Str(ch.to_string())));
-                        Ok(())
-                    } else {
-                        trace!(
-                            "InferCharAt: index {} out of bounds, setting to undefined",
-                            i
-                        );
-                        node.reduce(Undefined);
-                        Ok(())
-                    };
-                }
-                (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
-                    if let Ok(i) = i.parse::<f64>() {
-                        return if i >= 0.0 && (i as usize) < s.len() {
-                            let ch = s.chars().nth(i as usize).unwrap();
+        if view.kind() == "subscript_expression" {
+            if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
+                match (string.data(), index.data()) {
+                    (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
+                        return if *i >= 0.0 && (*i as usize) < s.chars().count() {
+                            let ch = s.chars().nth(*i as usize).unwrap();
                             trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
                             node.reduce(Raw(Str(ch.to_string())));
                             Ok(())
@@ -203,13 +185,111 @@ impl<'a> RuleMut<'a> for CharAt {
                             node.reduce(Undefined);
                             Ok(())
                         };
-                    } else {
-                        warn!("InferCharAt: cannot parse index '{}' as number", i);
+                    }
+                    (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
+                        if let Ok(i) = i.parse::<f64>() {
+                            return if i >= 0.0 && (i as usize) < s.chars().count() {
+                                let ch = s.chars().nth(i as usize).unwrap();
+                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                                node.reduce(Raw(Str(ch.to_string())));
+                                Ok(())
+                            } else {
+                                trace!(
+                                    "InferCharAt: index {} out of bounds, setting to undefined",
+                                    i
+                                );
+                                node.reduce(Undefined);
+                                Ok(())
+                            };
+                        } else {
+                            warn!("InferCharAt: cannot parse index '{}' as number", i);
+                        }
+                    }
+                    _ => {}
+                }
+
+                if let Some(Raw(Str(s))) = string.data() {
+                    if let Ok(t) = index.text() {
+                        if let Ok(i) = t.trim_matches(['\'', '"']).parse::<f64>() {
+                            return if i >= 0.0 && (i as usize) < s.chars().count() {
+                                let ch = s.chars().nth(i as usize).unwrap();
+                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                                node.reduce(Raw(Str(ch.to_string())));
+                                Ok(())
+                            } else {
+                                trace!(
+                                    "InferCharAt: index {} out of bounds, setting to undefined",
+                                    i
+                                );
+                                node.reduce(Undefined);
+                                Ok(())
+                            };
+                        }
                     }
                 }
-                _ => {}
             }
+            return Ok(());
         }
+
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "charAt" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let index = match positional_args.first() {
+            None => 0.0,
+            Some(arg) => match arg.data() {
+                Some(Raw(Num(n))) => *n,
+                Some(Raw(Str(s))) => s.parse::<f64>().ok().unwrap_or(f64::NAN),
+                _ => arg
+                    .text()
+                    .ok()
+                    .and_then(|t| t.trim_matches(['\'', '"']).parse::<f64>().ok())
+                    .unwrap_or(f64::NAN),
+            },
+        };
+
+        let result = if index.is_finite() && index >= 0.0 {
+            input
+                .chars()
+                .nth(index as usize)
+                .map(|c| c.to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        trace!(
+            "InferCharAt: reducing '{}'.charAt({}) to '{}'",
+            input,
+            if positional_args.is_empty() {
+                "".to_string()
+            } else {
+                index.to_string()
+            },
+            result
+        );
+        node.reduce(Raw(Str(result)));
 
         Ok(())
     }
@@ -228,6 +308,282 @@ pub fn escape_js_string(s: &str) -> String {
         }
     }
     format!("'{}'", escaped)
+}
+
+/// Infers Split calls on strings
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Split, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'a,b'.split(',');").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), Split::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = ['a', 'b'];");
+/// ```
+#[derive(Default)]
+pub struct CharCodeAt;
+
+impl<'a> RuleMut<'a> for CharCodeAt {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "charCodeAt" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let index: usize = match positional_args.first().and_then(|a| a.data()) {
+            None => 0,
+            Some(Raw(Str(s))) => s.parse::<f64>().ok().map(|n| n as usize).unwrap_or(0),
+            Some(Raw(Num(n))) => *n as usize,
+            _ => 0,
+        };
+
+        let bytes = input.as_bytes();
+
+        let result = if index < bytes.len() {
+            Raw(Num(bytes[index] as f64))
+        } else {
+            NaN
+        };
+
+        trace!(
+            "InferCharCodeAt: reducing '{}'.charCodeAt({}) to {}",
+            input, index, result
+        );
+        node.reduce(result);
+
+        Ok(())
+    }
+}
+
+/// Infers `String.fromCharCode(...)` static calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{FromCharCode, ParseString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = String.fromCharCode(65, 66, 67);").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), FromCharCode::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'ABC';");
+/// ```
+#[derive(Default)]
+pub struct FromCharCode;
+
+impl<'a> RuleMut<'a> for FromCharCode {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "fromCharCode" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Ok(object_name) = object.text() else {
+            return Ok(());
+        };
+        if object_name != "String" {
+            return Ok(());
+        }
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let mut code_units = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data() else {
+                return Ok(());
+            };
+            let Some(num) = js_to_number_for_from_char_code(value) else {
+                return Ok(());
+            };
+            code_units.push(to_uint16(num));
+        }
+
+        let mut out = String::new();
+        for ch in std::char::decode_utf16(code_units.into_iter()) {
+            let Ok(ch) = ch else {
+                return Ok(());
+            };
+            out.push(ch);
+        }
+
+        trace!(
+            "FromCharCode: reducing String.fromCharCode(...) to '{}'",
+            out
+        );
+        node.reduce(Raw(Str(out)));
+        Ok(())
+    }
+}
+
+/// Infers `String(...)` coercion calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, StringConstructor};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = String(1);").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), StringConstructor::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = '1';");
+/// ```
+#[derive(Default)]
+pub struct StringConstructor;
+
+impl<'a> RuleMut<'a> for StringConstructor {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        if callee.kind() != "identifier" {
+            return Ok(());
+        }
+        if callee.text()? != "String" {
+            return Ok(());
+        }
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let result = match positional_args.first().and_then(|a| a.data()) {
+            None => String::new(),
+            Some(Raw(Str(s))) => s.clone(),
+            Some(value) => value.to_string(),
+        };
+
+        trace!("StringConstructor: reducing String(...) to '{}'", result);
+        node.reduce(Raw(Str(result)));
+        Ok(())
+    }
+}
+
+fn to_uint16(n: f64) -> u16 {
+    if !n.is_finite() || n == 0.0 {
+        return 0;
+    }
+    (n.trunc() as i64).rem_euclid(65536) as u16
+}
+
+fn js_to_number_for_from_char_code(value: &JavaScript) -> Option<f64> {
+    match value {
+        Raw(Num(n)) => Some(*n),
+        Raw(Str(s)) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Some(0.0)
+            } else if let Ok(n) = t.parse::<f64>() {
+                Some(n)
+            } else {
+                match ParseInt::from_str(t) {
+                    Raw(Num(n)) => Some(n),
+                    _ => None,
+                }
+            }
+        }
+        Raw(Bool(b)) => Some(if *b { 1.0 } else { 0.0 }),
+        Undefined | NaN => Some(f64::NAN),
+        Null => Some(0.0),
+        _ => None,
+    }
 }
 
 /// Infers unary `+` and `-` on string literals
@@ -502,89 +858,111 @@ impl<'a> RuleMut<'a> for ToString {
             return Ok(());
         }
 
-        if let (Some(subscript_expression), Some(arguments)) = (view.child(0), view.child(1)) {
-            if subscript_expression.kind() == "subscript_expression" {
-                if let (Some(object), Some(property)) =
-                    (subscript_expression.child(0), subscript_expression.child(2))
-                {
-                    if property.data() == Some(&Raw(Str("toString".to_string()))) {
-                        // get radix argument if exists
-                        let radix = if arguments.child_count() > 2 {
-                            if let Some(arg) = arguments.child(1) {
-                                if let Some(Raw(Num(radix))) = arg.data() {
-                                    *radix as i64
-                                } else if let Some(Raw(Str(radix_str))) = arg.data() {
-                                    if let Ok(radix) = radix_str.parse::<i64>() {
-                                        radix
-                                    } else {
-                                        warn!(
-                                            "ToString: cannot parse radix argument '{}' as number, defaulting to 10",
-                                            radix_str
-                                        );
-                                        10
-                                    }
-                                } else {
-                                    warn!(
-                                        "ToString: unsupported radix argument type, defaulting to 10"
-                                    );
-                                    10
-                                }
-                            } else {
-                                10
-                            }
-                        } else {
-                            10
-                        };
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
 
-                        let result = match object.data() {
-                            Some(Raw(Num(n))) => {
-                                if radix == 10 {
-                                    n.to_string()
-                                } else if radix >= 2 && radix <= 36 {
-                                    let mut num = *n as i64;
-                                    let mut result = String::new();
-                                    let negative = num < 0;
-                                    if negative {
-                                        num = -num;
-                                    }
-                                    while num > 0 {
-                                        let digit = (num % radix) as u8;
-                                        result.push(if digit < 10 {
-                                            (b'0' + digit) as char
-                                        } else {
-                                            (b'a' + digit - 10) as char
-                                        });
-                                        num /= radix;
-                                    }
-                                    if negative {
-                                        result.push('-');
-                                    }
-                                    result.chars().rev().collect()
-                                } else {
-                                    warn!("ToString: invalid radix {}, defaulting to 10", radix);
-                                    n.to_string()
-                                }
-                            }
-                            Some(Raw(Bool(b))) => b.to_string(),
-                            Some(Raw(Str(s))) => s.to_string(),
-                            Some(Array(array)) => flatten_array(array, None),
-                            _ => {
-                                warn!("ToString: unsupported object type for toString call");
-                                return Ok(());
-                            }
-                        };
+        let is_to_string = match callee.kind() {
+            "subscript_expression" => callee
+                .child(2)
+                .map(|property| {
+                    property.data() == Some(&Raw(Str("toString".to_string())))
+                        || property
+                            .text()
+                            .ok()
+                            .map(|t| t.trim_matches(['\'', '"']).to_string())
+                            .as_deref()
+                            == Some("toString")
+                })
+                .unwrap_or(false),
+            "member_expression" => callee
+                .named_child("property")
+                .and_then(|p| p.text().ok().map(|t| t == "toString"))
+                .unwrap_or(false),
+            _ => false,
+        };
 
-                        trace!(
-                            "ToString: reducing {:?}['toString']({}) to '{}'",
-                            object.data(),
-                            radix,
-                            result
-                        );
-                        node.reduce(Raw(Str(result)));
+        if !is_to_string {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        // get radix argument if exists
+        let radix = if let Some(arg) = positional_args.first() {
+            if let Some(Raw(Num(radix))) = arg.data() {
+                *radix as i64
+            } else if let Some(Raw(Str(radix_str))) = arg.data() {
+                if let Ok(radix) = radix_str.parse::<i64>() {
+                    radix
+                } else {
+                    warn!(
+                        "ToString: cannot parse radix argument '{}' as number, defaulting to 10",
+                        radix_str
+                    );
+                    10
+                }
+            } else {
+                warn!("ToString: unsupported radix argument type, defaulting to 10");
+                10
+            }
+        } else {
+            10
+        };
+
+        let object_value = object
+            .data()
+            .cloned()
+            .or_else(|| object.iter().find_map(|child| child.data().cloned()));
+
+        let result = match object_value.as_ref() {
+            Some(Raw(Num(n))) => {
+                if radix == 10 {
+                    n.to_string()
+                } else if (2..=36).contains(&radix) {
+                    let mut num = *n as i64;
+                    let mut result = String::new();
+                    let negative = num < 0;
+                    if negative {
+                        num = -num;
                     }
+                    while num > 0 {
+                        let digit = (num % radix) as u8;
+                        result.push(if digit < 10 {
+                            (b'0' + digit) as char
+                        } else {
+                            (b'a' + digit - 10) as char
+                        });
+                        num /= radix;
+                    }
+                    if negative {
+                        result.push('-');
+                    }
+                    result.chars().rev().collect()
+                } else {
+                    warn!("ToString: invalid radix {}, defaulting to 10", radix);
+                    n.to_string()
                 }
             }
-        }
+            Some(Raw(Bool(b))) => b.to_string(),
+            Some(Raw(Str(s))) => s.to_string(),
+            Some(Array(array)) => flatten_array(array, None),
+            _ => {
+                warn!("ToString: unsupported object type for toString call");
+                return Ok(());
+            }
+        };
+
+        trace!(
+            "ToString: reducing {:?}.toString({}) to '{}'",
+            object_value, radix, result
+        );
+        node.reduce(Raw(Str(result)));
 
         Ok(())
     }
@@ -611,16 +989,6 @@ impl<'a> RuleMut<'a> for ToString {
 /// ```
 #[derive(Default)]
 pub struct Split;
-
-impl Split {
-    fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
-        match separator {
-            None => vec![input.to_string()],
-            Some("") => input.chars().map(|c| c.to_string()).collect(),
-            Some(sep) => input.split(sep).map(|s| s.to_string()).collect(),
-        }
-    }
-}
 
 impl<'a> RuleMut<'a> for Split {
     type Language = JavaScript;
@@ -654,7 +1022,7 @@ impl<'a> RuleMut<'a> for Split {
             return Ok(());
         }
 
-        let Some(object) = callee.named_child("object") else {
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
             return Ok(());
         };
         let Some(Raw(Str(input))) = object.data() else {
@@ -679,7 +1047,7 @@ impl<'a> RuleMut<'a> for Split {
             _ => return Ok(()),
         };
 
-        let mut parts = Self::split_parts(input, separator_owned.as_deref());
+        let mut parts = split_parts(input, separator_owned.as_deref());
         if let Some(limit) = limit {
             parts.truncate(limit);
         }
@@ -695,12 +1063,155 @@ impl<'a> RuleMut<'a> for Split {
     }
 }
 
+/// Infers replace and replaceAll calls on strings with string or regex patterns and reduces them to single string literals
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, Replace, Split, ToString};
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 'a,b,c'.replace(',', '');").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(), Replace::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'ab,c';");
+/// ```
+#[derive(Default)]
+pub struct Replace;
+
+impl<'a> RuleMut<'a> for Replace {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "replace" && method != "replaceAll" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+
+        let replacement = match positional_args.get(1).and_then(|a| a.data()) {
+            None => "undefined".to_string(),
+            Some(Raw(Str(s))) => s.clone(),
+            Some(js) => js.to_string(),
+        };
+
+        match positional_args.first().and_then(|a| a.data()) {
+            None => Ok(()),
+            Some(Regex { pattern, flags }) => {
+                let Some(regex) = RegexExec::compile(pattern, flags) else {
+                    return Ok(());
+                };
+
+                //let result = regex.replace_all(input, &replacement);+
+                let result = match method.as_str() {
+                    "replace" => match flags.contains("g") {
+                        true => regex.replace_all(input, &replacement),
+                        false => regex.replace(input, &replacement),
+                    },
+                    "replaceAll" => match flags.contains("g") {
+                        true => regex.replace_all(input, &replacement),
+                        false => {
+                            error!(
+                                "Replace: replaceAll called with regex without global flag, treating as replace. This should crash the engine, skipping."
+                            );
+                            return Ok(());
+                        }
+                    },
+                    _ => unreachable!(),
+                };
+                trace!(
+                    "Replace: reducing regex replace call on '{}' => '{}'",
+                    input, result
+                );
+                node.reduce(Raw(Str(result.to_string())));
+                Ok(())
+            }
+            Some(Raw(Str(s))) => {
+                let pattern = s.clone();
+                let result = match method.as_str() {
+                    "replace" => input.replacen(&pattern, &replacement, 1),
+                    "replaceAll" => input.replace(&pattern, &replacement),
+                    _ => unreachable!(),
+                };
+                trace!(
+                    "Replace: reducing string replace call on '{}' => '{}'",
+                    input, result
+                );
+                node.reduce(Raw(Str(result.to_string())));
+                Ok(())
+            }
+            Some(js) => {
+                let pattern = js.to_string();
+                let result = match method.as_str() {
+                    "replace" => input.replacen(&pattern, &replacement, 1),
+                    "replaceAll" => input.replace(&pattern, &replacement),
+                    _ => unreachable!(),
+                };
+                trace!(
+                    "Replace: reducing string replace call on '{}' => '{}'",
+                    input, result
+                );
+                node.reduce(Raw(Str(result.to_string())));
+                Ok(())
+            }
+        }
+    }
+}
+
+fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
+    match separator {
+        None => vec![input.to_string()],
+        Some("") => input.chars().map(|c| c.to_string()).collect(),
+        Some(sep) => input.split(sep).map(|s| s.to_string()).collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
     use crate::js::integer::ParseInt;
     use crate::js::linter::Linter;
+    use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::*;
     use crate::js::string::{escape_js_string, unescaped_js_string};
@@ -711,10 +1222,16 @@ mod tests_js_string {
             ParseString::default(),
             ParseInt::default(),
             ParseArray::default(),
+            ParseRegex::default(),
+            Forward::default(),
             StringPlusMinus::default(),
             CharAt::default(),
+            CharCodeAt::default(),
+            FromCharCode::default(),
+            StringConstructor::default(),
             Concat::default(),
             Split::default(),
+            Replace::default(),
             GetArrayElement::default(),
             ToString::default(),
             AddSubSpecials::default(),
@@ -760,9 +1277,42 @@ mod tests_js_string {
 
     #[test]
     fn test_charat() {
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt();"),
+            "var x = 'a';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt(1);"),
+            "var x = 'b';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'['charAt'](2);"),
+            "var x = 'c';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt(3);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt(-3);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'.charAt('1');"),
+            "var x = 'b';"
+        );
         assert_eq!(deobfuscate_string("var x = 'test'[1];"), "var x = 'e';");
         assert_eq!(
             deobfuscate_string("var x = 'test'[10];"),
+            "var x = undefined;"
+        );
+        assert_eq!(deobfuscate_string("var x = 'abc'[0];"), "var x = 'a';");
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'[-1];"),
+            "var x = undefined;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'abc'[3];"),
             "var x = undefined;"
         );
     }
@@ -775,6 +1325,38 @@ mod tests_js_string {
             ),
             "var x = 'minusone';"
         );
+    }
+
+    #[test]
+    fn test_charcodeat() {
+        assert_eq!(
+            deobfuscate_string("var x = 'ABC'.charCodeAt(0);"),
+            "var x = 65;"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'ABC'.charCodeAt(14);"),
+            "var x = NaN;"
+        );
+    }
+
+    #[test]
+    fn test_from_char_code() {
+        assert_eq!(
+            deobfuscate_string(
+                "var x = String.fromCharCode(0x4f, 0x72, 0x44, 0x65, 0x52, 0x5f, 0x37, 0x30, 0x37, 0x37);"
+            ),
+            "var x = 'OrDeR_7077';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = String['fromCharCode'](65, 66, 67);"),
+            "var x = 'ABC';"
+        );
+    }
+
+    #[test]
+    fn test_string_constructor() {
+        assert_eq!(deobfuscate_string("var x = String(1);"), "var x = '1';");
+        assert_eq!(deobfuscate_string("var x = String();"), "var x = '';");
     }
 
     #[test]
@@ -793,6 +1375,18 @@ mod tests_js_string {
     }
 
     #[test]
+    fn test_to_string_dot_and_subscript() {
+        assert_eq!(
+            deobfuscate_string("var x = (1)['toString']();"),
+            "var x = '1';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = (1).toString();"),
+            "var x = '1';"
+        );
+    }
+
+    #[test]
     fn test_split_with_params() {
         assert_eq!(
             deobfuscate_string("var x = 'alert164t50t471t47t51'['split']('t')[0];"),
@@ -801,6 +1395,43 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'a,b,c'.split(',', 2)[1];"),
             "var x = 'b';"
+        );
+    }
+
+    #[test]
+    fn test_replace() {
+        // string
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replace(',', '');"),
+            "var x = 'ab,c';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replaceAll(',', '');"),
+            "var x = 'abc';"
+        );
+
+        // num
+        assert_eq!(
+            deobfuscate_string("var x = '124'.replaceAll(4, 3);"),
+            "var x = '123';"
+        );
+
+        // regex
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/g, '');"),
+            "var x = 'abc';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/, '');"),
+            "var x = 'a,b,c'.replaceAll(/,/, '');"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replace(/,/g, '');"),
+            "var x = 'abc';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'a,b,c'.replace(/,/, '');"),
+            "var x = 'ab,c';"
         );
     }
 }

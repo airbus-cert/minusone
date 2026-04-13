@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::Value::{Num, Str};
 use crate::js::functions::function::function_value_from_node;
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -1000,6 +1001,18 @@ impl<'a> RuleMut<'a> for FnCall {
             "call_expression" => {
                 // check known fn
                 if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
+                    let has_args =
+                        !get_positional_arguments(view.named_child("arguments")).is_empty();
+                    let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
+                    let is_tostring_function_value = matches!(
+                        func_node.data(),
+                        Some(JavaScript::Function { source, .. }) if source.starts_with("function toString(")
+                    );
+                    // keep radix-aware toString handling in the dedicated ToString rule for integers
+                    if has_args && (is_tostring_method || is_tostring_function_value) {
+                        return Ok(());
+                    }
+
                     if func_node.kind() == "identifier" {
                         let fn_name = func_node.text()?.to_string();
 
