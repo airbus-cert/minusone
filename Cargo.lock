@@ -660,7 +660,7 @@ dependencies = [
 
 [[package]]
 name = "minusonejs"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "minusone",
  "wit-bindgen",
@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "pyminusone"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "minusone",
  "pyo3",
