@@ -15,6 +15,7 @@ pub mod specials;
 pub mod strategy;
 pub mod string;
 mod tests;
+pub mod r#typeof;
 mod utils;
 pub mod var;
 
@@ -31,6 +32,7 @@ use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
 use self::string::*;
+use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
 use crate::js::JavaScript::*;
@@ -90,6 +92,9 @@ pub enum JavaScript {
     Undefined,
     NaN,
     Null,
+    // Byte is a special type that does not live long, it's used to store the result of `atob` and
+    // `btoa` calls, and it's converted to string when it's used in a string context, but it gets
+    // most of the type converted into a string
     Bytes(Vec<u8>),
     Object {
         map: HashMap<String, JavaScript>,
@@ -112,6 +117,8 @@ impl PartialEq<JavaScript> for &JavaScript {
 }
 
 impl Display for JavaScript {
+    // If a new type is added, try to put the raw value in the console and see the output
+    // It's supposed to represent the value in the code source itself
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Raw(v) => write!(f, "{}", v),
@@ -147,6 +154,7 @@ pub struct JavaScriptRuleSet<'a> {
 
 impl JavaScript {
     pub fn as_bool(&self) -> bool {
+        // If a new type is added, try `if(...){console.log(true)}else{console.log(false)}` in the console with different values of that type
         match self {
             Raw(raw) => match raw {
                 Num(n) => *n != 0.0 && !n.is_nan(),
@@ -255,7 +263,8 @@ impl_javascript_ruleset!(
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==
     LooseEq,        // Infer strict equality == and !=
-    CmpOrd          // Infer comparison operators <, >, <= and >=
+    CmpOrd,         // Infer comparison operators <, >, <= and >=
+    Typeof          // Infer typeof calls
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
