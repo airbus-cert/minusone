@@ -4,7 +4,6 @@ use crate::js::array::flatten_array;
 use crate::js::b64::js_bytes_to_string;
 use crate::js::string::escape_js_string;
 use crate::js::{JavaScript, Value};
-use log::warn;
 use num::{ToPrimitive, Zero};
 use std::fmt::Display;
 
@@ -146,18 +145,9 @@ impl JavaScript {
                     return false;
                 }
 
-                for byte in bytes {
-                    if *byte != 0 {
-                        return true;
-                    }
-                }
-
-                false
-            }
-            Object { .. } => {
-                warn!("Objects don't really have a boolean value in Js, falling back to true");
                 true
             }
+            Object { .. } => true,
         }
     }
 
