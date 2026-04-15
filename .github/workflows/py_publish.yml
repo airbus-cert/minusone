@@ -1,9 +1,6 @@
 name: pyminusone publish pypi
 
-on:
-  push:
-    tags:
-      - "v*"
+on: workflow_dispatch
 
 permissions:
   id-token: write

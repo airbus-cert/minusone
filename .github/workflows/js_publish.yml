@@ -1,9 +1,6 @@
 name: Publish minusonejs to npm
 
-on:
-  push:
-    tags:
-      - "v*"
+on: workflow_dispatch
 
 permissions:
   id-token: write # Required for OIDC
@@ -25,5 +22,3 @@ jobs:
       - name: Build minusonejs
         shell: devenv shell bash -- -e {0}
         run: just js publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
