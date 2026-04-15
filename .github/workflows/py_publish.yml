@@ -1,4 +1,4 @@
-name: pyminusone publish pypi
+name: Publish pyminusone to pypi
 
 on: workflow_dispatch
 
@@ -6,12 +6,8 @@ permissions:
   id-token: write
 
 jobs:
-  test:
+  publish:
     runs-on: ["ubuntu-latest"]
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
