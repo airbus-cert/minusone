@@ -244,6 +244,7 @@ impl_javascript_ruleset!(
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
+    StringRaw,      // Infer String.raw tagged template literals
     TemplateString, // Infer template string literals with deterministic substitutions
     Split,          // Infer string split calls on literal strings
     Replace,        // Infer string replace calls on literal strings

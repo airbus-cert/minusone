@@ -1204,6 +1204,100 @@ fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Infers `String.raw` tagged templates.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::StringRaw;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = String.raw`minusone`;").unwrap();
+/// tree.apply_mut(&mut (StringRaw::default(),)).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'minusone';");
+/// ```
+#[derive(Default)]
+pub struct StringRaw;
+
+impl<'a> RuleMut<'a> for StringRaw {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "raw" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        if object.text()? != "String" {
+            return Ok(());
+        }
+
+        let Some(template) = view.child(1) else {
+            return Ok(());
+        };
+        if template.kind() != "template_string" {
+            return Ok(());
+        }
+
+        let mut out = String::new();
+        for child in template.iter() {
+            match child.kind() {
+                "string_fragment" => out.push_str(child.text()?),
+                "template_substitution" => {
+                    let Some(expr) = child.child(1) else {
+                        return Ok(());
+                    };
+                    let Some(value) = expr.data() else {
+                        return Ok(());
+                    };
+                    let subst = match value {
+                        Raw(Str(s)) => s.clone(),
+                        any => any.to_string(),
+                    };
+                    out.push_str(&subst);
+                }
+                _ => {}
+            }
+        }
+
+        trace!(
+            "StringRaw: reducing String.raw tagged template to '{}'",
+            out
+        );
+        node.reduce(Raw(Str(out)));
+        Ok(())
+    }
+}
+
 /// Infers template string literals.
 ///
 /// # Example
@@ -1310,6 +1404,7 @@ mod tests_js_string {
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::*;
     use crate::js::string::{escape_js_string, unescaped_js_string};
+    use crate::js::var::Var;
 
     fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
@@ -1328,10 +1423,12 @@ mod tests_js_string {
             SubAddInt::default(),
             Split::default(),
             Replace::default(),
+            StringRaw::default(),
             TemplateString::default(),
             GetArrayElement::default(),
             ToString::default(),
             AddSubSpecials::default(),
+            Var::default(),
         ))
         .unwrap();
 
@@ -1508,6 +1605,24 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("console.log(`hello ${a} ${1+1}`)"),
             "console.log(`hello ${a} 2`)"
+        );
+    }
+
+    #[test]
+    fn test_string_raw_tagged_template() {
+        assert_eq!(
+            deobfuscate("console.log(String.raw`minusone`)"),
+            "console.log('minusone')"
+        );
+
+        assert_eq!(
+            deobfuscate("let a = 'a'; console.log(String.raw`${a}`);"),
+            "let a = 'a'; console.log('a');"
+        );
+
+        assert_eq!(
+            deobfuscate("let a = 1; console.log(String.raw`${a + 1}`);"),
+            "let a = 1; console.log('2');"
         );
     }
 }
