@@ -1204,19 +1204,114 @@ fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Infers template string literals.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, TemplateString};
+/// use minusone::js::integer::{ParseInt, SubAddInt};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = `hello ${1} ${1+1}`;").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(),
+///     ParseInt::default(),
+///     SubAddInt::default(),
+///     TemplateString::default(),
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'hello 1 2';");
+/// ```
+#[derive(Default)]
+pub struct TemplateString;
+
+impl<'a> RuleMut<'a> for TemplateString {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "template_string" {
+            return Ok(());
+        }
+
+        let mut out = String::new();
+        let mut all_known = true;
+        let mut substitution_updates: Vec<(usize, JavaScript)> = Vec::new();
+        for child in view.iter() {
+            match child.kind() {
+                "string_fragment" => {
+                    out.push_str(child.text()?);
+                }
+                "template_substitution" => {
+                    let Some(expr) = child.child(1) else {
+                        all_known = false;
+                        continue;
+                    };
+                    let Some(value) = expr.data() else {
+                        all_known = false;
+                        continue;
+                    };
+
+                    let subst = match value {
+                        Raw(Str(s)) => s.clone(),
+                        any => any.to_string(),
+                    };
+
+                    substitution_updates.push((
+                        child.id(),
+                        JavaScript::Function {
+                            source: subst.clone(),
+                            return_value: None,
+                        },
+                    ));
+
+                    out.push_str(&subst);
+                }
+                _ => {}
+            }
+        }
+
+        for (node_id, data) in substitution_updates {
+            node.set_by_node_id(node_id, data);
+        }
+
+        if all_known {
+            trace!("TemplateString: reducing template literal to '{}'", out);
+            node.reduce(Raw(Str(out)));
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::ParseInt;
+    use crate::js::integer::{ParseInt, SubAddInt};
     use crate::js::linter::Linter;
     use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::*;
     use crate::js::string::{escape_js_string, unescaped_js_string};
 
-    fn deobfuscate_string(input: &str) -> String {
+    fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
@@ -1230,8 +1325,10 @@ mod tests_js_string {
             FromCharCode::default(),
             StringConstructor::default(),
             Concat::default(),
+            SubAddInt::default(),
             Split::default(),
             Replace::default(),
+            TemplateString::default(),
             GetArrayElement::default(),
             ToString::default(),
             AddSubSpecials::default(),
@@ -1270,57 +1367,30 @@ mod tests_js_string {
     #[test]
     fn test_concat() {
         assert_eq!(
-            deobfuscate_string("var x = 'Hello, ' + 'world!' + 1;"),
+            deobfuscate("var x = 'Hello, ' + 'world!' + 1;"),
             "var x = 'Hello, world!1';"
         );
     }
 
     #[test]
     fn test_charat() {
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt();"),
-            "var x = 'a';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt(1);"),
-            "var x = 'b';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'['charAt'](2);"),
-            "var x = 'c';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt(3);"),
-            "var x = '';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt(-3);"),
-            "var x = '';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt('1');"),
-            "var x = 'b';"
-        );
-        assert_eq!(deobfuscate_string("var x = 'test'[1];"), "var x = 'e';");
-        assert_eq!(
-            deobfuscate_string("var x = 'test'[10];"),
-            "var x = undefined;"
-        );
-        assert_eq!(deobfuscate_string("var x = 'abc'[0];"), "var x = 'a';");
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'[-1];"),
-            "var x = undefined;"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'[3];"),
-            "var x = undefined;"
-        );
+        assert_eq!(deobfuscate("var x = 'abc'.charAt();"), "var x = 'a';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt(1);"), "var x = 'b';");
+        assert_eq!(deobfuscate("var x = 'abc'['charAt'](2);"), "var x = 'c';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt(3);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt(-3);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt('1');"), "var x = 'b';");
+        assert_eq!(deobfuscate("var x = 'test'[1];"), "var x = 'e';");
+        assert_eq!(deobfuscate("var x = 'test'[10];"), "var x = undefined;");
+        assert_eq!(deobfuscate("var x = 'abc'[0];"), "var x = 'a';");
+        assert_eq!(deobfuscate("var x = 'abc'[-1];"), "var x = undefined;");
+        assert_eq!(deobfuscate("var x = 'abc'[3];"), "var x = undefined;");
     }
 
     #[test]
     fn test_charat_concat() {
         assert_eq!(
-            deobfuscate_string(
+            deobfuscate(
                 "var x = 'minusone'[0] + 'minusone'[1] + 'minusone'[2] + 'minusone'[3] + 'minusone'[4] + 'minusone'[5] + 'minusone'[6] + 'minusone'[7];"
             ),
             "var x = 'minusone';"
@@ -1329,71 +1399,59 @@ mod tests_js_string {
 
     #[test]
     fn test_charcodeat() {
-        assert_eq!(
-            deobfuscate_string("var x = 'ABC'.charCodeAt(0);"),
-            "var x = 65;"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'ABC'.charCodeAt(14);"),
-            "var x = NaN;"
-        );
+        assert_eq!(deobfuscate("var x = 'ABC'.charCodeAt(0);"), "var x = 65;");
+        assert_eq!(deobfuscate("var x = 'ABC'.charCodeAt(14);"), "var x = NaN;");
     }
 
     #[test]
     fn test_from_char_code() {
         assert_eq!(
-            deobfuscate_string(
+            deobfuscate(
                 "var x = String.fromCharCode(0x4f, 0x72, 0x44, 0x65, 0x52, 0x5f, 0x37, 0x30, 0x37, 0x37);"
             ),
             "var x = 'OrDeR_7077';"
         );
         assert_eq!(
-            deobfuscate_string("var x = String['fromCharCode'](65, 66, 67);"),
+            deobfuscate("var x = String['fromCharCode'](65, 66, 67);"),
             "var x = 'ABC';"
         );
     }
 
     #[test]
     fn test_string_constructor() {
-        assert_eq!(deobfuscate_string("var x = String(1);"), "var x = '1';");
-        assert_eq!(deobfuscate_string("var x = String();"), "var x = '';");
+        assert_eq!(deobfuscate("var x = String(1);"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = String();"), "var x = '';");
     }
 
     #[test]
     fn test_string_plus_minus() {
         assert_eq!(
-            deobfuscate_string("var x = +'42'; var y = -'42';"),
+            deobfuscate("var x = +'42'; var y = -'42';"),
             "var x = 42; var y = -42;"
         );
-        assert_eq!(deobfuscate_string("var x = +'0xff';"), "var x = 255;");
-        assert_eq!(deobfuscate_string("var x = +'-0x56';"), "var x = NaN;");
-        assert_eq!(deobfuscate_string("var x = +'-56';"), "var x = -56;");
+        assert_eq!(deobfuscate("var x = +'0xff';"), "var x = 255;");
+        assert_eq!(deobfuscate("var x = +'-0x56';"), "var x = NaN;");
+        assert_eq!(deobfuscate("var x = +'-56';"), "var x = -56;");
         assert_eq!(
-            deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
+            deobfuscate("var x = 'b' + 'a' + +'a' + 'a'"),
             "var x = 'baNaNa'"
         );
     }
 
     #[test]
     fn test_to_string_dot_and_subscript() {
-        assert_eq!(
-            deobfuscate_string("var x = (1)['toString']();"),
-            "var x = '1';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = (1).toString();"),
-            "var x = '1';"
-        );
+        assert_eq!(deobfuscate("var x = (1)['toString']();"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = (1).toString();"), "var x = '1';");
     }
 
     #[test]
     fn test_split_with_params() {
         assert_eq!(
-            deobfuscate_string("var x = 'alert164t50t471t47t51'['split']('t')[0];"),
+            deobfuscate("var x = 'alert164t50t471t47t51'['split']('t')[0];"),
             "var x = 'aler';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.split(',', 2)[1];"),
+            deobfuscate("var x = 'a,b,c'.split(',', 2)[1];"),
             "var x = 'b';"
         );
     }
@@ -1402,36 +1460,54 @@ mod tests_js_string {
     fn test_replace() {
         // string
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replace(',', '');"),
+            deobfuscate("var x = 'a,b,c'.replace(',', '');"),
             "var x = 'ab,c';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replaceAll(',', '');"),
+            deobfuscate("var x = 'a,b,c'.replaceAll(',', '');"),
             "var x = 'abc';"
         );
 
         // num
         assert_eq!(
-            deobfuscate_string("var x = '124'.replaceAll(4, 3);"),
+            deobfuscate("var x = '124'.replaceAll(4, 3);"),
             "var x = '123';"
         );
 
         // regex
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/g, '');"),
+            deobfuscate("var x = 'a,b,c'.replaceAll(/,/g, '');"),
             "var x = 'abc';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/, '');"),
+            deobfuscate("var x = 'a,b,c'.replaceAll(/,/, '');"),
             "var x = 'a,b,c'.replaceAll(/,/, '');"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replace(/,/g, '');"),
+            deobfuscate("var x = 'a,b,c'.replace(/,/g, '');"),
             "var x = 'abc';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replace(/,/, '');"),
+            deobfuscate("var x = 'a,b,c'.replace(/,/, '');"),
             "var x = 'ab,c';"
+        );
+    }
+
+    #[test]
+    fn test_template_string() {
+        assert_eq!(
+            deobfuscate("var x = `hello ${1} ${'world'}`;"),
+            "var x = 'hello 1 world';"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = `hello ${1} ${1+1}`;"),
+            "var x = 'hello 1 2';"
+        );
+
+        assert_eq!(
+            deobfuscate("console.log(`hello ${a} ${1+1}`)"),
+            "console.log(`hello ${a} 2`)"
         );
     }
 }
