@@ -138,7 +138,8 @@ impl_javascript_ruleset!(
     ParseSpecials,     // Parse specials (undefined, NaN, null)
     ParseObject,       // Parse objects
     PosNeg,            // Infer unary - operations on integers
-    SubAddInt,         // Infer + and - operations on integers
+    AddInt,            // Infer addition operations on integers
+    Substract,         // Infer subtraction operations on any JavaScript value
     MultInt,           // Infer *, / and % operations on integers
     PowInt,            // Infer ** operations on integers
     ShiftInt,          // Infer <<, >> and >>> operations on integers
@@ -146,7 +147,7 @@ impl_javascript_ruleset!(
     ObjectField,       // Track objects field assignments and access
     NotBool,           // Infer unary ! operations on booleans
     BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
-    AddBool,           // Infer + and - operations on booleans
+    AddBool,           // Infer boolean addition operations
     CombineArrays,     // Infer + operations on two arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes

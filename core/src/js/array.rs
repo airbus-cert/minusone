@@ -103,36 +103,6 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     node.reduce(Raw(Str(combined)));
                     return Ok(());
                 }
-                (Some(Array(l)), "-", Some(Raw(Num(r)))) => {
-                    let l = Array(l.clone()).as_js_num();
-                    match l {
-                        Raw(Num(n)) => {
-                            let result = n - r;
-                            trace!("AddInt (L): {} - {} = {}", n, r, result);
-                            node.reduce(Raw(Num(result)));
-                        }
-                        NaN => {
-                            trace!("AddInt (L): NaN - {} = NaN", r);
-                            node.reduce(NaN);
-                        }
-                        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
-                    }
-                }
-                (Some(Raw(Num(l))), "-", Some(Array(r))) => {
-                    let r = Array(r.clone()).as_js_num();
-                    match r {
-                        Raw(Num(n)) => {
-                            let result = l - n;
-                            trace!("AddInt (L): {} - {} = {}", l, n, result);
-                            node.reduce(Raw(Num(result)));
-                        }
-                        NaN => {
-                            trace!("AddInt (L): {} - NaN = NaN", l);
-                            node.reduce(NaN);
-                        }
-                        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
-                    }
-                }
                 (
                     Some(Array(left_values)),
                     "+",
@@ -561,7 +531,7 @@ mod tests_js_array {
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::ParseInt;
+    use crate::js::integer::{ParseInt, Substract};
     use crate::js::linter::Linter;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::CharAt;
@@ -575,6 +545,7 @@ mod tests_js_array {
             ParseArray::default(),
             CombineArrays::default(),
             Forward::default(),
+            Substract::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),

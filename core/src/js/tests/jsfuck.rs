@@ -29,7 +29,7 @@ pub mod jsfuck_tests {
             ParseSpecials::default(),
             ParseObject::default(),
             PosNeg::default(),
-            SubAddInt::default(),
+            AddInt::default(),
             MultInt::default(),
             PowInt::default(),
             ShiftInt::default(),

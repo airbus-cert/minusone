@@ -368,16 +368,16 @@ impl<'a> RuleMut<'a> for PosNeg {
     }
 }
 
-/// Infers `+` and `-` binary expressions when both operands are known integers.
+/// Infer addition operations on integers
 ///
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, SubAddInt};
+/// use minusone::js::integer::{ParseInt, AddInt};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 1 + 1;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), SubAddInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), AddInt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -385,9 +385,9 @@ impl<'a> RuleMut<'a> for PosNeg {
 /// assert_eq!(linter.output, "var x = 2;");
 /// ```
 #[derive(Default)]
-pub struct SubAddInt;
+pub struct AddInt;
 
-impl<'a> RuleMut<'a> for SubAddInt {
+impl<'a> RuleMut<'a> for AddInt {
     type Language = JavaScript;
 
     fn enter(
@@ -465,6 +465,96 @@ impl<'a> RuleMut<'a> for SubAddInt {
                             "AddInt (L): tried to subtract non-BigInt and BigInt: {} - {}n. This should crash the Js engine",
                             l, r
                         );
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Infer substraction operations on any JavaScript values
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::{ParseInt, Substract};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 1 - 1;").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Substract::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = 0;");
+/// ```
+#[derive(Default)]
+pub struct Substract;
+
+impl<'a> RuleMut<'a> for Substract {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            match (left.data(), op.text()?, right.data()) {
+                (Some(Raw(BigInt(l))), "-", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l - r;
+                        trace!("Substract (L): {}n - {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "Substract (L): tried to subtract BigInt and non-BigInt: {}n - {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "-", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l - r;
+                        trace!("Substract (L): {}n - {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "Substract (L): tried to subtract non-BigInt and BigInt: {} - {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "-", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("Substract (L): one of the operands is NaN, result is NaN");
+                    }
+
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
+                        let result = l - r;
+                        trace!("Substract (L): {} - {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
+                    } else {
+                        error!(
+                            "Substract (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
+                        );
+                        node.reduce(NaN);
                     }
                 }
                 _ => {}
@@ -1008,7 +1098,8 @@ mod tests_js_integer {
             ParseInt::default(),
             ParseString::default(),
             PosNeg::default(),
-            SubAddInt::default(),
+            AddInt::default(),
+            Substract::default(),
             MultInt::default(),
             PowInt::default(),
             ShiftInt::default(),

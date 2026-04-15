@@ -161,10 +161,11 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
 /// ```
 /// use minusone::js::build_javascript_tree;
 /// use minusone::js::bool::{AddBool, ParseBool};
+/// use minusone::js::integer::Substract;
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = true + false - true;").unwrap();
-/// tree.apply_mut(&mut (ParseBool::default(), AddBool::default())).unwrap();
+/// tree.apply_mut(&mut (ParseBool::default(), AddBool::default(), Substract::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -202,29 +203,14 @@ impl<'a> RuleMut<'a> for AddBool {
                     trace!("AddBool (L): {} + {} => {}", l, r, result);
                     node.reduce(Raw(Num(result as f64)));
                 }
-                (Some(Raw(Bool(l))), "-", Some(Raw(Bool(r)))) => {
-                    let result = (*l as i32) - (*r as i32);
-                    trace!("AddBool (L): {} - {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as f64)));
-                }
                 (Some(Raw(Bool(l))), "+", Some(Raw(Num(r)))) => {
                     let result = (*l as i32) + (*r as i32);
                     trace!("AddBool (L): {} + {} => {}", l, r, result);
                     node.reduce(Raw(Num(result as f64)));
                 }
-                (Some(Raw(Bool(l))), "-", Some(Raw(Num(r)))) => {
-                    let result = (*l as i32) - (*r as i32);
-                    trace!("AddBool (L): {} - {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as f64)));
-                }
                 (Some(Raw(Num(l))), "+", Some(Raw(Bool(r)))) => {
                     let result = (*l as i32) + (*r as i32);
                     trace!("AddBool (L): {} + {} => {}", l, r, result);
-                    node.reduce(Raw(Num(result as f64)));
-                }
-                (Some(Raw(Num(l))), "-", Some(Raw(Bool(r)))) => {
-                    let result = (*l as i32) - (*r as i32);
-                    trace!("AddBool (L): {} - {} => {}", l, r, result);
                     node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(Bool(l))), "+", Some(Array(r))) => {
@@ -240,14 +226,10 @@ impl<'a> RuleMut<'a> for AddBool {
                     node.reduce(Raw(Str(result)));
                 }
                 (Some(NaN), "+", Some(Raw(Bool(_))))
-                | (Some(NaN), "-", Some(Raw(Bool(_))))
                 | (Some(Raw(Bool(_))), "+", Some(NaN))
-                | (Some(Raw(Bool(_))), "-", Some(NaN))
                 | (Some(Undefined), "+", Some(Raw(Bool(_))))
-                | (Some(Undefined), "-", Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), "+", Some(Undefined))
-                | (Some(Raw(Bool(_))), "-", Some(Undefined)) => {
-                    trace!("AddBool (L): Any bool +/- NaN or undefined => NaN");
+                | (Some(Raw(Bool(_))), "+", Some(Undefined)) => {
+                    trace!("AddBool (L): Any bool - NaN or undefined => NaN");
                     node.reduce(NaN);
                 }
                 _ => {}
@@ -262,7 +244,7 @@ impl<'a> RuleMut<'a> for AddBool {
 mod tests_js_bool {
     use crate::js::bool::{AddBool, BoolAlgebra, NotBool, ParseBool};
     use crate::js::build_javascript_tree;
-    use crate::js::integer::{ParseInt, PosNeg};
+    use crate::js::integer::{ParseInt, PosNeg, Substract};
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
 
@@ -272,6 +254,7 @@ mod tests_js_bool {
             ParseBool::default(),
             ParseInt::default(),
             ParseString::default(),
+            Substract::default(),
             NotBool::default(),
             BoolAlgebra::default(),
             PosNeg::default(),
