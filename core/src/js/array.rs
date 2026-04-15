@@ -104,35 +104,33 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     return Ok(());
                 }
                 (Some(Array(l)), "-", Some(Raw(Num(r)))) => {
-                    let l = flatten_array(l, None);
-                    trace!("Flatten : {}", l);
-                    if !l.contains(",") {
-                        if let Some(l_num) = l.parse::<f64>().ok() {
-                            let result = l_num - *r;
-                            trace!("AddInt (L): {} - {} = {}", l, r, result);
+                    let l = Array(l.clone()).as_js_num();
+                    match l {
+                        Raw(Num(n)) => {
+                            let result = n - r;
+                            trace!("AddInt (L): {} - {} = {}", n, r, result);
                             node.reduce(Raw(Num(result)));
-                        } else {
+                        }
+                        NaN => {
+                            trace!("AddInt (L): NaN - {} = NaN", r);
                             node.reduce(NaN);
                         }
-                    } else {
-                        trace!("AddInt (L): {} - {} = NaN", l, r);
-                        node.reduce(NaN);
+                        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
                     }
                 }
                 (Some(Raw(Num(l))), "-", Some(Array(r))) => {
-                    let r = flatten_array(r, None);
-                    if !r.contains(",") {
-                        if let Some(r_num) = r.parse::<f64>().ok() {
-                            let result = l - r_num;
-                            trace!("AddInt (L): {} - {} = {}", l, r, result);
+                    let r = Array(r.clone()).as_js_num();
+                    match r {
+                        Raw(Num(n)) => {
+                            let result = l - n;
+                            trace!("AddInt (L): {} - {} = {}", l, n, result);
                             node.reduce(Raw(Num(result)));
-                        } else {
-                            trace!("AddInt (L): {} - {} = NaN", l, r);
+                        }
+                        NaN => {
+                            trace!("AddInt (L): {} - NaN = NaN", l);
                             node.reduce(NaN);
                         }
-                    } else {
-                        trace!("AddInt (L): {} - {} = NaN", l, r);
-                        node.reduce(NaN);
+                        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
                     }
                 }
                 (
@@ -467,15 +465,10 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
 }
 
 fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
-    if arr.len() == 1 {
-        match &arr[0] {
-            Raw(Num(n)) => Some(*n),
-            Raw(Str(s)) => s.parse::<f64>().ok(),
-            Array(inner) => recursive_array_number_extraction(inner),
-            _ => None,
-        }
-    } else {
-        None
+    match Array(arr.clone()).as_js_num() {
+        Raw(Num(n)) => Some(n),
+        NaN => None,
+        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
     }
 }
 

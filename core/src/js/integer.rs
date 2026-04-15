@@ -281,7 +281,11 @@ impl ParseInt {
 }
 
 fn to_int32(value: &JavaScript) -> i32 {
-    let n = js_to_f64(value);
+    let n = match value.as_js_num() {
+        Raw(Num(n)) => n,
+        NaN => f64::NAN,
+        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
+    };
     if !n.is_finite() || n == 0.0 {
         return 0;
     }
@@ -291,35 +295,6 @@ fn to_int32(value: &JavaScript) -> i32 {
 fn digit_value(c: char, radix: u32) -> Option<u32> {
     let d = c.to_digit(36)?;
     if d < radix { Some(d) } else { None }
-}
-
-fn js_to_f64(value: &JavaScript) -> f64 {
-    match value {
-        Raw(Num(n)) => *n,
-        Raw(Bool(b)) => {
-            if *b {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Raw(Str(s)) => {
-            let t = s.trim();
-            if t.is_empty() {
-                0.0
-            } else {
-                t.parse::<f64>().unwrap_or(f64::NAN)
-            }
-        }
-        Undefined => f64::NAN,
-        NaN => f64::NAN,
-        Array(items) => match items.as_slice() {
-            [] => 0.0,
-            [one] => js_to_f64(one),
-            _ => f64::NAN,
-        },
-        _ => f64::NAN,
-    }
 }
 
 /// Infers unary `-` and `+` expressions applied to known values
