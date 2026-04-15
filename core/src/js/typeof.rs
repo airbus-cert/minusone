@@ -1,31 +1,9 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Bytes, Function, NaN, Null, Object, Raw, Regex, Undefined};
-use crate::js::Value::{BigInt, Bool, Num, Str};
+use crate::js::JavaScript::Raw;
+use crate::js::Value::Str;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
-
-impl JavaScript {
-    // If a new type is added, try `typeof ...` in the console
-    pub fn r#typeof(&self) -> &str {
-        match self {
-            Raw(raw) => match raw {
-                Num(_) => "number",
-                Str(_) => "string",
-                Bool(_) => "boolean",
-                BigInt(_) => "bigint",
-            },
-            Array(_) => "object",
-            Regex { .. } => "object",
-            Function { .. } => "function",
-            Undefined => "undefined",
-            NaN => "number",
-            Null => "object", // what ?
-            Bytes(_) => "string",
-            Object { .. } => "object",
-        }
-    }
-}
 
 /// Infer unary typeof calls
 ///
