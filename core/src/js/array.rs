@@ -157,6 +157,36 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     );
                     node.reduce(Raw(Str(combined)));
                 }
+                (Some(Array(left_values)), "+", Some(javascript)) => {
+                    let combined = format!(
+                        "{}{}",
+                        flatten_array(left_values, None),
+                        match javascript {
+                            Raw(Str(s)) => s.clone(),
+                            any => any.to_string(),
+                        }
+                    );
+                    trace!(
+                        "CombineArrays (L): combining array and non-raw => left: {:?}, right: {:?} => '{}'",
+                        left_values, javascript, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                (Some(javascript), "+", Some(Array(right_values))) => {
+                    let combined = format!(
+                        "{}{}",
+                        match javascript {
+                            Raw(Str(s)) => s.clone(),
+                            any => any.to_string(),
+                        },
+                        flatten_array(right_values, None)
+                    );
+                    trace!(
+                        "CombineArrays (L): combining non-raw and array => left: {:?}, right: {:?} => '{}'",
+                        javascript, right_values, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
                 _ => {}
             }
         }
