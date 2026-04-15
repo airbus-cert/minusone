@@ -14,7 +14,12 @@
   languages = {
     python = {
       enable = true;
-      package = pkgs.python3.withPackages (ps: [ ps.pip ]);
+      directory = "crates/pyminusone";
+      venv.enable = true;
+      uv = {
+        enable = true;
+        sync.enable = true;  
+      };
     };
     javascript = {
       enable = true;

@@ -1,5 +1,5 @@
 build:
     maturin build
 
-publish:
-    @echo TODO
+publish: build
+    uv publish target/wheels/*
