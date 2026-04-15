@@ -3,6 +3,7 @@ pub mod b64;
 pub mod backend;
 pub mod bool;
 pub mod comparator;
+mod converter;
 pub mod deadcode;
 pub mod forward;
 pub mod functions;
@@ -18,7 +19,6 @@ mod tests;
 pub mod r#typeof;
 mod utils;
 pub mod var;
-mod converter;
 
 use self::array::*;
 use self::b64::*;
@@ -30,16 +30,16 @@ use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
 use self::objects::object::*;
-use self::r#typeof::*;
 use self::regex::*;
 use self::specials::*;
 use self::string::*;
+use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
-#[cfg(test)]
-use crate::js::linter::Linter;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
+#[cfg(test)]
+use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::HashMap;
@@ -137,7 +137,7 @@ impl_javascript_ruleset!(
     ParseArray,        // Parse arrays
     ParseSpecials,     // Parse specials (undefined, NaN, null)
     ParseObject,       // Parse objects
-    NegInt,            // Infer unary - operations on integers
+    PosNeg,            // Infer unary - operations on integers
     SubAddInt,         // Infer + and - operations on integers
     MultInt,           // Infer *, / and % operations on integers
     PowInt,            // Infer ** operations on integers
@@ -153,10 +153,8 @@ impl_javascript_ruleset!(
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
     StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
     Forward,    // Forward inferred type in the most simple cases
-    StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     ArrayJoin,  // Infer array join calls on literal arrays and reduce them to string literals
-    BoolPlusMinus, // Infer + and - operations on booleans
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals

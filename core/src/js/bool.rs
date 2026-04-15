@@ -268,68 +268,11 @@ impl<'a> RuleMut<'a> for AddBool {
     }
 }
 
-/// Infers unary plus and minus on booleans
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::bool::{BoolPlusMinus, ParseBool};
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = +true; var y = -false;").unwrap();
-/// tree.apply_mut(&mut (ParseBool::default(), BoolPlusMinus::default())).unwrap();
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = 1; var y = 0;");
-/// ```
-#[derive(Default)]
-pub struct BoolPlusMinus;
-
-impl<'a> RuleMut<'a> for BoolPlusMinus {
-    type Language = JavaScript;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() != "unary_expression" {
-            return Ok(());
-        }
-
-        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
-            match (operator.text()?, operand.data()) {
-                ("+", Some(Raw(Bool(b)))) => {
-                    trace!("BoolPlusMinus: reducing + {} to {}", b, *b as i32);
-                    node.reduce(Raw(Num(*b as u8 as f64)));
-                }
-                ("-", Some(Raw(Bool(b)))) => {
-                    let result = (*b as i32) - (*b as i32);
-                    trace!("BoolPlusMinus: reducing - {} to {}", b, result);
-                    node.reduce(Raw(Num(result as f64)));
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests_js_bool {
-    use crate::js::bool::{AddBool, BoolAlgebra, BoolPlusMinus, NotBool, ParseBool};
+    use crate::js::bool::{AddBool, BoolAlgebra, NotBool, ParseBool};
     use crate::js::build_javascript_tree;
-    use crate::js::integer::ParseInt;
+    use crate::js::integer::{ParseInt, PosNeg};
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
 
@@ -341,7 +284,7 @@ mod tests_js_bool {
             ParseString::default(),
             NotBool::default(),
             BoolAlgebra::default(),
-            BoolPlusMinus::default(),
+            PosNeg::default(),
             AddBool::default(),
         ))
         .unwrap();
@@ -383,7 +326,7 @@ mod tests_js_bool {
     fn test_bool_plus_minus() {
         assert_eq!(
             deobfuscate("var x = +true; var y = -false;"),
-            "var x = 1; var y = 0;",
+            "var x = 1; var y = -0;",
         );
     }
 }

@@ -1,12 +1,12 @@
-use std::fmt::Display;
-use log::warn;
-use num::Zero;
-use crate::js::b64::js_bytes_to_string;
-use crate::js::{JavaScript, Value};
 use crate::js::JavaScript::{Array, Bytes, Function, NaN, Null, Object, Raw, Regex, Undefined};
-use crate::js::string::escape_js_string;
 use crate::js::Value::{BigInt, Bool, Num, Str};
-
+use crate::js::array::flatten_array;
+use crate::js::b64::js_bytes_to_string;
+use crate::js::string::escape_js_string;
+use crate::js::{JavaScript, Value};
+use log::warn;
+use num::{ToPrimitive, Zero};
+use std::fmt::Display;
 
 impl Display for JavaScript {
     // If a new type is added, try to put the raw value in the console and see the output
@@ -63,8 +63,70 @@ impl Display for Value {
 }
 
 impl JavaScript {
+    pub fn as_js_num(&self) -> JavaScript {
+        // If a new type is added, try `+...` in the console with different values of that type
+        match self {
+            Raw(raw) => match raw {
+                Num(n) => Raw(Num(*n)),
+                Str(s) => {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        Raw(Num(0.0))
+                    } else if let Ok(n) = trimmed.parse::<f64>() {
+                        Raw(Num(n))
+                    } else if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+                        match u64::from_str_radix(&trimmed[2..], 16) {
+                            Ok(n) => Raw(Num(n as f64)),
+                            Err(_) => NaN,
+                        }
+                    } else if trimmed.starts_with("0b") || trimmed.starts_with("0B") {
+                        match u64::from_str_radix(&trimmed[2..], 2) {
+                            Ok(n) => Raw(Num(n as f64)),
+                            Err(_) => NaN,
+                        }
+                    } else if trimmed.starts_with("0o") || trimmed.starts_with("0O") {
+                        match u64::from_str_radix(&trimmed[2..], 8) {
+                            Ok(n) => Raw(Num(n as f64)),
+                            Err(_) => NaN,
+                        }
+                    } else {
+                        NaN
+                    }
+                }
+                Bool(b) => Raw(Num(if *b { 1.0 } else { 0.0 })),
+                BigInt(b) => {
+                    if b.is_zero() {
+                        Raw(Num(0.0))
+                    } else if let Some(n) = b.to_f64() {
+                        Raw(Num(n))
+                    } else {
+                        // BigInt too big to fit in a f64 becomes Infinity
+                        Raw(Num(f64::INFINITY))
+                    }
+                }
+            },
+            Array(array) => {
+                if array.is_empty() {
+                    Raw(Num(0.0))
+                } else {
+                    match flatten_array(array, None).parse::<f64>() {
+                        Ok(n) => Raw(Num(n)),
+                        Err(_) => NaN,
+                    }
+                }
+            }
+            Regex { .. } => NaN,
+            Function { .. } => NaN,
+            Undefined => NaN,
+            NaN => NaN,
+            Null => Raw(Num(0.0)),
+            Bytes(bytes) => Raw(Str(js_bytes_to_string(bytes))).as_js_num(),
+            Object { .. } => NaN,
+        }
+    }
+
     pub fn as_bool(&self) -> bool {
-        // If a new type is added, try `if(...){console.log(true)}else{console.log(false)}` in the console with different values of that type
+        // If a new type is added, try `!!...` in the console with different values of that type
         match self {
             Raw(raw) => match raw {
                 Num(n) => *n != 0.0 && !n.is_nan(),
@@ -98,7 +160,7 @@ impl JavaScript {
             }
         }
     }
-    
+
     pub fn r#typeof(&self) -> &str {
         // If a new type is added, try `typeof ...` in the console
         match self {
