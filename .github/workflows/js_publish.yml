@@ -1,0 +1,29 @@
+name: Publish minusonejs to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write # Required for OIDC
+  contents: read
+
+jobs:
+  test:
+    runs-on: ["ubuntu-latest"]
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v16
+        with:
+          name: devenv
+      - name: Install devenv.sh
+        run: nix profile install nixpkgs#devenv
+
+      - name: Build minusonejs
+        shell: devenv shell bash -- -e {0}
+        run: just js publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
