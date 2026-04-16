@@ -1,4 +1,5 @@
 use crate::error::MinusOneResult;
+use crate::printer::{Printer, PrinterMode};
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
@@ -6,7 +7,7 @@ use crate::ps::var::{UnusedVar, Var, find_variable_node};
 use crate::ps::{LoopStatus, Powershell};
 use crate::regex::Regex;
 use crate::rule::Rule;
-use crate::tree::Node;
+use crate::tree::{Node, Storage, Tree};
 
 fn escape_string(src: &str) -> String {
     let mut result = String::new();
@@ -454,6 +455,29 @@ impl Linter {
     pub fn set_comment(mut self, comment: bool) -> Self {
         self.comment = comment;
         self
+    }
+}
+
+impl Printer for Linter {
+    type Language = Powershell;
+
+    fn print<S>(&mut self, tree: &Tree<'_, S>, mode: PrinterMode) -> MinusOneResult<String>
+    where
+        S: Storage<Component = Self::Language> + Default,
+    {
+        self.output.clear();
+        self.tab = vec![String::new()];
+        self.is_param_block = false;
+        self.statement_block_tab.clear();
+        self.is_multiline = true;
+        self.new_line_chr = match mode {
+            PrinterMode::Pretty => "\n".to_string(),
+            PrinterMode::Compact => " ".to_string(),
+            PrinterMode::Unchanged => " ".to_string(),
+        };
+
+        tree.apply(self)?;
+        Ok(self.output.trim().to_string())
     }
 }
 

@@ -19,6 +19,7 @@ pub mod debug;
 pub mod engine;
 pub mod error;
 pub mod init;
+pub mod printer;
 pub mod rule;
 pub mod scope;
 pub mod tree;

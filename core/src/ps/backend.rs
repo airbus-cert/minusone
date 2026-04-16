@@ -1,6 +1,7 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::init::Init;
+use crate::printer::PrinterMode;
 use crate::ps;
 use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
@@ -55,11 +56,16 @@ impl DeobfuscationBackend for PowershellBackend {
     fn lint_tree<'a>(
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         tab_chr: &str,
+        mode: PrinterMode,
     ) -> MinusOneResult<String> {
-        let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
-        root.apply(&mut ps_linter_view)?;
+        if mode == PrinterMode::Unchanged {
+            return Ok(root.root()?.text()?.to_string());
+        }
 
-        CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?.clean()
+        let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
+        let linted = crate::printer::code_string_with_mode(&mut ps_linter_view, root, mode)?;
+
+        CleanEngine::<PowershellBackend>::from_source(&linted)?.clean()
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {
