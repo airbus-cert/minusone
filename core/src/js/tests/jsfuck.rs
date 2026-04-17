@@ -42,7 +42,6 @@ pub mod jsfuck_tests {
             CharAt::default(),
             Forward::default(),
             ArrayPlusMinus::default(),
-            PosNeg::default(),
             Concat::default(),
             ConcatFunction::default(),
             Split::default(),
