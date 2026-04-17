@@ -1,5 +1,7 @@
+root := justfile_dir()
+
 build:
     maturin build
 
 publish: build
-    uv publish target/wheels/*
+    uv publish "{{ root }}/target/wheels/*"
