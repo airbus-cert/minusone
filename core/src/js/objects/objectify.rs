@@ -25,6 +25,7 @@ fn function_name_from_source(source: &str) -> String {
 }
 
 fn constructor_name(value: &JavaScript) -> &'static str {
+    // If a new type is added, try `(...)["constructor"]["name"]` in the console
     match value {
         Undefined => "undefined",
         NaN => "Number",

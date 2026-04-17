@@ -281,7 +281,11 @@ impl ParseInt {
 }
 
 fn to_int32(value: &JavaScript) -> i32 {
-    let n = js_to_f64(value);
+    let n = match value.as_js_num() {
+        Raw(Num(n)) => n,
+        NaN => f64::NAN,
+        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
+    };
     if !n.is_finite() || n == 0.0 {
         return 0;
     }
@@ -293,45 +297,16 @@ fn digit_value(c: char, radix: u32) -> Option<u32> {
     if d < radix { Some(d) } else { None }
 }
 
-fn js_to_f64(value: &JavaScript) -> f64 {
-    match value {
-        Raw(Num(n)) => *n,
-        Raw(Bool(b)) => {
-            if *b {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Raw(Str(s)) => {
-            let t = s.trim();
-            if t.is_empty() {
-                0.0
-            } else {
-                t.parse::<f64>().unwrap_or(f64::NAN)
-            }
-        }
-        Undefined => f64::NAN,
-        NaN => f64::NAN,
-        Array(items) => match items.as_slice() {
-            [] => 0.0,
-            [one] => js_to_f64(one),
-            _ => f64::NAN,
-        },
-        _ => f64::NAN,
-    }
-}
-
-/// Infers unary `-` and `+` expressions applied to a known integer, e.g. `-2` becomes `Raw(Num(-2))`.
+/// Infers unary `-` and `+` expressions applied to known values
 ///
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, NegInt};
+/// use minusone::js::integer::{ParseInt, PosNeg};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = -5;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), NegInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), PosNeg::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -339,9 +314,9 @@ fn js_to_f64(value: &JavaScript) -> f64 {
 /// assert_eq!(linter.output, "var x = -5;");
 /// ```
 #[derive(Default)]
-pub struct NegInt;
+pub struct PosNeg;
 
-impl<'a> RuleMut<'a> for NegInt {
+impl<'a> RuleMut<'a> for PosNeg {
     type Language = JavaScript;
 
     fn enter(
@@ -363,35 +338,29 @@ impl<'a> RuleMut<'a> for NegInt {
         }
         if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
             if op.text()? == "-" {
-                if let Some(Raw(Num(n))) = operand.data() {
-                    if *n == f64::INFINITY {
-                        trace!("NegInt (L): -Infinity = -Infinity");
-                        node.reduce(Raw(Num(f64::NEG_INFINITY)));
-                        return Ok(());
-                    }
-                    if *n == f64::NEG_INFINITY {
-                        trace!("NegInt (L): -Infinity = -Infinity");
-                        node.reduce(Raw(Num(f64::INFINITY)));
-                        return Ok(());
-                    }
-
+                if let Some(Raw(BigInt(n))) = operand.data() {
                     let result = -n;
-                    trace!("NegInt (L): -{} = {}", n, result);
-                    node.reduce(Raw(Num(result)));
-                } else if let Some(Raw(BigInt(n))) = operand.data() {
-                    let result = -n;
-                    trace!("NegInt (L): -{}n = {}n", n, result);
+                    trace!("PosNeg (L): -{}n = {}n", n, result);
                     node.reduce(Raw(BigInt(result)));
+                } else if let Some(value) = operand.data() {
+                    let result = match value.as_js_num() {
+                        Raw(Num(n)) => Raw(Num(-n)),
+                        NaN => NaN,
+                        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
+                    };
+                    trace!("PosNeg (L): -{} = {}", value, result);
+                    node.reduce(result);
                 }
             } else if op.text()? == "+" {
-                if let Some(Raw(Num(n))) = operand.data() {
-                    trace!("NegInt (L): +{} = {}", n, n);
-                    node.reduce(Raw(Num(*n)));
-                } else if let Some(Raw(BigInt(n))) = operand.data() {
+                if let Some(Raw(BigInt(n))) = operand.data() {
                     error!(
-                        "NegInt (L): unary + on BigInt is not allowed in JS, but found +{}n. This should crash the JS engine",
+                        "PosNeg (L): unary + on BigInt is not allowed in JS, but found +{}n. This should crash the JS engine",
                         n
                     );
+                } else if let Some(value) = operand.data() {
+                    let result = value.as_js_num();
+                    trace!("PosNeg (L): +{} = {}", value, result);
+                    node.reduce(result);
                 }
             }
         }
@@ -399,16 +368,16 @@ impl<'a> RuleMut<'a> for NegInt {
     }
 }
 
-/// Infers `+` and `-` binary expressions when both operands are known integers.
+/// Infer addition operations on integers
 ///
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, SubAddInt};
+/// use minusone::js::integer::{ParseInt, AddInt};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 1 + 1;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), SubAddInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), AddInt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -416,9 +385,9 @@ impl<'a> RuleMut<'a> for NegInt {
 /// assert_eq!(linter.output, "var x = 2;");
 /// ```
 #[derive(Default)]
-pub struct SubAddInt;
+pub struct AddInt;
 
-impl<'a> RuleMut<'a> for SubAddInt {
+impl<'a> RuleMut<'a> for AddInt {
     type Language = JavaScript;
 
     fn enter(
@@ -496,6 +465,96 @@ impl<'a> RuleMut<'a> for SubAddInt {
                             "AddInt (L): tried to subtract non-BigInt and BigInt: {} - {}n. This should crash the Js engine",
                             l, r
                         );
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Infer substraction operations on any JavaScript values
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::{ParseInt, Substract};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = 1 - 1;").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), Substract::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = 0;");
+/// ```
+#[derive(Default)]
+pub struct Substract;
+
+impl<'a> RuleMut<'a> for Substract {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "binary_expression" {
+            return Ok(());
+        }
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
+            match (left.data(), op.text()?, right.data()) {
+                (Some(Raw(BigInt(l))), "-", Some(r)) => {
+                    if let Raw(BigInt(r)) = r {
+                        let result = l - r;
+                        trace!("Substract (L): {}n - {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "Substract (L): tried to subtract BigInt and non-BigInt: {}n - {}. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "-", Some(Raw(BigInt(r)))) => {
+                    if let Raw(BigInt(l)) = l {
+                        let result = l - r;
+                        trace!("Substract (L): {}n - {}n = {}n", l, r, result);
+                        node.reduce(Raw(BigInt(result)));
+                    } else {
+                        error!(
+                            "Substract (L): tried to subtract non-BigInt and BigInt: {} - {}n. This should crash the Js engine",
+                            l, r
+                        );
+                    }
+                }
+                (Some(l), "-", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("Substract (L): one of the operands is NaN, result is NaN");
+                    }
+
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
+                        let result = l - r;
+                        trace!("Substract (L): {} - {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
+                    } else {
+                        error!(
+                            "Substract (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
+                        );
+                        node.reduce(NaN);
                     }
                 }
                 _ => {}
@@ -1038,8 +1097,9 @@ mod tests_js_integer {
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
-            NegInt::default(),
-            SubAddInt::default(),
+            PosNeg::default(),
+            AddInt::default(),
+            Substract::default(),
             MultInt::default(),
             PowInt::default(),
             ShiftInt::default(),

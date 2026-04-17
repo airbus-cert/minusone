@@ -586,73 +586,6 @@ fn js_to_number_for_from_char_code(value: &JavaScript) -> Option<f64> {
     }
 }
 
-/// Infers unary `+` and `-` on string literals
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, StringPlusMinus};
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = +'42'; var y = -'42';").unwrap();
-/// tree.apply_mut(&mut (ParseString::default(), StringPlusMinus::default())).unwrap();
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = 42; var y = -42;");
-/// ```
-#[derive(Default)]
-pub struct StringPlusMinus;
-
-impl<'a> RuleMut<'a> for StringPlusMinus {
-    type Language = JavaScript;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() != "unary_expression" {
-            return Ok(());
-        }
-
-        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
-            match (operator.text()?, operand.data()) {
-                ("+", Some(Raw(Str(s)))) => {
-                    let result = ParseInt::from_str(s.as_str());
-                    trace!("StringPlusMinus: reducing + '{}' to {}", s, result);
-                    node.reduce(result);
-                }
-                ("-", Some(Raw(Str(s)))) => {
-                    let result = ParseInt::from_str(s.as_str());
-                    if result == NaN {
-                        trace!("StringPlusMinus: reducing NaN");
-                        node.reduce(NaN);
-                        return Ok(());
-                    }
-                    if let Raw(Num(n)) = result {
-                        trace!("StringPlusMinus: reducing -{}", n);
-                        node.reduce(Raw(Num(-n)));
-                    } else {
-                        warn!("StringPlusMinus: cannot parse -{}", result);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-}
-
 /// Infers string concatenation with `+` and reduces them to single string literals
 ///
 /// # Example
@@ -1398,7 +1331,7 @@ mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::{ParseInt, SubAddInt};
+    use crate::js::integer::{ParseInt, PosNeg};
     use crate::js::linter::Linter;
     use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
@@ -1414,7 +1347,7 @@ mod tests_js_string {
             ParseArray::default(),
             ParseRegex::default(),
             Forward::default(),
-            StringPlusMinus::default(),
+            PosNeg::default(),
             CharAt::default(),
             CharCodeAt::default(),
             FromCharCode::default(),
