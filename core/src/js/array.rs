@@ -103,38 +103,6 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     node.reduce(Raw(Str(combined)));
                     return Ok(());
                 }
-                (Some(Array(l)), "-", Some(Raw(Num(r)))) => {
-                    let l = flatten_array(l, None);
-                    trace!("Flatten : {}", l);
-                    if !l.contains(",") {
-                        if let Some(l_num) = l.parse::<f64>().ok() {
-                            let result = l_num - *r;
-                            trace!("AddInt (L): {} - {} = {}", l, r, result);
-                            node.reduce(Raw(Num(result)));
-                        } else {
-                            node.reduce(NaN);
-                        }
-                    } else {
-                        trace!("AddInt (L): {} - {} = NaN", l, r);
-                        node.reduce(NaN);
-                    }
-                }
-                (Some(Raw(Num(l))), "-", Some(Array(r))) => {
-                    let r = flatten_array(r, None);
-                    if !r.contains(",") {
-                        if let Some(r_num) = r.parse::<f64>().ok() {
-                            let result = l - r_num;
-                            trace!("AddInt (L): {} - {} = {}", l, r, result);
-                            node.reduce(Raw(Num(result)));
-                        } else {
-                            trace!("AddInt (L): {} - {} = NaN", l, r);
-                            node.reduce(NaN);
-                        }
-                    } else {
-                        trace!("AddInt (L): {} - {} = NaN", l, r);
-                        node.reduce(NaN);
-                    }
-                }
                 (
                     Some(Array(left_values)),
                     "+",
@@ -186,6 +154,36 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     trace!(
                         "CombineArrays (L): combining raw and array => left: {:?}, right: {:?} => '{}'",
                         raw, right_values, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                (Some(Array(left_values)), "+", Some(javascript)) => {
+                    let combined = format!(
+                        "{}{}",
+                        flatten_array(left_values, None),
+                        match javascript {
+                            Raw(Str(s)) => s.clone(),
+                            any => any.to_string(),
+                        }
+                    );
+                    trace!(
+                        "CombineArrays (L): combining array and non-raw => left: {:?}, right: {:?} => '{}'",
+                        left_values, javascript, combined
+                    );
+                    node.reduce(Raw(Str(combined)));
+                }
+                (Some(javascript), "+", Some(Array(right_values))) => {
+                    let combined = format!(
+                        "{}{}",
+                        match javascript {
+                            Raw(Str(s)) => s.clone(),
+                            any => any.to_string(),
+                        },
+                        flatten_array(right_values, None)
+                    );
+                    trace!(
+                        "CombineArrays (L): combining non-raw and array => left: {:?}, right: {:?} => '{}'",
+                        javascript, right_values, combined
                     );
                     node.reduce(Raw(Str(combined)));
                 }
@@ -467,15 +465,10 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
 }
 
 fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
-    if arr.len() == 1 {
-        match &arr[0] {
-            Raw(Num(n)) => Some(*n),
-            Raw(Str(s)) => s.parse::<f64>().ok(),
-            Array(inner) => recursive_array_number_extraction(inner),
-            _ => None,
-        }
-    } else {
-        None
+    match Array(arr.clone()).as_js_num() {
+        Raw(Num(n)) => Some(n),
+        NaN => None,
+        _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
     }
 }
 
@@ -568,7 +561,7 @@ mod tests_js_array {
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::ParseInt;
+    use crate::js::integer::{ParseInt, Substract};
     use crate::js::linter::Linter;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::CharAt;
@@ -582,6 +575,7 @@ mod tests_js_array {
             ParseArray::default(),
             CombineArrays::default(),
             Forward::default(),
+            Substract::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),

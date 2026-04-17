@@ -3,6 +3,7 @@ pub mod b64;
 pub mod backend;
 pub mod bool;
 pub mod comparator;
+mod converter;
 pub mod deadcode;
 pub mod forward;
 pub mod functions;
@@ -15,6 +16,7 @@ pub mod specials;
 pub mod strategy;
 pub mod string;
 mod tests;
+pub mod r#typeof;
 mod utils;
 pub mod var;
 
@@ -31,6 +33,7 @@ use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
 use self::string::*;
+use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
 use crate::js::JavaScript::*;
@@ -39,10 +42,7 @@ use crate::js::Value::*;
 use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use log::warn;
-use num::Zero;
 use std::collections::HashMap;
-use std::fmt::Display;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -51,28 +51,6 @@ pub enum Value {
     Str(String),
     Bool(bool),
     BigInt(num_bigint::BigInt),
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Num(n) => {
-                    match *n {
-                        f64::INFINITY => "Infinity".to_string(),
-                        f64::NEG_INFINITY => "-Infinity".to_string(),
-                        n => n.to_string(),
-                    }
-                }
-                Str(s) => escape_js_string(s),
-                Bool(true) => "true".to_string(),
-                Bool(false) => "false".to_string(),
-                BigInt(n) => n.to_string() + "n",
-            }
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,6 +68,9 @@ pub enum JavaScript {
     Undefined,
     NaN,
     Null,
+    // Byte is a special type that does not live long, it's used to store the result of `atob` and
+    // `btoa` calls, and it's converted to string when it's used in a string context, but it gets
+    // most of the type converted into a string
     Bytes(Vec<u8>),
     Object {
         map: HashMap<String, JavaScript>,
@@ -111,76 +92,11 @@ impl PartialEq<JavaScript> for &JavaScript {
     }
 }
 
-impl Display for JavaScript {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Raw(v) => write!(f, "{}", v),
-            Array(arr) => {
-                let arr_str = arr
-                    .iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                write!(f, "[{}]", arr_str)
-            }
-            Regex { pattern, flags } => write!(f, "/{}/{}", pattern.replace('/', "\\/"), flags),
-            Function { source, .. } => write!(f, "{}", source),
-            Undefined => write!(f, "undefined"),
-            NaN => write!(f, "NaN"),
-            Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
-            Null => write!(f, "null"),
-            Object { map, .. } => {
-                let obj_str = map
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                write!(f, "{{{}}}", obj_str)
-            }
-        }
-    }
-}
-
 pub struct JavaScriptRuleSet<'a> {
     ruleset: RuleSet<'a, JavaScript>,
 }
 
 impl JavaScript {
-    pub fn as_bool(&self) -> bool {
-        match self {
-            Raw(raw) => match raw {
-                Num(n) => *n != 0.0 && !n.is_nan(),
-                Str(s) => !s.is_empty(),
-                Bool(b) => *b,
-                BigInt(b) => !b.is_zero(),
-            },
-
-            Array(_) => true,
-            Regex { .. } => true,
-            Function { .. } => true,
-            Undefined => false,
-            NaN => false,
-            Null => false,
-            Bytes(bytes) => {
-                if bytes.is_empty() {
-                    return false;
-                }
-
-                for byte in bytes {
-                    if *byte != 0 {
-                        return true;
-                    }
-                }
-
-                false
-            }
-            Object { .. } => {
-                warn!("Objects don't really have a boolean value in Js, falling back to true");
-                true
-            }
-        }
-    }
-
     pub fn is_string(&self) -> bool {
         matches!(self, Raw(Str(_)))
     }
@@ -221,8 +137,9 @@ impl_javascript_ruleset!(
     ParseArray,        // Parse arrays
     ParseSpecials,     // Parse specials (undefined, NaN, null)
     ParseObject,       // Parse objects
-    NegInt,            // Infer unary - operations on integers
-    SubAddInt,         // Infer + and - operations on integers
+    PosNeg,            // Infer unary - operations on integers
+    AddInt,            // Infer addition operations on integers
+    Substract,         // Infer subtraction operations on any JavaScript value
     MultInt,           // Infer *, / and % operations on integers
     PowInt,            // Infer ** operations on integers
     ShiftInt,          // Infer <<, >> and >>> operations on integers
@@ -230,17 +147,15 @@ impl_javascript_ruleset!(
     ObjectField,       // Track objects field assignments and access
     NotBool,           // Infer unary ! operations on booleans
     BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
-    AddBool,           // Infer + and - operations on booleans
+    AddBool,           // Infer boolean addition operations
     CombineArrays,     // Infer + operations on two arrays
     CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
     StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
     Forward,    // Forward inferred type in the most simple cases
-    StringPlusMinus, // Infer + and - unary operations on string literals
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     ArrayJoin,  // Infer array join calls on literal arrays and reduce them to string literals
-    BoolPlusMinus, // Infer + and - operations on booleans
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
@@ -255,7 +170,8 @@ impl_javascript_ruleset!(
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==
     LooseEq,        // Infer strict equality == and !=
-    CmpOrd          // Infer comparison operators <, >, <= and >=
+    CmpOrd,         // Infer comparison operators <, >, <= and >=
+    Typeof          // Infer typeof calls
 );
 
 impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {

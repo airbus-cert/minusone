@@ -166,7 +166,7 @@ mod tests {
     use crate::js::forward::Forward;
     use crate::js::functions::fncall::FnCall;
     use crate::js::functions::function::ParseFunction;
-    use crate::js::integer::{ParseInt, SubAddInt};
+    use crate::js::integer::{AddInt, ParseInt};
     use crate::js::linter::Linter;
     use crate::js::objects::object::{ObjectField, ParseObject};
     use crate::js::strategy::JavaScriptStrategy;
@@ -179,7 +179,7 @@ mod tests {
         tree.apply_mut_with_strategy(
             &mut (
                 ParseInt::default(),
-                SubAddInt::default(),
+                AddInt::default(),
                 ParseFunction::default(),
             ),
             JavaScriptStrategy::default(),
@@ -202,7 +202,7 @@ mod tests {
         tree.apply_mut_with_strategy(
             &mut (
                 ParseInt::default(),
-                SubAddInt::default(),
+                AddInt::default(),
                 ParseFunction::default(),
                 ParseObject::default(),
                 Forward::default(),
