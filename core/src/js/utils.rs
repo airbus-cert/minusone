@@ -30,3 +30,29 @@ pub fn get_positional_arguments(args: Option<Node<JavaScript>>) -> Vec<Node<Java
     }
     positional_args
 }
+
+pub fn is_write_target(node: &Node<JavaScript>) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        match parent.kind() {
+            "variable_declarator" => {
+                if let Some(name_child) = parent.child(0) {
+                    return node.start_abs() >= name_child.start_abs()
+                        && node.end_abs() <= name_child.end_abs();
+                }
+            }
+            "assignment_expression" | "augmented_assignment_expression" => {
+                if let Some(left) = parent.child(0) {
+                    return node.start_abs() >= left.start_abs()
+                        && node.end_abs() <= left.end_abs();
+                }
+            }
+            "update_expression" => return true,
+            _ => {}
+        }
+
+        current = parent.parent();
+    }
+
+    false
+}

@@ -170,8 +170,9 @@ impl_javascript_ruleset!(
     B64,            // Infer atob & btoa calls and reduce them to string literals
     BufferFrom,     // Infer deterministic Buffer.from(...) calls
     BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
-    BufferToString, // Infer Buffer.toString(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites
+    BufferIndex,    // Infer deterministic Buffer[index] reads/writes
+    BufferToString, // Infer Buffer.toString(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==
