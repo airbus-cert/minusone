@@ -104,6 +104,99 @@ impl<'a> RuleMut<'a> for BufferFrom {
     }
 }
 
+/// Infers `Buffer.alloc(...)` static calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::string::ParseString;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::node::buffer::{BufferAlloc, BufferToString};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = Buffer.alloc(4, 'AB').toString();").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(),
+///     ParseString::default(),
+///     ParseArray::default(),
+///     BufferAlloc::default(),
+///     BufferToString::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'ABAB';");
+/// ```
+#[derive(Default)]
+pub struct BufferAlloc;
+
+impl<'a> RuleMut<'a> for BufferAlloc {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "alloc" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Ok(object_name) = object.text() else {
+            return Ok(());
+        };
+        if object_name != "Buffer" {
+            return Ok(());
+        }
+
+        let args = get_positional_arguments(view.named_child("arguments"));
+        let Some(size) = args
+            .first()
+            .and_then(|arg| arg.data())
+            .and_then(js_to_positive_number)
+        else {
+            return Ok(());
+        };
+
+        let fill = args.get(1).and_then(|arg| arg.data());
+        let fill_encoding = args.get(2).and_then(|arg| arg.data());
+        let Some(bytes) = alloc_bytes(size, fill, fill_encoding) else {
+            return Ok(());
+        };
+
+        trace!(
+            "BufferAlloc: reducing Buffer.alloc(...) to Buffer of {} bytes",
+            bytes.len()
+        );
+        node.reduce(Buffer(bytes));
+        Ok(())
+    }
+}
+
 /// Infers toString calls on Buffer objects
 ///
 /// # Example
@@ -175,13 +268,13 @@ impl<'a> RuleMut<'a> for BufferToString {
         let start = args
             .get(1)
             .and_then(|arg| arg.data())
-            .and_then(js_to_positive_index)
+            .and_then(js_to_positive_number)
             .unwrap_or(0)
             .min(len);
         let end = args
             .get(2)
             .and_then(|arg| arg.data())
-            .and_then(js_to_positive_index)
+            .and_then(js_to_positive_number)
             .unwrap_or(len)
             .min(len);
         let slice = if end < start {
@@ -236,6 +329,47 @@ fn decode_base64(input: &str, alphabet: &alphabet::Alphabet) -> Option<Vec<u8>> 
     GeneralPurpose::new(alphabet, config).decode(input).ok()
 }
 
+fn alloc_bytes(
+    size: usize,
+    fill: Option<&JavaScript>,
+    fill_encoding: Option<&JavaScript>,
+) -> Option<Vec<u8>> {
+    if size == 0 {
+        return Some(vec![]);
+    }
+
+    let pattern = match fill {
+        None | Some(JavaScript::Undefined) => vec![0],
+        Some(Raw(Str(s))) => {
+            let encoding = match fill_encoding {
+                None | Some(JavaScript::Undefined) => "utf8".to_string(),
+                Some(Raw(Str(enc))) => normalize_encoding(enc),
+                _ => return None,
+            };
+            decode_string_for_encoding(s, &encoding)?
+        }
+        Some(Buffer(bytes)) => bytes.clone(),
+        Some(Array(values)) => array_node_to_bytes(values),
+        Some(value) => {
+            let number = match value.as_js_num() {
+                Raw(Num(n)) => n,
+                _ => return None,
+            };
+            vec![to_uint8(number)]
+        }
+    };
+
+    if pattern.is_empty() {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(size);
+    for i in 0..size {
+        out.push(pattern[i % pattern.len()]);
+    }
+    Some(out)
+}
+
 fn encode_buffer_slice(bytes: &[u8], encoding: &str) -> Option<String> {
     match encoding {
         "utf8" => Some(String::from_utf8_lossy(bytes).to_string()),
@@ -255,7 +389,7 @@ fn encode_buffer_slice(bytes: &[u8], encoding: &str) -> Option<String> {
     }
 }
 
-fn js_to_positive_index(value: &JavaScript) -> Option<usize> {
+fn js_to_positive_number(value: &JavaScript) -> Option<usize> {
     let number = match
 
     value.as_js_num() {
@@ -347,7 +481,7 @@ mod tests {
     use crate::js::forward::Forward;
     use crate::js::integer::{ParseInt, PosNeg};
     use crate::js::linter::Linter;
-    use crate::js::node::buffer::{BufferFrom, BufferToString};
+    use crate::js::node::buffer::{BufferAlloc, BufferFrom, BufferToString};
     use crate::js::string::ParseString;
     use crate::js::var::Var;
 
@@ -358,6 +492,7 @@ mod tests {
             ParseString::default(),
             ParseArray::default(),
             BufferFrom::default(),
+            BufferAlloc::default(),
             PosNeg::default(),
             Forward::default(),
             Var::default(),
@@ -466,6 +601,26 @@ mod tests {
         assert_eq!(
             deobfuscate("const buf2 = Buffer.from('tést'); console.log(buf2.toString(undefined, 0, 3));"),
             "const buf2 = Buffer.from('74c3a97374', 'hex'); console.log('té');"
+        );
+    }
+
+    #[test]
+    fn test_buffer_alloc() {
+        assert_eq!(
+            deobfuscate("console.log(Buffer.alloc(10).toString('hex'));"),
+            "console.log('00000000000000000000');"
+        );
+        assert_eq!(
+            deobfuscate("console.log(Buffer.alloc(10, 1).toString('hex'));"),
+            "console.log('01010101010101010101');"
+        );
+        assert_eq!(
+            deobfuscate("console.log(Buffer.alloc(10, 'ABC').toString('hex'));"),
+            "console.log('41424341424341424341');"
+        );
+        assert_eq!(
+            deobfuscate("console.log(Buffer.alloc(10, 'ABC').toString());"),
+            "console.log('ABCABCABCA');"
         );
     }
 }
