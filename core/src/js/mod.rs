@@ -169,6 +169,7 @@ impl_javascript_ruleset!(
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
     BufferFrom,     // Infer deterministic Buffer.from(...) calls
+    BufferToString, // Infer Buffer.toString(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values

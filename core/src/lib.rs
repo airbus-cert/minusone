@@ -1,5 +1,5 @@
 #![feature(macro_metavar_expr)]
-
+#![feature(str_from_utf16_endian)]
 extern crate base64;
 extern crate colored;
 extern crate core;

@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Null, Object, Raw, Regex};
+use crate::js::JavaScript::{Array, Buffer, Null, Object, Raw, Regex};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
@@ -885,6 +885,7 @@ impl<'a> RuleMut<'a> for ToString {
             Some(Raw(Bool(b))) => b.to_string(),
             Some(Raw(Str(s))) => s.to_string(),
             Some(Array(array)) => flatten_array(array, None),
+            Some(Buffer(_)) => return Ok(()),
             _ => {
                 warn!("ToString: unsupported object type for toString call");
                 return Ok(());

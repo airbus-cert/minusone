@@ -9,6 +9,23 @@ use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use base64::{Engine, alphabet};
 use log::trace;
 
+/// Infers `Buffer.from(...)` static calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::node::buffer::BufferFrom;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = Buffer.from([65, 66, 67]);").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), ParseArray::default(), BufferFrom::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = Buffer.from('414243', 'hex');");
+/// ```
 #[derive(Default)]
 pub struct BufferFrom;
 
@@ -87,6 +104,108 @@ impl<'a> RuleMut<'a> for BufferFrom {
     }
 }
 
+/// Infers toString calls on Buffer objects
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::array::ParseArray;
+/// use minusone::js::node::buffer::{BufferFrom, BufferToString};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = Buffer.from([65, 66, 67]).toString();").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseInt::default(), ParseArray::default(), BufferFrom::default(), BufferToString::default()
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'ABC';");
+/// ```
+#[derive(Default)]
+pub struct BufferToString;
+
+impl<'a> RuleMut<'a> for BufferToString {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "toString" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Buffer(bytes)) = object.data() else {
+            return Ok(());
+        };
+
+        let args = get_positional_arguments(view.named_child("arguments"));
+        let encoding = match args.first().and_then(|arg| arg.data()) {
+            None | Some(JavaScript::Undefined) => "utf8".to_string(),
+            Some(Raw(Str(s))) => normalize_encoding(s),
+            _ => return Ok(()),
+        };
+
+        let len = bytes.len();
+        let start = args
+            .get(1)
+            .and_then(|arg| arg.data())
+            .and_then(js_to_positive_index)
+            .unwrap_or(0)
+            .min(len);
+        let end = args
+            .get(2)
+            .and_then(|arg| arg.data())
+            .and_then(js_to_positive_index)
+            .unwrap_or(len)
+            .min(len);
+        let slice = if end < start {
+            &bytes[0..0]
+        } else {
+            &bytes[start..end]
+        };
+
+        let Some(decoded) = encode_buffer_slice(slice, &encoding) else {
+            return Ok(());
+        };
+
+        trace!(
+            "BufferToString: reducing Buffer.toString('{}', {}, {}) to '{}'",
+            encoding,
+            start,
+            end,
+            decoded
+        );
+        node.reduce(Raw(Str(decoded)));
+        Ok(())
+    }
+}
+
 fn normalize_encoding(input: &str) -> String {
     input.trim().to_ascii_lowercase().replace(['-', '_'], "")
 }
@@ -115,6 +234,43 @@ fn decode_base64(input: &str, alphabet: &alphabet::Alphabet) -> Option<Vec<u8>> 
         .with_decode_padding_mode(DecodePaddingMode::Indifferent)
         .with_decode_allow_trailing_bits(true);
     GeneralPurpose::new(alphabet, config).decode(input).ok()
+}
+
+fn encode_buffer_slice(bytes: &[u8], encoding: &str) -> Option<String> {
+    match encoding {
+        "utf8" => Some(String::from_utf8_lossy(bytes).to_string()),
+        "hex" => Some(bytes.iter().map(|b| format!("{:02x}", b)).collect()),
+        "ascii" => Some(bytes.iter().map(|b| (b & 0x7f) as char).collect()),
+        "latin1" | "binary" => Some(bytes.iter().map(|b| *b as char).collect()),
+        "base64" => Some(GeneralPurpose::new(&alphabet::STANDARD, GeneralPurposeConfig::new()).encode(bytes)),
+        "base64url" => Some(
+            GeneralPurpose::new(
+                &alphabet::URL_SAFE,
+                GeneralPurposeConfig::new().with_encode_padding(false),
+            )
+                .encode(bytes),
+        ),
+        "utf16le" | "ucs2" => Some(String::from_utf16le_lossy(bytes)),
+        _ => None,
+    }
+}
+
+fn js_to_positive_index(value: &JavaScript) -> Option<usize> {
+    let number = match
+
+    value.as_js_num() {
+        Raw(Num(n)) => n,
+        _ => f64::NAN,
+    };
+
+    if !number.is_finite() {
+        return None;
+    }
+    if number <= 0.0 {
+        return None
+    }
+
+    Some(number as usize)
 }
 
 fn decode_hex_node_style(input: &str) -> Vec<u8> {
@@ -188,10 +344,12 @@ fn to_uint8(n: f64) -> u8 {
 mod tests {
     use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
     use crate::js::integer::{ParseInt, PosNeg};
     use crate::js::linter::Linter;
-    use crate::js::node::buffer::BufferFrom;
+    use crate::js::node::buffer::{BufferFrom, BufferToString};
     use crate::js::string::ParseString;
+    use crate::js::var::Var;
 
     fn deobfuscate(input: &str) -> String {
         let mut tree = build_javascript_tree(input).unwrap();
@@ -201,8 +359,11 @@ mod tests {
             ParseArray::default(),
             BufferFrom::default(),
             PosNeg::default(),
+            Forward::default(),
+            Var::default(),
+            BufferToString::default(),
         ))
-        .unwrap();
+            .unwrap();
 
         let mut linter = Linter::default();
         tree.apply(&mut linter).unwrap();
@@ -270,6 +431,41 @@ mod tests {
         assert_eq!(
             deobfuscate("const b = Buffer.from('A', 'utf16le');"),
             "const b = Buffer.from('4100', 'hex');"
+        );
+    }
+
+    #[test]
+    fn test_buffer_to_string_utf8_and_range() {
+        assert_eq!(
+            deobfuscate(
+                "const buf1 = Buffer.from('abcdefghijklmnopqrstuvwxyz'); console.log(buf1.toString('utf8'));"
+            ),
+            "const buf1 = Buffer.from('6162636465666768696a6b6c6d6e6f707172737475767778797a', 'hex'); console.log('abcdefghijklmnopqrstuvwxyz');"
+        );
+
+        assert_eq!(
+            deobfuscate(
+                "const buf1 = Buffer.from('abcdefghijklmnopqrstuvwxyz'); console.log(buf1.toString('utf8', 0, 5));"
+            ),
+            "const buf1 = Buffer.from('6162636465666768696a6b6c6d6e6f707172737475767778797a', 'hex'); console.log('abcde');"
+        );
+    }
+
+    #[test]
+    fn test_buffer_to_string_hex_and_undefined_encoding() {
+        assert_eq!(
+            deobfuscate("const buf2 = Buffer.from('tést'); console.log(buf2.toString('hex'));"),
+            "const buf2 = Buffer.from('74c3a97374', 'hex'); console.log('74c3a97374');"
+        );
+
+        assert_eq!(
+            deobfuscate("const buf2 = Buffer.from('tést'); console.log(buf2.toString('utf8', 0, 3));"),
+            "const buf2 = Buffer.from('74c3a97374', 'hex'); console.log('té');"
+        );
+
+        assert_eq!(
+            deobfuscate("const buf2 = Buffer.from('tést'); console.log(buf2.toString(undefined, 0, 3));"),
+            "const buf2 = Buffer.from('74c3a97374', 'hex'); console.log('té');"
         );
     }
 }
