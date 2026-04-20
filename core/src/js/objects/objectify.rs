@@ -41,6 +41,7 @@ fn constructor_name(value: &JavaScript) -> &'static str {
         Bytes(_) => "String",
         Null => "null",
         Object { .. } => "Object",
+        Buffer(_) => "Buffer",
     }
 }
 
