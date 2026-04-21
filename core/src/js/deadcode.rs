@@ -342,6 +342,64 @@ impl RemoveUnusedVar {
         }
     }
 
+    fn for_statement_to_while_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "for_statement" {
+            return None;
+        }
+
+        // `for (;;) {}` -> [empty_statement, empty_statement]
+        // `for (; a != b;) {}` -> [empty_statement, binary_expression, empty_statement]
+        let mut in_header = false;
+        let mut header_parts: Vec<Node<()>> = Vec::new();
+        let mut body: Option<Node<()>> = None;
+
+        for child in node.iter() {
+            match child.kind() {
+                "(" => in_header = true,
+                ")" => in_header = false,
+                _ => {
+                    if in_header {
+                        header_parts.push(child);
+                    } else if body.is_none()
+                        && (child.kind().ends_with("statement") || child.kind() == "statement_block")
+                    {
+                        body = Some(child);
+                    }
+                }
+            }
+        }
+
+        let condition_text = match header_parts.as_slice() {
+            // for (;;) { ... }
+            [first, second]
+                if first.kind() == "empty_statement" && second.kind() == "empty_statement" =>
+            {
+                "true".to_string()
+            }
+            // for (; cond;) { ... }
+            [first, condition] if first.kind() == "empty_statement" => {
+                condition.text().ok()?.trim().to_string()
+            }
+            [first, condition, third]
+                if first.kind() == "empty_statement"
+                    && (third.kind() == "empty_statement" || third.kind() == ";") =>
+            {
+                condition.text().ok()?.trim().to_string()
+            }
+            _ => return None,
+        };
+
+        let body = body?;
+        let body_text = body.text().ok()?.trim();
+        let condition_text = if condition_text.is_empty() {
+            "true".to_string()
+        } else {
+            condition_text
+        };
+
+        Some(format!("while ({}) {}", condition_text, body_text))
+    }
+
     fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
         let start = node.start_abs().min(self.source.len());
         let end = node.end_abs().min(self.source.len());
@@ -495,6 +553,13 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                             }
                         }
                     }
+                }
+            }
+            "for_statement" => {
+                if let Some(replacement) = Self::for_statement_to_while_text(node) {
+                    trace!("RemoveUnusedVar: rewriting for loop to while loop");
+                    self.replace_node_with_text(node, &replacement)?;
+                    return Ok(false);
                 }
             }
             _ => {}
@@ -685,6 +750,38 @@ mod test_js_deadcode {
         assert_eq!(
             clean("for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"),
             "for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_for_ever_to_while_true() {
+        assert_eq!(
+            clean("for (;;) { console.log('x'); }"),
+            "while (true) { console.log('x'); }"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_for_condition_only_to_while() {
+        assert_eq!(
+            clean("for (; a != b;) { x(); }"),
+            "while (a != b) { x(); }"
+        );
+    }
+
+    #[test]
+    fn test_keep_for_with_increment() {
+        assert_eq!(
+            clean("for (; i < 10; i++) { x(); }"),
+            "for (; i < 10; i++) { x(); }"
+        );
+    }
+
+    #[test]
+    fn test_keep_for_with_initializer() {
+        assert_eq!(
+            clean("for (let i = 0; i < 10;) { x(); }"),
+            "for (let i = 0; i < 10;) { x(); }"
         );
     }
 
