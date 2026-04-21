@@ -70,11 +70,308 @@ fn is_write_target<T>(node: &Node<T>) -> bool {
     false
 }
 
+/// Rewrites canonical `for` loops with empty init/increment into equivalent `while` loops.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::ForToWhile;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "for (; a != b;) { console.log(a); }";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut for_to_while = ForToWhile::default();
+/// tree.apply(&mut for_to_while).unwrap();
+///
+/// assert_eq!(for_to_while.clear().unwrap(), "while (a != b) { console.log(a); }");
+/// ```
+#[derive(Default)]
+pub struct ForToWhile {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl ForToWhile {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn for_statement_to_while_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "for_statement" {
+            return None;
+        }
+
+        // `for (;;) {}` -> [empty_statement, empty_statement]
+        // `for (; a != b;) {}` -> [empty_statement, binary_expression, empty_statement]
+        let mut in_header = false;
+        let mut header_parts: Vec<Node<()>> = Vec::new();
+        let mut body: Option<Node<()>> = None;
+
+        for child in node.iter() {
+            match child.kind() {
+                "(" => in_header = true,
+                ")" => in_header = false,
+                _ => {
+                    if in_header {
+                        header_parts.push(child);
+                    } else if body.is_none()
+                        && (child.kind().ends_with("statement")
+                            || child.kind() == "statement_block")
+                    {
+                        body = Some(child);
+                    }
+                }
+            }
+        }
+
+        let condition_text = match header_parts.as_slice() {
+            [first, second]
+                if first.kind() == "empty_statement" && second.kind() == "empty_statement" =>
+            {
+                "true".to_string()
+            }
+            [first, condition] if first.kind() == "empty_statement" => {
+                condition.text().ok()?.trim().to_string()
+            }
+            [first, condition, third]
+                if first.kind() == "empty_statement"
+                    && (third.kind() == "empty_statement" || third.kind() == ";") =>
+            {
+                condition.text().ok()?.trim().to_string()
+            }
+            _ => return None,
+        };
+
+        let body = body?;
+        let body_text = body.text().ok()?.trim();
+        let condition_text = if condition_text.is_empty() {
+            "true".to_string()
+        } else {
+            condition_text
+        };
+
+        Some(format!("while ({}) {}", condition_text, body_text))
+    }
+}
+
+impl<'a> Rule<'a> for ForToWhile {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "for_statement" => {
+                if let Some(replacement) = Self::for_statement_to_while_text(node) {
+                    trace!("ForToWhile: rewriting for loop to while loop");
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
+/// Rewrites bracket member calls with static string keys into dot member calls.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::BracketCallToMember;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "console['log']('minusone');";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut bracket_to_member = BracketCallToMember::default();
+/// tree.apply(&mut bracket_to_member).unwrap();
+///
+/// assert_eq!(bracket_to_member.clear().unwrap(), "console.log('minusone');");
+/// ```
+#[derive(Default)]
+pub struct BracketCallToMember {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl BracketCallToMember {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn parse_simple_string_literal(text: &str) -> Option<String> {
+        let bytes = text.as_bytes();
+        if bytes.len() < 2 {
+            return None;
+        }
+
+        let quote = *bytes.first()?;
+        if (quote != b'\'' && quote != b'"') || *bytes.last()? != quote {
+            return None;
+        }
+
+        let inner = &text[1..text.len() - 1];
+        if inner.contains('\\') {
+            return None;
+        }
+
+        Some(inner.to_string())
+    }
+
+    fn is_ascii_identifier_name(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+
+        if !(first == '_' || first == '$' || first.is_ascii_alphabetic()) {
+            return false;
+        }
+
+        chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
+    }
+
+    fn bracket_call_to_member_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "call_expression" {
+            return None;
+        }
+
+        let callee = node.child(0)?;
+        if callee.kind() != "subscript_expression" {
+            return None;
+        }
+
+        let object = callee.child(0)?;
+        let index = callee.named_child("index").or_else(|| callee.child(2))?;
+        if index.kind() != "string" {
+            return None;
+        }
+
+        let key = Self::parse_simple_string_literal(index.text().ok()?.trim())?;
+        if !Self::is_ascii_identifier_name(&key) {
+            return None;
+        }
+
+        let args = node.child(1)?;
+        if args.kind() != "arguments" {
+            return None;
+        }
+
+        Some(format!(
+            "{}.{}{}",
+            object.text().ok()?.trim(),
+            key,
+            args.text().ok()?.trim()
+        ))
+    }
+}
+
+impl<'a> Rule<'a> for BracketCallToMember {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "call_expression" => {
+                if let Some(replacement) = Self::bracket_call_to_member_text(node) {
+                    trace!("BracketCallToMember: rewriting bracket call to member call");
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 /// Removes variable declarations, assignments, and function declarations where the declared name is never read.
 ///
 /// # Example
 /// ```
-/// use minusone::js::deadcode::{UnusedVar, RemoveUnusedVar};
+/// use minusone::js::post_process::{UnusedVar, RemoveUnused};
 /// use minusone::js::build_javascript_tree_for_storage;
 /// use minusone::tree::EmptyStorage;
 ///
@@ -84,19 +381,19 @@ fn is_write_target<T>(node: &Node<T>) -> bool {
 /// let mut unused = UnusedVar::default();
 /// tree.apply(&mut unused).unwrap();
 ///
-/// let mut remover = RemoveUnusedVar::new(unused);
+/// let mut remover = RemoveUnused::new(unused);
 /// tree.apply(&mut remover).unwrap();
 ///
 /// assert_eq!(remover.clear().unwrap(), "console.log('world');");
 /// ```
-pub struct RemoveUnusedVar {
+pub struct RemoveUnused {
     rule: UnusedVar,
     source: String,
     output: String,
     last_index: usize,
 }
 
-impl RemoveUnusedVar {
+impl RemoveUnused {
     pub fn new(rule: UnusedVar) -> Self {
         Self {
             rule,
@@ -245,73 +542,6 @@ impl RemoveUnusedVar {
         Some(parts.join(" "))
     }
 
-    fn parse_simple_string_literal(text: &str) -> Option<String> {
-        let bytes = text.as_bytes();
-        if bytes.len() < 2 {
-            return None;
-        }
-
-        let quote = *bytes.first()?;
-        if (quote != b'\'' && quote != b'"') || *bytes.last()? != quote {
-            return None;
-        }
-
-        let inner = &text[1..text.len() - 1];
-        if inner.contains('\\') {
-            return None;
-        }
-
-        Some(inner.to_string())
-    }
-
-    fn is_ascii_identifier_name(name: &str) -> bool {
-        let mut chars = name.chars();
-        let Some(first) = chars.next() else {
-            return false;
-        };
-
-        if !(first == '_' || first == '$' || first.is_ascii_alphabetic()) {
-            return false;
-        }
-
-        chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
-    }
-
-    // TODO: when first pass system will be added, apply this at first so we only have to deal with "classic" call in all the rules. This will reduce the code A LOT.
-    fn bracket_call_to_member_text(node: &Node<()>) -> Option<String> {
-        if node.kind() != "call_expression" {
-            return None;
-        }
-
-        let callee = node.child(0)?;
-        if callee.kind() != "subscript_expression" {
-            return None;
-        }
-
-        let object = callee.child(0)?;
-        let index = callee.named_child("index").or_else(|| callee.child(2))?;
-        if index.kind() != "string" {
-            return None;
-        }
-
-        let key = Self::parse_simple_string_literal(index.text().ok()?.trim())?;
-        if !Self::is_ascii_identifier_name(&key) {
-            return None;
-        }
-
-        let args = node.child(1)?;
-        if args.kind() != "arguments" {
-            return None;
-        }
-
-        Some(format!(
-            "{}.{}{}",
-            object.text().ok()?.trim(),
-            key,
-            args.text().ok()?.trim()
-        ))
-    }
-
     fn is_literal_bool(node: &Node<()>, expected: bool) -> bool {
         let kind = if expected { "true" } else { "false" };
 
@@ -342,64 +572,6 @@ impl RemoveUnusedVar {
         }
     }
 
-    fn for_statement_to_while_text(node: &Node<()>) -> Option<String> {
-        if node.kind() != "for_statement" {
-            return None;
-        }
-
-        // `for (;;) {}` -> [empty_statement, empty_statement]
-        // `for (; a != b;) {}` -> [empty_statement, binary_expression, empty_statement]
-        let mut in_header = false;
-        let mut header_parts: Vec<Node<()>> = Vec::new();
-        let mut body: Option<Node<()>> = None;
-
-        for child in node.iter() {
-            match child.kind() {
-                "(" => in_header = true,
-                ")" => in_header = false,
-                _ => {
-                    if in_header {
-                        header_parts.push(child);
-                    } else if body.is_none()
-                        && (child.kind().ends_with("statement") || child.kind() == "statement_block")
-                    {
-                        body = Some(child);
-                    }
-                }
-            }
-        }
-
-        let condition_text = match header_parts.as_slice() {
-            // for (;;) { ... }
-            [first, second]
-                if first.kind() == "empty_statement" && second.kind() == "empty_statement" =>
-            {
-                "true".to_string()
-            }
-            // for (; cond;) { ... }
-            [first, condition] if first.kind() == "empty_statement" => {
-                condition.text().ok()?.trim().to_string()
-            }
-            [first, condition, third]
-                if first.kind() == "empty_statement"
-                    && (third.kind() == "empty_statement" || third.kind() == ";") =>
-            {
-                condition.text().ok()?.trim().to_string()
-            }
-            _ => return None,
-        };
-
-        let body = body?;
-        let body_text = body.text().ok()?.trim();
-        let condition_text = if condition_text.is_empty() {
-            "true".to_string()
-        } else {
-            condition_text
-        };
-
-        Some(format!("while ({}) {}", condition_text, body_text))
-    }
-
     fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
         let start = node.start_abs().min(self.source.len());
         let end = node.end_abs().min(self.source.len());
@@ -425,7 +597,7 @@ impl RemoveUnusedVar {
     }
 }
 
-impl<'a> Rule<'a> for RemoveUnusedVar {
+impl<'a> Rule<'a> for RemoveUnused {
     type Language = ();
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
@@ -433,13 +605,6 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
             "program" => {
                 self.source = node.text()?.to_string();
                 self.last_index = 0;
-            }
-            "call_expression" => {
-                if let Some(replacement) = Self::bracket_call_to_member_text(node) {
-                    trace!("RemoveUnusedVar: rewriting bracket call to member call");
-                    self.replace_node_with_text(node, &replacement)?;
-                    return Ok(false);
-                }
             }
             // var x = ...; / let x = ...; / const x = ...;
             "variable_declaration" | "lexical_declaration" => {
@@ -555,13 +720,6 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                     }
                 }
             }
-            "for_statement" => {
-                if let Some(replacement) = Self::for_statement_to_while_text(node) {
-                    trace!("RemoveUnusedVar: rewriting for loop to while loop");
-                    self.replace_node_with_text(node, &replacement)?;
-                    return Ok(false);
-                }
-            }
             _ => {}
         }
         Ok(true)
@@ -581,10 +739,21 @@ mod test_js_deadcode {
     fn clean(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
 
+        let mut for_to_while = ForToWhile::default();
+        tree.apply(&mut for_to_while).unwrap();
+        let rewritten = for_to_while.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut bracket_to_member = BracketCallToMember::default();
+        tree.apply(&mut bracket_to_member).unwrap();
+        let rewritten = bracket_to_member.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+
         let mut unused = UnusedVar::default();
         tree.apply(&mut unused).unwrap();
 
-        let mut remover = RemoveUnusedVar::new(unused);
+        let mut remover = RemoveUnused::new(unused);
         tree.apply(&mut remover).unwrap();
         remover.clear().unwrap()
     }
@@ -763,10 +932,7 @@ mod test_js_deadcode {
 
     #[test]
     fn test_rewrite_for_condition_only_to_while() {
-        assert_eq!(
-            clean("for (; a != b;) { x(); }"),
-            "while (a != b) { x(); }"
-        );
+        assert_eq!(clean("for (; a != b;) { x(); }"), "while (a != b) { x(); }");
     }
 
     #[test]

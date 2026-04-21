@@ -1,6 +1,6 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
-use crate::js::deadcode::{RemoveUnusedVar, UnusedVar};
+use crate::js::post_process::{BracketCallToMember, ForToWhile, RemoveUnused, UnusedVar};
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
     JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
@@ -96,12 +96,25 @@ impl CleanBackend for JavaScriptBackend {
                 i + 1,
                 current.len()
             );
+
+            if i == 0 {
+                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+                let mut for_to_while = ForToWhile::default();
+                tree.apply(&mut for_to_while)?;
+                current = for_to_while.clear()?;
+
+                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+                let mut bracket_to_member = BracketCallToMember::default();
+                tree.apply(&mut bracket_to_member)?;
+                current = bracket_to_member.clear()?;
+            }
+
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
             let mut rule = UnusedVar::default();
             tree.apply(&mut rule)?;
 
-            let mut clean_view = RemoveUnusedVar::new(rule);
+            let mut clean_view = RemoveUnused::new(rule);
             tree.apply(&mut clean_view)?;
             let next = clean_view.clear()?;
 
