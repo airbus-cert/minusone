@@ -5,16 +5,17 @@ use crate::tree::Node;
 
 pub fn method_name(callee: &Node<JavaScript>) -> Option<String> {
     match callee.kind() {
+        "member_expression" => callee
+            .named_child("property")
+            .and_then(|p| p.text().ok().map(|s| s.to_string())),
+        // compatibility fallback for dynamic bracket calls that were already inferred to strings
         "subscript_expression" => {
             let index = callee.named_child("index")?;
             match index.data() {
                 Some(Raw(Str(s))) => Some(s.clone()),
-                _ => index.text().ok().map(|s| s.to_string()),
+                _ => None,
             }
         }
-        "member_expression" => callee
-            .named_child("property")
-            .and_then(|p| p.text().ok().map(|s| s.to_string())),
         _ => None,
     }
 }

@@ -347,7 +347,6 @@ mod tests {
     use crate::js::var::Var;
 
     fn deobfuscate(input: &str) -> String {
-        // todo: same method on other js tests with logic scopes
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut_with_strategy(
             &mut (
