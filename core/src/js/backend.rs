@@ -15,7 +15,45 @@ impl DeobfuscationBackend for JavaScriptBackend {
     type Language = JavaScript;
 
     fn remove_extra(src: &str) -> MinusOneResult<String> {
-        remove_javascript_extra(src)
+        // remove comments and other non-code nodes
+        let mut current = remove_javascript_extra(src)?;
+
+        // remove obvious dead code
+        let mut i = 0;
+        loop {
+            i += 1;
+            trace!(
+                "Pre-clean pass iteration {}: current code length = {}",
+                i,
+                current.len()
+            );
+
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+
+            let mut rule = UnusedVar::default();
+            tree.apply(&mut rule)?;
+
+            let mut clean_view = RemoveUnused::new(rule);
+            tree.apply(&mut clean_view)?;
+            let next = clean_view.clear()?;
+
+            if next == current {
+                current = next;
+                break;
+            }
+
+            current = next;
+        }
+
+        // simplify bracket calls to member expressions
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut bracket_to_member = BracketCallToMember::default();
+            tree.apply(&mut bracket_to_member)?;
+            current = bracket_to_member.clear()?;
+        }
+
+        Ok(current)
     }
 
     fn build_deob_tree<'a>(
@@ -89,25 +127,15 @@ impl CleanBackend for JavaScriptBackend {
     fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String> {
         let mut current = root.root()?.text()?.to_string();
 
-        // re-run deadcode elimination until no more nodes are removed, this handles cascading cases
-        for i in 0..16 {
+        // remove remaining dead code
+        let mut i = 0;
+        loop {
+            i += 1;
             trace!(
-                "Clean pass iteration {}: current code length = {}",
-                i + 1,
+                "Post-lean pass iteration {}: current code length = {}",
+                i,
                 current.len()
             );
-
-            if i == 0 {
-                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-                let mut for_to_while = ForToWhile::default();
-                tree.apply(&mut for_to_while)?;
-                current = for_to_while.clear()?;
-
-                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-                let mut bracket_to_member = BracketCallToMember::default();
-                tree.apply(&mut bracket_to_member)?;
-                current = bracket_to_member.clear()?;
-            }
 
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
@@ -119,11 +147,18 @@ impl CleanBackend for JavaScriptBackend {
             let next = clean_view.clear()?;
 
             if next == current {
-                return Ok(next);
+                current = next;
+                break;
             }
 
             current = next;
         }
+
+        // simplify some for loops to while loops
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+        let mut for_to_while = ForToWhile::default();
+        tree.apply(&mut for_to_while)?;
+        current = for_to_while.clear()?;
 
         Ok(current)
     }
