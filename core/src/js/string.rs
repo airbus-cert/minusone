@@ -148,6 +148,8 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("includes", string_builtin_includes),
     ("indexOf", string_builtin_index_of),
     ("lastIndexOf", string_builtin_last_index_of),
+    ("padStart", string_builtin_pad_start),
+    ("padEnd", string_builtin_pad_end),
 ];
 
 #[derive(Default)]
@@ -343,6 +345,50 @@ fn string_builtin_last_index_of(input: &str, args: &[JavaScript]) -> Option<Java
         .rfind(&to_find)
         .map(|i| i as f64)
         .unwrap_or(-1.0))))
+}
+
+fn string_builtin_pad(input: &str, args: &[JavaScript], pad_start: bool) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let target_length = match args.first()? {
+        Raw(Num(n)) if n.is_finite() && *n >= 0.0 => *n as usize,
+        _ => 0,
+    };
+
+    let pad_string = match args.get(1) {
+        None => " ".to_string(),
+        Some(Raw(Str(s))) => s.clone(),
+        Some(Array(a)) => flatten_array(a, None),
+        Some(js) => js.to_string(),
+    };
+
+    if input.len() >= target_length {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let padding_needed = target_length - input.len();
+    match pad_string.as_str() {
+        "" => Some(Raw(Str(input.to_string()))),
+        _ => {
+            let repeated_pad =
+                pad_string.repeat((padding_needed + pad_string.len() - 1) / pad_string.len());
+            let final_pad = &repeated_pad[..padding_needed];
+            if pad_start {
+                Some(Raw(Str(format!("{}{}", final_pad, input))))
+            } else {
+                Some(Raw(Str(format!("{}{}", input, final_pad))))
+            }
+        }
+    }
+}
+fn string_builtin_pad_start(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_pad(input, args, true)
+}
+
+fn string_builtin_pad_end(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_pad(input, args, false)
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1372,6 +1418,23 @@ mod tests_js_string {
             deobfuscate("var x = '123123'.lastIndexOf([]);"),
             "var x = 6;"
         );
+    }
+
+    #[test]
+    fn test_pad() {
+        assert_eq!(
+            deobfuscate("var x = '123'.padStart(5, '0');"),
+            "var x = '00123';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.padEnd(5, '0');"),
+            "var x = '12300';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.padStart(5);"),
+            "var x = '  123';"
+        );
+        assert_eq!(deobfuscate("var x = '123'.padEnd(5);"), "var x = '123  ';");
     }
 
     #[test]
