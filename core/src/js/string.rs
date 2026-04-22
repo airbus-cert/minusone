@@ -149,6 +149,9 @@ fn unescaped_js_string(s: &str) -> String {
 /// - `str.substring(start, [end])`
 /// - `str.toLowerCase()`
 /// - `str.toUpperCase()`
+/// - `str.trim()`
+/// - `str.trimStart()`
+/// - `str.trimEnd()`
 /// - `str.split(separator, limit)`
 /// - `str.replace(searchValue, replaceValue)`
 /// - `str.replaceAll(searchValue, replaceValue)`
@@ -175,8 +178,19 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("repeat", string_builtin_repeat),
     ("slice", string_builtin_slice),
     ("substring", string_builtin_substring),
-    ("toLowerCase", string_builtin_to_lower_case),
-    ("toUpperCase", string_builtin_to_upper_case),
+    ("toLowerCase", |input, _| {
+        Some(Raw(Str(input.to_lowercase())))
+    }),
+    ("toUpperCase", |input, _| {
+        Some(Raw(Str(input.to_uppercase())))
+    }),
+    ("trim", |input, _| Some(Raw(Str(input.trim().to_string())))),
+    ("trimStart", |input, _| {
+        Some(Raw(Str(input.trim_start().to_string())))
+    }),
+    ("trimEnd", |input, _| {
+        Some(Raw(Str(input.trim_end().to_string())))
+    }),
 ];
 
 #[derive(Default)]
@@ -519,14 +533,6 @@ pub fn string_builtin_substring(input: &str, args: &[JavaScript]) -> Option<Java
 
     let end = end.min(input.len());
     Some(Raw(Str(input[start..end].to_string())))
-}
-
-fn string_builtin_to_lower_case(input: &str, _args: &[JavaScript]) -> Option<JavaScript> {
-    Some(Raw(Str(input.to_lowercase())))
-}
-
-fn string_builtin_to_upper_case(input: &str, _args: &[JavaScript]) -> Option<JavaScript> {
-    Some(Raw(Str(input.to_uppercase())))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1567,6 +1573,23 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("var x = 'ABC'.toLowerCase();"),
             "var x = 'abc';"
+        );
+    }
+
+    #[test]
+    fn test_trim() {
+        assert_eq!(deobfuscate("var x = '  abc  '.trim();"), "var x = 'abc';");
+        assert_eq!(
+            deobfuscate("var x = '\\t\\nabc\\n\\t'.trim();"),
+            "var x = 'abc';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '  abc  '.trimStart();"),
+            "var x = 'abc  ';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '  abc  '.trimEnd();"),
+            "var x = '  abc';"
         );
     }
 
