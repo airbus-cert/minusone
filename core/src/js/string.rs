@@ -146,6 +146,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("startsWith", string_builtin_start_with),
     ("endsWith", string_builtin_end_with),
     ("includes", string_builtin_includes),
+    ("indexOf", string_builtin_index_of),
 ];
 
 #[derive(Default)]
@@ -278,11 +279,6 @@ fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScr
         any => any.to_string(),
     };
 
-    println!(
-        "string_builtin_start_with: checking if '{}' starts with '{}'",
-        input, to_find
-    );
-
     Some(Raw(Bool(input.starts_with(&to_find))))
 }
 
@@ -296,11 +292,6 @@ fn string_builtin_end_with(input: &str, args: &[JavaScript]) -> Option<JavaScrip
         Array(a) => flatten_array(a, None),
         any => any.to_string(),
     };
-
-    println!(
-        "string_builtin_end_with: checking if '{}' starts with '{}'",
-        input, to_find
-    );
 
     Some(Raw(Bool(input.ends_with(&to_find))))
 }
@@ -316,12 +307,24 @@ fn string_builtin_includes(input: &str, args: &[JavaScript]) -> Option<JavaScrip
         any => any.to_string(),
     };
 
-    println!(
-        "string_builtin_includes: checking if '{}' starts with '{}'",
-        input, to_find
-    );
-
     Some(Raw(Bool(input.contains(&to_find))))
+}
+
+fn string_builtin_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(0.0)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Num(input
+        .find(&to_find)
+        .map(|i| i as f64)
+        .unwrap_or(-1.0))))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1308,6 +1311,16 @@ mod tests_js_string {
         assert_eq!(deobfuscate("var x = '123'.includes([1]);"), "var x = true;");
         assert_eq!(deobfuscate("var x = '123'.includes('');"), "var x = true;");
         assert_eq!(deobfuscate("var x = '123'.includes([]);"), "var x = true;");
+    }
+
+    #[test]
+    fn test_index_of() {
+        assert_eq!(deobfuscate("var x = '123'.indexOf('3');"), "var x = 2;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf('2');"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf('4');"), "var x = -1;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf([1]);"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf('');"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf([]);"), "var x = 0;");
     }
 
     #[test]
