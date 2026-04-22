@@ -171,6 +171,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("padEnd", string_builtin_pad_end),
     ("repeat", string_builtin_repeat),
     ("slice", string_builtin_slice),
+    ("substring", string_builtin_substring),
 ];
 
 #[derive(Default)]
@@ -461,6 +462,53 @@ fn string_builtin_slice(input: &str, args: &[JavaScript]) -> Option<JavaScript> 
     };
 
     if start >= end || start >= input.len() {
+        return Some(Raw(Str(String::new())));
+    }
+
+    let end = end.min(input.len());
+    Some(Raw(Str(input[start..end].to_string())))
+}
+
+/// In JS substring is the same as slice, but it's not in the spec... If a param is NaN or negative,
+/// it fallbacks to 0 and if start is > that end, it swaps the args instead of returning an empty
+/// string. I don't understand why they made it like this, but here we are...
+pub fn string_builtin_substring(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let mut start = match args.first()?.as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => 0,
+    };
+
+    let mut end = match args.get(1) {
+        None => len,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as isize,
+            _ => len,
+        },
+    };
+
+    if start < 0 {
+        start = 0;
+    }
+    if end < 0 {
+        end = 0;
+    }
+    if end > len {
+        end = len;
+    }
+    if start > end {
+        std::mem::swap(&mut start, &mut end);
+    }
+
+    let start = start as usize;
+    let end = end as usize;
+
+    if start >= input.len() {
         return Some(Raw(Str(String::new())));
     }
 
@@ -1540,6 +1588,42 @@ mod tests_js_string {
         assert_eq!(deobfuscate("var x = 'abcdef'.slice(10);"), "var x = '';");
         assert_eq!(
             deobfuscate("var x = 'abcdef'.slice();"),
+            "var x = 'abcdef';"
+        );
+    }
+
+    #[test]
+    fn test_substring() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(1, 4);"),
+            "var x = 'bcd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(4, 1);"),
+            "var x = 'bcd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(2);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(-3);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(-4, -1);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(2, 1);"),
+            "var x = 'b';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(10);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring();"),
             "var x = 'abcdef';"
         );
     }
