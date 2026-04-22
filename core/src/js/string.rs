@@ -142,6 +142,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("replaceAll", string_builtin_replace_all),
     ("link", string_builtin_link),
     ("anchor", string_builtin_anchor),
+    ("codePointAt", string_builtin_code_point_at),
 ];
 
 #[derive(Default)]
@@ -238,6 +239,18 @@ fn string_builtin_char_at(input: &str, args: &[JavaScript]) -> Option<JavaScript
     }
 
     Some(Raw(Str(chars[index as usize].to_string())))
+}
+
+fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let index = js_index_from_optional_arg(args.first());
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len() as i64;
+
+    if index < 0 || index >= len {
+        return Some(Undefined);
+    }
+
+    Some(Raw(Num(chars[index as usize] as u32 as f64)))
 }
 
 fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
@@ -1146,6 +1159,24 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("var x = String['fromCharCode'](65, 66, 67);"),
             "var x = 'ABC';"
+        );
+    }
+
+    #[test]
+    fn test_code_point_at() {
+        assert_eq!(deobfuscate("var x = 'abc'.codePointAt(1);"), "var x = 98;");
+        assert_eq!(deobfuscate("var x = 'abc'.codePointAt();"), "var x = 97;");
+        assert_eq!(
+            deobfuscate("var x = '☃★♲'.codePointAt(1);"),
+            "var x = 9733;"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.codePointAt(-1);"),
+            "var x = undefined;"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.codePointAt(3);"),
+            "var x = undefined;"
         );
     }
 
