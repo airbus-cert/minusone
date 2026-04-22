@@ -143,6 +143,8 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("link", string_builtin_link),
     ("anchor", string_builtin_anchor),
     ("codePointAt", string_builtin_code_point_at),
+    ("startsWith", string_builtin_start_with),
+    ("endsWith", string_builtin_end_with),
 ];
 
 #[derive(Default)]
@@ -262,6 +264,44 @@ fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
             _ => 0,
         },
     }
+}
+
+fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Bool(false)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    println!(
+        "string_builtin_start_with: checking if '{}' starts with '{}'",
+        input, to_find
+    );
+
+    Some(Raw(Bool(input.starts_with(&to_find))))
+}
+
+fn string_builtin_end_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Bool(false)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    println!(
+        "string_builtin_start_with: checking if '{}' starts with '{}'",
+        input, to_find
+    );
+
+    Some(Raw(Bool(input.ends_with(&to_find))))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1199,6 +1239,42 @@ mod tests_js_string {
             deobfuscate("var x = 'b' + 'a' + +'a' + 'a'"),
             "var x = 'baNaNa'"
         );
+    }
+
+    #[test]
+    fn test_start_with() {
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith('1');"),
+            "var x = true;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith('2');"),
+            "var x = false;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith([1]);"),
+            "var x = true;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith('');"),
+            "var x = true;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith([]);"),
+            "var x = true;"
+        );
+    }
+
+    #[test]
+    fn test_end_with() {
+        assert_eq!(deobfuscate("var x = '123'.endsWith('3');"), "var x = true;");
+        assert_eq!(
+            deobfuscate("var x = '123'.endsWith('2');"),
+            "var x = false;"
+        );
+        assert_eq!(deobfuscate("var x = '123'.endsWith([3]);"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.endsWith('');"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.endsWith([]);"), "var x = true;");
     }
 
     #[test]
