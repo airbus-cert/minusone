@@ -564,7 +564,7 @@ mod tests_js_array {
     use crate::js::integer::{ParseInt, Substract};
     use crate::js::linter::Linter;
     use crate::js::specials::AddSubSpecials;
-    use crate::js::string::CharAt;
+    use crate::js::string::BracketCharAt;
     use crate::js::string::ParseString;
 
     fn deobfuscate(input: &str) -> String {
@@ -579,7 +579,7 @@ mod tests_js_array {
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),
-            CharAt::default(),
+            BracketCharAt::default(),
         ))
         .unwrap();
 
