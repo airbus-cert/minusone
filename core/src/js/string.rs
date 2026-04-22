@@ -145,6 +145,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("codePointAt", string_builtin_code_point_at),
     ("startsWith", string_builtin_start_with),
     ("endsWith", string_builtin_end_with),
+    ("includes", string_builtin_includes),
 ];
 
 #[derive(Default)]
@@ -297,11 +298,30 @@ fn string_builtin_end_with(input: &str, args: &[JavaScript]) -> Option<JavaScrip
     };
 
     println!(
-        "string_builtin_start_with: checking if '{}' starts with '{}'",
+        "string_builtin_end_with: checking if '{}' starts with '{}'",
         input, to_find
     );
 
     Some(Raw(Bool(input.ends_with(&to_find))))
+}
+
+fn string_builtin_includes(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Bool(false)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    println!(
+        "string_builtin_includes: checking if '{}' starts with '{}'",
+        input, to_find
+    );
+
+    Some(Raw(Bool(input.contains(&to_find))))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1275,6 +1295,19 @@ mod tests_js_string {
         assert_eq!(deobfuscate("var x = '123'.endsWith([3]);"), "var x = true;");
         assert_eq!(deobfuscate("var x = '123'.endsWith('');"), "var x = true;");
         assert_eq!(deobfuscate("var x = '123'.endsWith([]);"), "var x = true;");
+    }
+
+    #[test]
+    fn test_includes() {
+        assert_eq!(deobfuscate("var x = '123'.includes('3');"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.includes('2');"), "var x = true;");
+        assert_eq!(
+            deobfuscate("var x = '123'.includes('4');"),
+            "var x = false;"
+        );
+        assert_eq!(deobfuscate("var x = '123'.includes([1]);"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.includes('');"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.includes([]);"), "var x = true;");
     }
 
     #[test]
