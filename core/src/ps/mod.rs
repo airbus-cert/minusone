@@ -6,7 +6,7 @@ use crate::ps::cast::{Cast, CastNull};
 use crate::ps::foreach::{ForEach, PSItemInferrator};
 use crate::ps::forward::Forward;
 use crate::ps::hash::ParseHash;
-use crate::ps::integer::{AddInt, MultDivMod, ParseInt};
+use crate::ps::integer::{AddInt, MultInt, ParseInt};
 use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
 use crate::ps::linter::RemoveComment;
 use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
@@ -151,7 +151,7 @@ impl_powershell_ruleset!(
     Forward,      // Special rule that will forward inferred value in case the node is transparent
     ParseInt,     // Parse integer
     AddInt,       // +, - operations on integer
-    MultDivMod,      // *, / operations on integer
+    MultInt,      // *, / operations on integer
     ParseString,  // Parse string token, including multiline strings
     ConcatString, // String concatenation operation
     Cast,         // cast operation, like [char]0x65
