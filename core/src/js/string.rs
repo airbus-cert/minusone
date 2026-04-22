@@ -146,6 +146,9 @@ fn unescaped_js_string(s: &str) -> String {
 /// - `str.padEnd(targetLength, [padString])`
 /// - `str.repeat(count)`
 /// - `str.slice(start, [end])`
+/// - `str.substring(start, [end])`
+/// - `str.toLowerCase()`
+/// - `str.toUpperCase()`
 /// - `str.split(separator, limit)`
 /// - `str.replace(searchValue, replaceValue)`
 /// - `str.replaceAll(searchValue, replaceValue)`
@@ -172,6 +175,8 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("repeat", string_builtin_repeat),
     ("slice", string_builtin_slice),
     ("substring", string_builtin_substring),
+    ("toLowerCase", string_builtin_to_lower_case),
+    ("toUpperCase", string_builtin_to_upper_case),
 ];
 
 #[derive(Default)]
@@ -514,6 +519,14 @@ pub fn string_builtin_substring(input: &str, args: &[JavaScript]) -> Option<Java
 
     let end = end.min(input.len());
     Some(Raw(Str(input[start..end].to_string())))
+}
+
+fn string_builtin_to_lower_case(input: &str, _args: &[JavaScript]) -> Option<JavaScript> {
+    Some(Raw(Str(input.to_lowercase())))
+}
+
+fn string_builtin_to_upper_case(input: &str, _args: &[JavaScript]) -> Option<JavaScript> {
+    Some(Raw(Str(input.to_uppercase())))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1542,6 +1555,18 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("var x = '123123'.lastIndexOf([]);"),
             "var x = 6;"
+        );
+    }
+
+    #[test]
+    fn to_upper_or_lower_case() {
+        assert_eq!(
+            deobfuscate("var x = 'abc'.toUpperCase();"),
+            "var x = 'ABC';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'ABC'.toLowerCase();"),
+            "var x = 'abc';"
         );
     }
 
