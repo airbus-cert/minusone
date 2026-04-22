@@ -605,32 +605,27 @@ impl<'a> RuleMut<'a> for MultInt {
         }
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
-                (Some(Raw(Num(l))), "*", Some(Raw(Num(r)))) => {
+                (Some(Raw(BigInt(l))), "*", Some(Raw(BigInt(r)))) => {
                     let result = l * r;
-                    trace!("MultInt (L): {} * {} = {}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(BigInt(l))), "*", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
-                        let result = l * r;
-                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to multiply BigInt and non-BigInt: {}n * {}. This should crash the Js engine",
-                            l, r
-                        );
+                (Some(l), "*", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("Substract (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
                     }
-                }
-                (Some(l), "*", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
+
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l * r;
-                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultInt (L): {} * {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to multiply non-BigInt and BigInt: {} * {}n. This should crash the Js engine",
-                            l, r
+                            "MultInt (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
@@ -1087,6 +1082,7 @@ impl<'a> RuleMut<'a> for BitwiseInt {
 
 #[cfg(test)]
 mod tests_js_integer {
+    use crate::js::array::ParseArray;
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
@@ -1097,6 +1093,7 @@ mod tests_js_integer {
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
+            ParseArray::default(),
             PosNeg::default(),
             AddInt::default(),
             Substract::default(),
@@ -1176,6 +1173,14 @@ mod tests_js_integer {
         assert_eq!(deobfuscate("var x = 10 / 2;"), "var x = 5;");
         assert_eq!(deobfuscate("var x = 10 % 3;"), "var x = 1;");
         assert_eq!(deobfuscate("var x = 10 * 2 / 5 % 2;"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_wierd_mult_div_mod_int() {
+        assert_eq!(deobfuscate("var x = '3' * [4];"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = '10' / [2];"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = '10' % [3];"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = '10' * [2] / 5 % 2;"), "var x = 0;");
     }
 
     #[test]
