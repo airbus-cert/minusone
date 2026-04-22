@@ -132,6 +132,24 @@ fn unescaped_js_string(s: &str) -> String {
 }
 
 /// Centralized dispatcher for string literal builtins.
+///
+/// This includes :
+/// - `str.at(n)`
+/// - `str.charAt(n)`
+/// - `str.codePointAt(n)`
+/// - `str.startsWith(substring)`
+/// - `str.endsWith(substring)`
+/// - `str.includes(substring)`
+/// - `str.indexOf(substring)`
+/// - `str.lastIndexOf(substring)`
+/// - `str.padStart(targetLength, [padString])`
+/// - `str.padEnd(targetLength, [padString])`
+/// - `str.repeat(count)`
+/// - `str.split(separator, limit)`
+/// - `str.replace(searchValue, replaceValue)`
+/// - `str.replaceAll(searchValue, replaceValue)`
+/// - `str.link(url)`   _(deprecated but still supported)_
+/// - `str.anchor(name)`   _(deprecated but still supported)_
 type StringBuiltinHandler = fn(&str, &[JavaScript]) -> Option<JavaScript>;
 
 const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
@@ -150,6 +168,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("lastIndexOf", string_builtin_last_index_of),
     ("padStart", string_builtin_pad_start),
     ("padEnd", string_builtin_pad_end),
+    ("repeat", string_builtin_repeat),
 ];
 
 #[derive(Default)]
@@ -389,6 +408,23 @@ fn string_builtin_pad_start(input: &str, args: &[JavaScript]) -> Option<JavaScri
 
 fn string_builtin_pad_end(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
     string_builtin_pad(input, args, false)
+}
+
+fn string_builtin_repeat(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let count = match args.first()? {
+        Raw(Num(n)) if n.is_finite() && *n >= 0.0 => *n,
+        _ => return None,
+    };
+
+    if count < 0.0 {
+        error!(
+            "Repeat: negative repeat count {} should crash the JS runtime, treating as empty string. This should crash the engine, skipping.",
+            count
+        );
+        return None;
+    }
+
+    Some(Raw(Str(input.repeat(count as usize))))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1435,6 +1471,16 @@ mod tests_js_string {
             "var x = '  123';"
         );
         assert_eq!(deobfuscate("var x = '123'.padEnd(5);"), "var x = '123  ';");
+    }
+
+    #[test]
+    fn test_repeat() {
+        assert_eq!(
+            deobfuscate("var x = 'abc'.repeat(3);"),
+            "var x = 'abcabcabc';"
+        );
+        assert_eq!(deobfuscate("var x = 'abc'.repeat(0);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abc'.repeat(1.5);"), "var x = 'abc';");
     }
 
     #[test]
