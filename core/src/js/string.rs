@@ -145,6 +145,7 @@ fn unescaped_js_string(s: &str) -> String {
 /// - `str.padStart(targetLength, [padString])`
 /// - `str.padEnd(targetLength, [padString])`
 /// - `str.repeat(count)`
+/// - `str.slice(start, [end])`
 /// - `str.split(separator, limit)`
 /// - `str.replace(searchValue, replaceValue)`
 /// - `str.replaceAll(searchValue, replaceValue)`
@@ -169,6 +170,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("padStart", string_builtin_pad_start),
     ("padEnd", string_builtin_pad_end),
     ("repeat", string_builtin_repeat),
+    ("slice", string_builtin_slice),
 ];
 
 #[derive(Default)]
@@ -425,6 +427,45 @@ fn string_builtin_repeat(input: &str, args: &[JavaScript]) -> Option<JavaScript>
     }
 
     Some(Raw(Str(input.repeat(count as usize))))
+}
+
+fn string_builtin_slice(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let start = match args.first()?.as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => 0,
+    };
+
+    let end = match args.get(1) {
+        None => len,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as isize,
+            _ => len,
+        },
+    };
+
+    let start = if start < 0 {
+        (len + start).max(0) as usize
+    } else {
+        start as usize
+    };
+    let end = if end < 0 {
+        (len + end).max(0) as usize
+    } else {
+        end as usize
+    };
+
+    if start >= end || start >= input.len() {
+        return Some(Raw(Str(String::new())));
+    }
+
+    let end = end.min(input.len());
+    Some(Raw(Str(input[start..end].to_string())))
 }
 
 fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1481,6 +1522,26 @@ mod tests_js_string {
         );
         assert_eq!(deobfuscate("var x = 'abc'.repeat(0);"), "var x = '';");
         assert_eq!(deobfuscate("var x = 'abc'.repeat(1.5);"), "var x = 'abc';");
+    }
+
+    #[test]
+    fn test_slice() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.slice(1, 4);"),
+            "var x = 'bcd';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(2);"), "var x = 'cdef';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(-3);"), "var x = 'def';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.slice(-4, -1);"),
+            "var x = 'cde';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(2, 1);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(10);"), "var x = '';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.slice();"),
+            "var x = 'abcdef';"
+        );
     }
 
     #[test]
