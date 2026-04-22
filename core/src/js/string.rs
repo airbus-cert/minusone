@@ -147,6 +147,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("endsWith", string_builtin_end_with),
     ("includes", string_builtin_includes),
     ("indexOf", string_builtin_index_of),
+    ("lastIndexOf", string_builtin_last_index_of),
 ];
 
 #[derive(Default)]
@@ -312,7 +313,7 @@ fn string_builtin_includes(input: &str, args: &[JavaScript]) -> Option<JavaScrip
 
 fn string_builtin_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
     if args.is_empty() {
-        return Some(Raw(Num(0.0)));
+        return Some(Raw(Num(-1.0)));
     }
 
     let to_find = match args.first()? {
@@ -323,6 +324,23 @@ fn string_builtin_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScrip
 
     Some(Raw(Num(input
         .find(&to_find)
+        .map(|i| i as f64)
+        .unwrap_or(-1.0))))
+}
+
+fn string_builtin_last_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(-1.0)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Num(input
+        .rfind(&to_find)
         .map(|i| i as f64)
         .unwrap_or(-1.0))))
 }
@@ -1320,7 +1338,40 @@ mod tests_js_string {
         assert_eq!(deobfuscate("var x = '123'.indexOf('4');"), "var x = -1;");
         assert_eq!(deobfuscate("var x = '123'.indexOf([1]);"), "var x = 0;");
         assert_eq!(deobfuscate("var x = '123'.indexOf('');"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf();"), "var x = -1;");
         assert_eq!(deobfuscate("var x = '123'.indexOf([]);"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_last_index_of() {
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('3');"),
+            "var x = 5;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('2');"),
+            "var x = 4;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('4');"),
+            "var x = -1;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf([1]);"),
+            "var x = 3;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('');"),
+            "var x = 6;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf();"),
+            "var x = -1;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf([]);"),
+            "var x = 6;"
+        );
     }
 
     #[test]
