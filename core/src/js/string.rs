@@ -1129,6 +1129,76 @@ impl<'a> RuleMut<'a> for Replace {
     }
 }
 
+/// Infers `.link(s)` and `.anchor(s)` calls on strings and reduces them to anchor HTML strings.
+#[derive(Default)]
+pub struct StringDynamicTag;
+
+impl<'a> RuleMut<'a> for StringDynamicTag {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "link" && method != "anchor" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+        let tag_content = match positional_args.first().and_then(|a| a.data()) {
+            None => "undefined".to_string(),
+            Some(Raw(Str(s))) => s.clone(),
+            Some(js) => js.to_string(),
+        };
+
+        let result = match method.as_str() {
+            "link" => format!(
+                r#"<a href="{}">{}</a>"#,
+                tag_content.replace('"', "&quot;"),
+                input
+            ),
+            "anchor" => format!(
+                r#"<a name="{}">{}</a>"#,
+                tag_content.replace('"', "&quot;"),
+                input
+            ),
+            _ => unreachable!(),
+        };
+        trace!("Link: reducing link call on '{}' => '{}'", input, result);
+        node.reduce(Raw(Str(result)));
+        Ok(())
+    }
+}
+
 fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
     match separator {
         None => vec![input.to_string()],
@@ -1164,6 +1234,7 @@ mod tests_js_string {
             StringConstructor::default(),
             Concat::default(),
             Split::default(),
+            StringDynamicTag::default(),
             Replace::default(),
             GetArrayElement::default(),
             ToString::default(),
@@ -1365,6 +1436,34 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'a,b,c'.replace(/,/, '');"),
             "var x = 'ab,c';"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_tags() {
+        assert_eq!(
+            deobfuscate_string("var x = 'minusone'.link('https://minusone.skyblue.team/');"),
+            "var x = '<a href=\"https://minusone.skyblue.team/\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'minusone'.anchor('minusone');"),
+            "var x = '<a name=\"minusone\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'minusone'.link();"),
+            "var x = '<a href=\"undefined\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'minusone'.anchor();"),
+            "var x = '<a name=\"undefined\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'minusone'['link']('https://minusone.skyblue.team/');"),
+            "var x = '<a href=\"https://minusone.skyblue.team/\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate_string("var x = 'minusone'.link('\"');"),
+            "var x = '<a href=\"&quot;\">minusone</a>';"
         );
     }
 }
