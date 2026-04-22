@@ -140,7 +140,7 @@ impl_javascript_ruleset!(
     PosNeg,            // Infer unary - operations on integers
     AddInt,            // Infer addition operations on integers
     Substract,         // Infer subtraction operations on any JavaScript value
-    MultInt,           // Infer *, / and % operations on integers
+    MultDivMod,           // Infer *, / and % operations on integers
     PowInt,            // Infer ** operations on integers
     ShiftInt,          // Infer <<, >> and >>> operations on integers
     BitwiseInt,        // Infer &, |, ^ and ~ operations on integers
