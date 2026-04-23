@@ -896,6 +896,124 @@ impl<'a> Rule<'a> for InlineIife {
     }
 }
 
+/// Rewrites simple augmented assignments into explicit binary assignments.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::ExpandAugmentedAssignment;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "a += 2;";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut rewrite = ExpandAugmentedAssignment::default();
+/// tree.apply(&mut rewrite).unwrap();
+///
+/// assert_eq!(rewrite.clear().unwrap(), "a = a + 2;");
+/// ```
+#[derive(Default)]
+pub struct ExpandAugmentedAssignment {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl ExpandAugmentedAssignment {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn augmented_to_assignment_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "augmented_assignment_expression" {
+            return None;
+        }
+
+        let left = node.child(0)?;
+        if left.kind() != "identifier" {
+            return None;
+        }
+
+        let op_node = node.child(1)?;
+        let op_text = op_node.text().ok()?;
+        let binary_op = match op_text.trim() {
+            "+=" => "+",
+            "-=" => "-",
+            "*=" => "*",
+            "/=" => "/",
+            "%=" => "%",
+            _ => return None,
+        };
+
+        let right = node.child(2)?;
+        let left_text = left.text().ok()?.trim();
+        let right_text = right.text().ok()?.trim();
+
+        Some(format!(
+            "{} = {} {} {}",
+            left_text, left_text, binary_op, right_text
+        ))
+    }
+}
+
+impl<'a> Rule<'a> for ExpandAugmentedAssignment {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "augmented_assignment_expression" => {
+                if let Some(replacement) = Self::augmented_to_assignment_text(node) {
+                    trace!("ExpandAugmentedAssignment: rewriting augmented assignment");
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test_js_deadcode {
     use super::*;
@@ -904,13 +1022,16 @@ mod test_js_deadcode {
 
     fn clean(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
-
         let mut inline_iife = InlineIife::default();
         tree.apply(&mut inline_iife).unwrap();
         let rewritten = inline_iife.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut rewrite = ExpandAugmentedAssignment::default();
+        tree.apply(&mut rewrite).unwrap();
+        let rewritten = rewrite.clear().unwrap();
 
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
         let mut for_to_while = ForToWhile::default();
         tree.apply(&mut for_to_while).unwrap();
         let rewritten = for_to_while.clear().unwrap();
@@ -921,10 +1042,8 @@ mod test_js_deadcode {
         let rewritten = bracket_to_member.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-
         let mut unused = UnusedVar::default();
         tree.apply(&mut unused).unwrap();
-
         let mut remover = RemoveUnused::new(unused);
         tree.apply(&mut remover).unwrap();
         remover.clear().unwrap()
@@ -1196,5 +1315,15 @@ mod test_js_deadcode {
             ),
             "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
         );
+    }
+
+    #[test]
+    fn test_rewrite_augmented_plus_equals() {
+        assert_eq!(clean("a += 2;"), "a = a + 2;");
+        assert_eq!(clean("a -= 2;"), "a = a - 2;");
+        assert_eq!(clean("a *= 2;"), "a = a * 2;");
+        assert_eq!(clean("a /= 2;"), "a = a / 2;");
+        assert_eq!(clean("a %= 2;"), "a = a % 2;");
+        assert_eq!(clean("obj.x += 2;"), "obj.x += 2;");
     }
 }

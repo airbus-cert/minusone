@@ -1,7 +1,7 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::js::post_process::{
-    BracketCallToMember, ForToWhile, InlineIife, RemoveUnused, UnusedVar,
+    BracketCallToMember, ExpandAugmentedAssignment, ForToWhile, InlineIife, RemoveUnused, UnusedVar,
 };
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
@@ -26,6 +26,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
             let mut inline_iife = InlineIife::default();
             tree.apply(&mut inline_iife)?;
             current = inline_iife.clear()?;
+        }
+
+        // rewrite augmented assignments to plain assignments for easier follow-up processing
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut rewrite_augmented = ExpandAugmentedAssignment::default();
+            tree.apply(&mut rewrite_augmented)?;
+            current = rewrite_augmented.clear()?;
         }
 
         // remove obvious dead code
