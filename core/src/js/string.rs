@@ -758,7 +758,7 @@ impl<'a> RuleMut<'a> for Concat {
 /// use minusone::js::array::ParseArray;
 /// use minusone::js::linter::Linter;
 ///
-/// let mut tree = build_javascript_tree("var x = 31['toString']('32');").unwrap();
+/// let mut tree = build_javascript_tree("var x = (31).toString('32');").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default()
 /// )).unwrap();
@@ -795,27 +795,7 @@ impl<'a> RuleMut<'a> for ToString {
             return Ok(());
         };
 
-        let is_to_string = match callee.kind() {
-            "subscript_expression" => callee
-                .child(2)
-                .map(|property| {
-                    property.data() == Some(&Raw(Str("toString".to_string())))
-                        || property
-                            .text()
-                            .ok()
-                            .map(|t| t.trim_matches(['\'', '"']).to_string())
-                            .as_deref()
-                            == Some("toString")
-                })
-                .unwrap_or(false),
-            "member_expression" => callee
-                .named_child("property")
-                .and_then(|p| p.text().ok().map(|t| t == "toString"))
-                .unwrap_or(false),
-            _ => false,
-        };
-
-        if !is_to_string {
+        if method_name(&callee).as_deref() != Some("toString") {
             return Ok(());
         }
 
@@ -1140,17 +1120,24 @@ fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
-    use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
     use crate::js::integer::{ParseInt, PosNeg};
     use crate::js::linter::Linter;
+    use crate::js::post_process::BracketCallToMember;
     use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::*;
     use crate::js::string::{escape_js_string, unescaped_js_string};
+    use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
+    use crate::tree::EmptyStorage;
 
     fn deobfuscate_string(input: &str) -> String {
-        let mut tree = build_javascript_tree(input).unwrap();
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut bracket_to_member = BracketCallToMember::default();
+        tree.apply(&mut bracket_to_member).unwrap();
+        let input = bracket_to_member.clear().unwrap();
+
+        let mut tree = build_javascript_tree(&input).unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             ParseInt::default(),
