@@ -11,6 +11,7 @@ pub mod globals;
 pub mod integer;
 pub mod linter;
 pub mod objects;
+pub mod printer;
 pub mod regex;
 pub mod specials;
 pub mod strategy;
@@ -239,6 +240,5 @@ pub fn build_javascript_tree_for_storage<T: Storage + Default>(
 #[cfg(test)]
 pub fn lint(tree: &Tree<HashMapStorage<JavaScript>>) -> String {
     let mut linter = Linter::default();
-    tree.apply(&mut linter).unwrap();
-    linter.output
+    crate::printer::code_string(&mut linter, tree).unwrap()
 }
