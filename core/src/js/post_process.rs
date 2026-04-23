@@ -1014,6 +1014,158 @@ impl<'a> Rule<'a> for ExpandAugmentedAssignment {
     }
 }
 
+/// Reduces safe comma sequence expressions to their last expression.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::ReduceSequenceExpression;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::forward::Forward;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::linter::Linter;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "var a = (1, 2, 3);";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut reduce_sequence = ReduceSequenceExpression::default();
+/// tree.apply(&mut reduce_sequence).unwrap();
+///
+/// let reduced = reduce_sequence.clear().unwrap();
+/// let mut tree = build_javascript_tree(&reduced).unwrap();
+/// // Forward still needs to be applied to remove the useless parentheses
+/// tree.apply_mut(&mut (ParseInt::default(), Forward::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var a = 3;");
+/// ```
+#[derive(Default)]
+pub struct ReduceSequenceExpression {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl ReduceSequenceExpression {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn expression_parts<'a>(node: &Node<'a, ()>) -> Vec<Node<'a, ()>> {
+        node.iter().filter(|child| child.kind() != ",").collect()
+    }
+
+    fn literal_like_kind(kind: &str) -> bool {
+        matches!(
+            kind,
+            "number"
+                | "string"
+                | "true"
+                | "false"
+                | "null"
+                | "undefined"
+                | "regex"
+                | "template_string"
+        )
+    }
+
+    fn safe_to_drop(node: &Node<'_, ()>) -> bool {
+        if Self::literal_like_kind(node.kind()) {
+            return true;
+        }
+
+        if node.kind() == "parenthesized_expression" {
+            let parts = Self::expression_parts(node);
+            return parts.len() == 1 && Self::safe_to_drop(&parts[0]);
+        }
+
+        if node.kind() == "sequence_expression" {
+            let parts = Self::expression_parts(node);
+            return !parts.is_empty() && parts.iter().all(Self::safe_to_drop);
+        }
+
+        false
+    }
+
+    fn reduce_sequence_text(node: &Node<'_, ()>) -> Option<String> {
+        if node.kind() != "sequence_expression" {
+            return None;
+        }
+
+        let parts = Self::expression_parts(node);
+        if parts.len() < 2 {
+            return None;
+        }
+
+        if !parts[..parts.len() - 1].iter().all(Self::safe_to_drop) {
+            return None;
+        }
+
+        Some(parts.last()?.text().ok()?.trim().to_string())
+    }
+}
+
+impl<'a> Rule<'a> for ReduceSequenceExpression {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "sequence_expression" => {
+                if let Some(replacement) = Self::reduce_sequence_text(node) {
+                    trace!("ReduceSequenceExpression: reducing comma sequence to last expression");
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test_js_deadcode {
     use super::*;
@@ -1030,6 +1182,11 @@ mod test_js_deadcode {
         let mut rewrite = ExpandAugmentedAssignment::default();
         tree.apply(&mut rewrite).unwrap();
         let rewritten = rewrite.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut reduce_sequence = ReduceSequenceExpression::default();
+        tree.apply(&mut reduce_sequence).unwrap();
+        let rewritten = reduce_sequence.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
         let mut for_to_while = ForToWhile::default();
@@ -1325,5 +1482,29 @@ mod test_js_deadcode {
         assert_eq!(clean("a /= 2;"), "a = a / 2;");
         assert_eq!(clean("a %= 2;"), "a = a % 2;");
         assert_eq!(clean("obj.x += 2;"), "obj.x += 2;");
+    }
+
+    #[test]
+    fn test_reduce_sequence_expression_to_last_value() {
+        assert_eq!(
+            clean("console.log((\"a\",\"b\"));"),
+            "console.log((\"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_reduce_sequence_expression_with_safe_prefixes() {
+        assert_eq!(
+            clean("console.log((1, null, \"b\"));"),
+            "console.log((\"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_keep_sequence_expression_with_side_effects() {
+        assert_eq!(
+            clean("console.log((foo(), \"b\"));"),
+            "console.log((foo(), \"b\"));"
+        );
     }
 }

@@ -1,8 +1,6 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
-use crate::js::post_process::{
-    BracketCallToMember, ExpandAugmentedAssignment, ForToWhile, InlineIife, RemoveUnused, UnusedVar,
-};
+use crate::js::post_process::*;
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
     JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
@@ -34,6 +32,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
             let mut rewrite_augmented = ExpandAugmentedAssignment::default();
             tree.apply(&mut rewrite_augmented)?;
             current = rewrite_augmented.clear()?;
+        }
+
+        // reduce safe comma sequences to their last expression
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut reduce_sequence = ReduceSequenceExpression::default();
+            tree.apply(&mut reduce_sequence)?;
+            current = reduce_sequence.clear()?;
         }
 
         // remove obvious dead code
