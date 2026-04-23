@@ -34,6 +34,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
             current = rewrite_augmented.clear()?;
         }
 
+        // rewrite increase/decrease assignments to plain assignments for easier follow-up processing
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut rewrite_augmented = ExpandUpdateExpression::default();
+            tree.apply(&mut rewrite_augmented)?;
+            current = rewrite_augmented.clear()?;
+        }
+
         // reduce safe comma sequences to their last expression
         {
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;

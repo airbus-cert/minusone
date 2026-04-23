@@ -1014,6 +1014,122 @@ impl<'a> Rule<'a> for ExpandAugmentedAssignment {
     }
 }
 
+/// Rewrites `update_expression` (`x++`, `x--`, `++x`, `--x`) into explicit assignments.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::ExpandUpdateExpression;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "x++;";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut rewrite = ExpandUpdateExpression::default();
+/// tree.apply(&mut rewrite).unwrap();
+///
+/// assert_eq!(rewrite.clear().unwrap(), "x = x + 1;");
+/// ```
+#[derive(Default)]
+pub struct ExpandUpdateExpression {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl ExpandUpdateExpression {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn update_to_assignment_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "update_expression" {
+            return None;
+        }
+        
+        let mut operator: Option<String> = None;
+        let mut argument: Option<String> = None;
+
+        for child in node.iter() {
+            match child.kind() {
+                "++" | "--" => operator = Some(child.kind().to_string()),
+                kind if kind == "identifier" => {
+                    argument = Some(child.text().ok()?.trim().to_string())
+                }
+                _ => {}
+            }
+        }
+
+        let op = operator?;
+        let name = argument?;
+        let binary_op = match op.as_str() {
+            "++" => "+",
+            "--" => "-",
+            _ => return None,
+        };
+
+        Some(format!("{} = {} {} 1", name, name, binary_op))
+    }
+}
+
+impl<'a> Rule<'a> for ExpandUpdateExpression {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "update_expression" => {
+                if let Some(replacement) = Self::update_to_assignment_text(node) {
+                    trace!("ExpandUpdateExpression: rewriting update expression");
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 /// Reduces safe comma sequence expressions to their last expression.
 ///
 /// # Example
@@ -1177,6 +1293,11 @@ mod test_js_deadcode {
         let mut inline_iife = InlineIife::default();
         tree.apply(&mut inline_iife).unwrap();
         let rewritten = inline_iife.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut update_expr = ExpandUpdateExpression::default();
+        tree.apply(&mut update_expr).unwrap();
+        let rewritten = update_expr.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
         let mut rewrite = ExpandAugmentedAssignment::default();
@@ -1506,5 +1627,13 @@ mod test_js_deadcode {
             clean("console.log((foo(), \"b\"));"),
             "console.log((foo(), \"b\"));"
         );
+    }
+
+    #[test]
+    fn test_rewrite_increment_decrement() {
+        assert_eq!(clean("x++;"), "x = x + 1;");
+        assert_eq!(clean("x--;"), "x = x - 1;");
+        assert_eq!(clean("++x;"), "x = x + 1;");
+        assert_eq!(clean("--x;"), "x = x - 1;");
     }
 }
