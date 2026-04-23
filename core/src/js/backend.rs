@@ -1,6 +1,8 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
-use crate::js::post_process::{BracketCallToMember, ForToWhile, RemoveUnused, UnusedVar};
+use crate::js::post_process::{
+    BracketCallToMember, ForToWhile, InlineIife, RemoveUnused, UnusedVar,
+};
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
     JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
@@ -17,6 +19,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
     fn remove_extra(src: &str) -> MinusOneResult<String> {
         // remove comments and other non-code nodes
         let mut current = remove_javascript_extra(src)?;
+
+        // inline simple anonymous IIFEs so classic rules can see direct statements
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut inline_iife = InlineIife::default();
+            tree.apply(&mut inline_iife)?;
+            current = inline_iife.clear()?;
+        }
 
         // remove obvious dead code
         let mut i = 0;

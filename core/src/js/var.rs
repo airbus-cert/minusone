@@ -119,7 +119,8 @@ impl Var {
                 }
                 "assignment_expression" | "augmented_assignment_expression" => {
                     if let Some(left) = parent.child(0) {
-                        if node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs() {
+                        if node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
+                        {
                             // In `obj[expr] = ...`, identifiers inside `expr` are reads, not writes.
                             if Self::is_subscript_index_read(node) {
                                 return false;

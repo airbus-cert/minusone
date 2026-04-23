@@ -730,6 +730,172 @@ impl<'a> Rule<'a> for RemoveUnused {
     }
 }
 
+/// Inlines immediately invoked function expressions (IIFEs) with no parameters and no return value
+/// by replacing the call with the function body statements.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::InlineIife;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "(function () {console.log('minusone')})()";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut inliner = InlineIife::default();
+/// tree.apply(&mut inliner).unwrap();
+///
+/// assert_eq!(inliner.clear().unwrap(), "console.log('minusone')");
+/// ```
+#[derive(Default)]
+pub struct InlineIife {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl InlineIife {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn compact(text: &str) -> String {
+        text.chars().filter(|c| !c.is_ascii_whitespace()).collect()
+    }
+
+    fn statement_block_inner_text(block: &Node<()>) -> Option<String> {
+        let text = block.text().ok()?;
+        let trimmed = text.trim();
+        if trimmed.starts_with('{') && trimmed.ends_with('}') {
+            Some(trimmed[1..trimmed.len() - 1].trim().to_string())
+        } else {
+            None
+        }
+    }
+
+    fn has_named_args(args: &Node<()>) -> bool {
+        args.iter()
+            .any(|child| !matches!(child.kind(), "(" | ")" | ","))
+    }
+
+    fn has_params(params: &Node<()>) -> bool {
+        Self::compact(params.text().unwrap_or("")) != "()"
+    }
+
+    fn unwrap_parenthesized_function(mut node: Node<()>) -> Option<Node<()>> {
+        loop {
+            match node.kind() {
+                "function_expression" => return Some(node),
+                "parenthesized_expression" => {
+                    node = node.iter().find(|child| {
+                        child.kind() != "(" && child.kind() != ")" && child.kind() != ";"
+                    })?;
+                }
+                _ => return None,
+            }
+        }
+    }
+
+    fn iife_to_body_text(node: &Node<()>) -> Option<String> {
+        if node.kind() != "expression_statement" {
+            return None;
+        }
+
+        let call = node.child(0)?;
+        if call.kind() != "call_expression" {
+            return None;
+        }
+
+        let args = call.child(1)?;
+        if args.kind() != "arguments" || Self::has_named_args(&args) {
+            return None;
+        }
+
+        let callee = call.child(0)?;
+        let function_expr = Self::unwrap_parenthesized_function(callee)?;
+
+        // keep named function expressions unchanged because they might be self-recursive
+        if function_expr.named_child("name").is_some() {
+            return None;
+        }
+
+        let parameters = function_expr.named_child("parameters")?;
+        if parameters.kind() != "formal_parameters" || Self::has_params(&parameters) {
+            return None;
+        }
+
+        let body = function_expr.named_child("body")?;
+        if body.kind() != "statement_block" {
+            return None;
+        }
+
+        // inlining a `return` will break the parent function
+        if body.iter().any(|child| child.kind() == "return_statement") {
+            return None;
+        }
+
+        Self::statement_block_inner_text(&body)
+    }
+}
+
+impl<'a> Rule<'a> for InlineIife {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "expression_statement" => {
+                if let Some(replacement) = Self::iife_to_body_text(node) {
+                    trace!("InlineIife: rewriting anonymous IIFE to statement body");
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test_js_deadcode {
     use super::*;
@@ -738,6 +904,12 @@ mod test_js_deadcode {
 
     fn clean(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+
+        let mut inline_iife = InlineIife::default();
+        tree.apply(&mut inline_iife).unwrap();
+        let rewritten = inline_iife.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
 
         let mut for_to_while = ForToWhile::default();
         tree.apply(&mut for_to_while).unwrap();
@@ -988,5 +1160,41 @@ mod test_js_deadcode {
         input += "console.log('ok');";
 
         assert_eq!(clean(&input), "console.log('ok');");
+    }
+
+    #[test]
+    fn test_inline_anonymous_iife() {
+        assert_eq!(
+            clean(
+                "(function () { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
+            ),
+            "var a = 123; var b = 'Hello, world! '; console.log(b + a);"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_iife_with_arguments() {
+        assert_eq!(
+            clean("(function () { console.log('x'); })(foo());"),
+            "(function () { console.log('x'); })(foo());"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_iife_with_return() {
+        assert_eq!(
+            clean("(function () { return 1; })(); console.log('ok');"),
+            "(function () { return 1; })(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_iife_with_name() {
+        assert_eq!(
+            clean(
+                "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
+            ),
+            "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
+        );
     }
 }
