@@ -47,6 +47,16 @@ impl<'a> RuleMut<'a> for ParseSpecials {
                     return Ok(());
                 }
             }
+            "null" => {
+                trace!("ParseSpecials (L): null");
+                node.reduce(Null);
+                return Ok(());
+            }
+            "NaN" => {
+                trace!("ParseSpecials (L): NaN");
+                node.reduce(NaN);
+                return Ok(());
+            }
             _ => {}
         }
 

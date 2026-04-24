@@ -711,10 +711,51 @@ mod test_js_deadcode {
     }
 
     #[test]
-    fn test_keep_switch_without_break_fallthrough() {
+    fn test_simplify_switch_with_fallthrough_until_switch_end() {
         assert_eq!(
             clean("switch (1) { case 1: a(); case 2: b(); break; default: c(); }"),
-            "switch (1) { case 1: a(); case 2: b(); break; default: c(); }"
+            "a(); b();"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_with_fallthrough_to_the_end() {
+        assert_eq!(
+            clean(
+                "switch (2) {
+                        case 1:
+                            console.log('no');
+                            break;
+                        case 2:
+                            console.log('yes');
+                        case 3:
+                            console.log('yes');
+                        default:
+                            console.log('yes');
+                    }"
+            ),
+            "console.log('yes'); console.log('yes'); console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_with_fallthrough_until_late_break() {
+        assert_eq!(
+            clean(
+                "switch (2) {
+                        case 1:
+                            console.log('no');
+                            break;
+                        case 2:
+                            console.log('yes');
+                        case 3:
+                            console.log('yes');
+                            break
+                        default:
+                            console.log('no');
+                    }"
+            ),
+            "console.log('yes'); console.log('yes');"
         );
     }
 

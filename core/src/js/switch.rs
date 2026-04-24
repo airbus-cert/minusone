@@ -50,10 +50,7 @@ fn parse_literal(node: &Node<()>) -> Option<SwitchLiteral> {
     }
 }
 
-fn extract_selected_clause_text(clause: &Node<()>, is_last_clause: bool) -> Option<String> {
-    let mut parts = Vec::new();
-    let mut terminates = false;
-
+fn append_clause_statements(clause: &Node<()>, parts: &mut Vec<String>) -> Option<bool> {
     let value_id = clause.named_child("value").map(|value| value.id());
     for stmt in clause
         .iter()
@@ -61,24 +58,16 @@ fn extract_selected_clause_text(clause: &Node<()>, is_last_clause: bool) -> Opti
         .filter(|child| Some(child.id()) != value_id)
     {
         match stmt.kind() {
-            "break_statement" => {
-                terminates = true;
-                break;
-            }
+            "break_statement" => return Some(true),
             "return_statement" | "throw_statement" => {
                 parts.push(stmt.text().ok()?.trim().to_string());
-                terminates = true;
-                break;
+                return Some(true);
             }
             _ => parts.push(stmt.text().ok()?.trim().to_string()),
         }
     }
 
-    if !terminates && !is_last_clause {
-        return None;
-    }
-
-    Some(parts.join(" "))
+    Some(false)
 }
 
 pub fn simplify_switch_statement_text(node: &Node<()>) -> Option<String> {
@@ -122,6 +111,8 @@ pub fn simplify_switch_statement_text(node: &Node<()>) -> Option<String> {
 
     let selected_idx = selected_idx.or(default_idx)?;
     let mut clause_idx = 0usize;
+    let mut parts = Vec::new();
+    let mut collecting = false;
 
     for clause in body.iter() {
         if !matches!(clause.kind(), "switch_case" | "switch_default") {
@@ -129,12 +120,15 @@ pub fn simplify_switch_statement_text(node: &Node<()>) -> Option<String> {
         }
 
         if clause_idx == selected_idx {
-            let is_last_clause = clause_idx + 1 == total_clauses;
-            return extract_selected_clause_text(&clause, is_last_clause);
+            collecting = true;
+        }
+
+        if collecting && append_clause_statements(&clause, &mut parts)? {
+            return Some(parts.join(" "));
         }
 
         clause_idx += 1;
     }
 
-    None
+    Some(parts.join(" "))
 }
