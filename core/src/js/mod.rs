@@ -15,6 +15,7 @@ pub mod regex;
 pub mod specials;
 pub mod strategy;
 pub mod string;
+pub mod r#switch;
 mod tests;
 pub mod r#typeof;
 mod utils;
@@ -70,7 +71,7 @@ pub enum JavaScript {
     Null,
     // Byte is a special type that does not live long, it's used to store the result of `atob` and
     // `btoa` calls, and it's converted to string when it's used in a string context, but it gets
-    // most of the type converted into a string
+    // most of the time converted into a string
     Bytes(Vec<u8>),
     Object {
         map: HashMap<String, JavaScript>,

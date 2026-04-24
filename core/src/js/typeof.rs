@@ -4,6 +4,7 @@ use crate::js::JavaScript::Raw;
 use crate::js::Value::Str;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use log::warn;
 
 /// Infer unary typeof calls
 ///
@@ -45,6 +46,16 @@ impl<'a> RuleMut<'a> for Typeof {
         if view.kind() != "unary_expression" {
             return Ok(());
         }
+
+        if let Ok(text) = view.text() {
+            if text == "typeof window" || text == "typeof document" || text == "typeof browser" {
+                warn!(
+                    "The script tried to detect if the environment is a browser by using '{}'.",
+                    text
+                );
+            }
+        }
+
         if let (Some(left), Some(right)) = (view.child(0), view.child(1)) {
             if left.text()? == "typeof" {
                 if let Some(r) = right.data() {
