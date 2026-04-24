@@ -277,7 +277,6 @@ impl RemoveUnusedVar {
         chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
     }
 
-    // TODO: when first pass system will be added, apply this at first so we only have to deal with "classic" call in all the rules. This will reduce the code A LOT.
     fn bracket_call_to_member_text(node: &Node<()>) -> Option<String> {
         if node.kind() != "call_expression" {
             return None;
