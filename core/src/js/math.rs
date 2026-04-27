@@ -67,6 +67,9 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("random", |_| Some(Raw(Num(rand::random::<f64>())))),
     ("pow", math_builtin_pow),
     ("clz32", math_builtin_clz32),
+    ("cosh", math_builtin_cosh),
+    ("sinh", math_builtin_sinh),
+    ("tanh", math_builtin_tanh),
 ];
 
 #[derive(Default)]
@@ -418,6 +421,37 @@ fn math_builtin_clz32(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Hyperbolic functions
+fn math_builtin_sinh(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.sinh()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_cosh(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.cosh()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_tanh(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.tanh()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -740,5 +774,36 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.clz32()"), "32");
         assert_eq!(deobfuscate("Math.clz32(Infinity)"), "32");
         assert_eq!(deobfuscate("Math.clz32(-Infinity)"), "32");
+    }
+
+    // Hyperbolic functions
+    #[test]
+    fn test_math_cosh() {
+        assert_eq!(deobfuscate("Math.cosh(0)"), "1");
+        assert_eq!(deobfuscate("Math.cosh(1)"), "1.5430806348152437");
+        assert_eq!(deobfuscate("Math.cosh(-1)"), "1.5430806348152437");
+        assert_eq!(deobfuscate("Math.cosh(2)"), "3.7621956910836314");
+        assert_eq!(deobfuscate("Math.cosh(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.cosh()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_sinh() {
+        assert_eq!(deobfuscate("Math.sinh(0)"), "0");
+        assert_eq!(deobfuscate("Math.sinh(1)"), "1.1752011936438014");
+        assert_eq!(deobfuscate("Math.sinh(-1)"), "-1.1752011936438014");
+        assert_eq!(deobfuscate("Math.sinh(2)"), "3.626860407847019");
+        assert_eq!(deobfuscate("Math.sinh(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.sinh()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_tanh() {
+        assert_eq!(deobfuscate("Math.tanh(0)"), "0");
+        assert_eq!(deobfuscate("Math.tanh(1)"), "0.7615941559557649");
+        assert_eq!(deobfuscate("Math.tanh(-1)"), "-0.7615941559557649");
+        assert_eq!(deobfuscate("Math.tanh(2)"), "0.9640275800758169");
+        assert_eq!(deobfuscate("Math.tanh(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.tanh()"), "NaN");
     }
 }
