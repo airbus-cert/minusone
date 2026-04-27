@@ -1,7 +1,10 @@
 root := justfile_dir()
 
 build:
-    maturin build
+    uv run maturin build
+
+test: build
+    uv run test.py
 
 publish: build
     uv publish "{{ root }}/target/wheels/*"
