@@ -1237,14 +1237,14 @@ impl<'a> RuleMut<'a> for StringRaw {
 /// ```
 /// use minusone::js::build_javascript_tree;
 /// use minusone::js::string::{ParseString, TemplateString};
-/// use minusone::js::integer::{ParseInt, SubAddInt};
+/// use minusone::js::integer::{ParseInt, AddInt};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = `hello ${1} ${1+1}`;").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(),
 ///     ParseInt::default(),
-///     SubAddInt::default(),
+///     AddInt::default(),
 ///     TemplateString::default(),
 /// )).unwrap();
 ///
@@ -1331,7 +1331,7 @@ mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::{ParseInt, PosNeg};
+    use crate::js::integer::{AddInt, ParseInt, PosNeg};
     use crate::js::linter::Linter;
     use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
@@ -1353,7 +1353,7 @@ mod tests_js_string {
             FromCharCode::default(),
             StringConstructor::default(),
             Concat::default(),
-            SubAddInt::default(),
+            AddInt::default(),
             Split::default(),
             Replace::default(),
             StringRaw::default(),
