@@ -10,6 +10,7 @@ pub mod functions;
 pub mod globals;
 pub mod integer;
 pub mod linter;
+mod math;
 pub mod objects;
 pub mod regex;
 pub mod specials;
@@ -29,6 +30,7 @@ use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::math::*;
 use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
@@ -144,6 +146,7 @@ impl_javascript_ruleset!(
     PowInt,            // Infer ** operations on integers
     ShiftInt,          // Infer <<, >> and >>> operations on integers
     BitwiseInt,        // Infer &, |, ^ and ~ operations on integers
+    MathBuiltins,      // Infer static Math.x(...) builtins
     ObjectField,       // Track objects field assignments and access
     NotBool,           // Infer unary ! operations on booleans
     BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
