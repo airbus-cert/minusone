@@ -196,7 +196,6 @@ impl RegexExec {
                 'u' => {
                     builder.unicode(true);
                 }
-                // todo: handle special cases
                 'd' | 'g' | 'v' | 'y' => {}
                 _ => return None,
             }
