@@ -653,7 +653,7 @@ fn two_sum(a: f64, b: f64) -> (f64, f64) {
 mod test_maths {
     use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
-    use crate::js::integer::{AddInt, MultInt, ParseInt, PosNeg};
+    use crate::js::integer::{AddInt, MultDivMod, ParseInt, PosNeg};
     use crate::js::linter::Linter;
     use crate::js::math::MathBuiltins;
     use crate::js::objects::object::ObjectField;
@@ -669,7 +669,7 @@ mod test_maths {
             ParseSpecials::default(),
             PosNeg::default(),
             AddInt::default(),
-            MultInt::default(),
+            MultDivMod::default(),
             ObjectField::default(),
             MathBuiltins::default(),
         ))
