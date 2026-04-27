@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
@@ -87,34 +88,6 @@ impl Var {
             }
         }
         Ok(())
-    }
-
-    fn is_write_target(node: &Node<JavaScript>) -> bool {
-        let mut current = node.parent();
-        while let Some(parent) = current {
-            match parent.kind() {
-                "variable_declarator" => {
-                    if let Some(name_child) = parent.child(0) {
-                        return node.start_abs() >= name_child.start_abs()
-                            && node.end_abs() <= name_child.end_abs();
-                    }
-                }
-                "assignment_expression" | "augmented_assignment_expression" => {
-                    if let Some(left) = parent.child(0) {
-                        return node.start_abs() >= left.start_abs()
-                            && node.end_abs() <= left.end_abs();
-                    }
-                }
-                "update_expression" => {
-                    return true;
-                }
-                _ => {}
-            }
-
-            current = parent.parent();
-        }
-
-        false
     }
 }
 
@@ -302,7 +275,7 @@ impl<'a> RuleMut<'a> for Var {
             }
             // read
             "identifier" => {
-                if !Var::is_write_target(&view) {
+                if !is_write_target(&view) {
                     if let Some(parent) = view.parent()
                         && parent.kind() == "call_expression"
                         && parent

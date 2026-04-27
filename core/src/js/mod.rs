@@ -10,6 +10,7 @@ pub mod functions;
 pub mod globals;
 pub mod integer;
 pub mod linter;
+pub mod node;
 pub mod objects;
 pub mod regex;
 pub mod specials;
@@ -29,6 +30,7 @@ use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::node::buffer::*;
 use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
@@ -72,6 +74,7 @@ pub enum JavaScript {
     // `btoa` calls, and it's converted to string when it's used in a string context, but it gets
     // most of the type converted into a string
     Bytes(Vec<u8>),
+    Buffer(Vec<u8>),
     Object {
         map: HashMap<String, JavaScript>,
         to_string_override: Option<String>,
@@ -167,7 +170,11 @@ impl_javascript_ruleset!(
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
+    BufferFrom,     // Infer deterministic Buffer.from(...) calls
+    BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites
+    BufferIndex,    // Infer deterministic Buffer[index] reads/writes
+    BufferToString, // Infer Buffer.toString(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==
