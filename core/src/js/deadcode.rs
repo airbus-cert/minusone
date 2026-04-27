@@ -1,4 +1,5 @@
 use crate::error::MinusOneResult;
+use crate::js::r#switch::simplify_switch_statement_text;
 use crate::rule::Rule;
 use crate::tree::Node;
 use log::trace;
@@ -496,6 +497,18 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                     }
                 }
             }
+            "switch_statement" => {
+                if let Some(replacement) = simplify_switch_statement_text(node) {
+                    if replacement.is_empty() {
+                        trace!("RemoveUnusedVar: removing empty deterministic switch");
+                        self.remove_node(node)?;
+                    } else {
+                        trace!("RemoveUnusedVar: simplifying deterministic switch");
+                        self.replace_node_with_text(node, &replacement)?;
+                    }
+                    return Ok(false);
+                }
+            }
             _ => {}
         }
         Ok(true)
@@ -655,6 +668,101 @@ mod test_js_deadcode {
         assert_eq!(
             clean("if (x) { console.log('maybe'); }"),
             "if (x) { console.log('maybe'); }"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_case_match() {
+        assert_eq!(
+            clean(
+                "switch (2) { case 1: console.log('no'); break; case 2: console.log('yes'); break; default: console.log('d'); }"
+            ),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_case_match_with_early_break() {
+        assert_eq!(
+            clean(
+                "switch (2) {
+                        case 1:
+                            console.log('no');
+                            break;
+                        case 2:
+                            console.log('yes');
+                            break;
+                            console.log('no');
+                        default:
+                            console.log('d');
+                    }"
+            ),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_case_default() {
+        assert_eq!(
+            clean("switch (3) { case 1: a(); break; case 2: b(); break; default: c(); }"),
+            "c();"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_with_fallthrough_until_switch_end() {
+        assert_eq!(
+            clean("switch (1) { case 1: a(); case 2: b(); break; default: c(); }"),
+            "a(); b();"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_with_fallthrough_to_the_end() {
+        assert_eq!(
+            clean(
+                "switch (2) {
+                        case 1:
+                            console.log('no');
+                            break;
+                        case 2:
+                            console.log('yes');
+                        case 3:
+                            console.log('yes');
+                        default:
+                            console.log('yes');
+                    }"
+            ),
+            "console.log('yes'); console.log('yes'); console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_simplify_switch_with_fallthrough_until_late_break() {
+        assert_eq!(
+            clean(
+                "switch (2) {
+                        case 1:
+                            console.log('no');
+                            break;
+                        case 2:
+                            console.log('yes');
+                        case 3:
+                            console.log('yes');
+                            break
+                        default:
+                            console.log('no');
+                    }"
+            ),
+            "console.log('yes'); console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_keep_switch_with_non_literal_case() {
+        assert_eq!(
+            clean("switch (1) { case x: a(); break; default: b(); }"),
+            "switch (1) { case x: a(); break; default: b(); }"
         );
     }
 
