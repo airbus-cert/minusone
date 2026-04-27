@@ -55,6 +55,8 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("log10", math_builtin_log10),
     ("log2", math_builtin_log2),
     ("exp", math_builtin_exp),
+    ("min", math_builtin_min),
+    ("max", math_builtin_max),
 ];
 
 #[derive(Default)]
@@ -345,8 +347,38 @@ fn math_builtin_exp(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// min/max
+fn math_builtin_max(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(f64::NEG_INFINITY)));
+    }
+    let mut max = args[0].as_js_num();
+    for arg in args.iter().skip(1) {
+        max = match (max, arg.as_js_num()) {
+            (Raw(Num(a)), Raw(Num(b))) => Raw(Num(a.max(b))),
+            _ => return Some(NaN),
+        }
+    }
+    Some(max)
+}
+
+pub fn math_builtin_min(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(f64::INFINITY)));
+    }
+    let mut min = args[0].as_js_num();
+    for arg in args.iter().skip(1) {
+        min = match (min, arg.as_js_num()) {
+            (Raw(Num(a)), Raw(Num(b))) => Raw(Num(a.min(b))),
+            _ => return Some(NaN),
+        }
+    }
+    Some(min)
+}
+
 #[cfg(test)]
 mod test_maths {
+    use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
     use crate::js::integer::{AddInt, MultInt, ParseInt, PosNeg};
     use crate::js::linter::Linter;
@@ -360,6 +392,7 @@ mod test_maths {
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
+            ParseArray::default(),
             ParseSpecials::default(),
             PosNeg::default(),
             AddInt::default(),
@@ -602,5 +635,25 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.exp(-Infinity)"), "0");
         assert_eq!(deobfuscate("Math.exp(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.exp()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_min() {
+        assert_eq!(deobfuscate("Math.min(1, [2], 3)"), "1");
+        assert_eq!(deobfuscate("Math.min(3, [2], 1)"), "1");
+        assert_eq!(deobfuscate("Math.min(1, 2, NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.min(1, 2)"), "1");
+        assert_eq!(deobfuscate("Math.min(1)"), "1");
+        assert_eq!(deobfuscate("Math.min()"), "Infinity");
+    }
+
+    #[test]
+    fn test_math_max() {
+        assert_eq!(deobfuscate("Math.max(1, 2, 3)"), "3");
+        assert_eq!(deobfuscate("Math.max(3, 2, 1)"), "3");
+        assert_eq!(deobfuscate("Math.max(1, 2, NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.max(1, 2)"), "2");
+        assert_eq!(deobfuscate("Math.max(1)"), "1");
+        assert_eq!(deobfuscate("Math.max()"), "-Infinity");
     }
 }
