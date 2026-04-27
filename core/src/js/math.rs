@@ -38,6 +38,12 @@ use log::trace;
 /// - `Math.random(x)`
 /// - `Math.pow(x)`
 /// - `Math.clz32(x)`
+/// - `Math.cosh(x)`
+/// - `Math.sinh(x)`
+/// - `Math.tanh(x)`
+/// - `Math.acosh(x)`
+/// - `Math.asinh(x)`
+/// - `Math.atanh(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -70,6 +76,9 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("cosh", math_builtin_cosh),
     ("sinh", math_builtin_sinh),
     ("tanh", math_builtin_tanh),
+    ("acosh", math_builtin_acosh),
+    ("asinh", math_builtin_asinh),
+    ("atanh", math_builtin_atanh),
 ];
 
 #[derive(Default)]
@@ -452,6 +461,37 @@ fn math_builtin_tanh(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Arc hyperbolic functions
+fn math_builtin_asinh(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.asinh()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_acosh(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.acosh()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_atanh(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.atanh()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -805,5 +845,36 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.tanh(2)"), "0.9640275800758169");
         assert_eq!(deobfuscate("Math.tanh(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.tanh()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_acosh() {
+        assert_eq!(deobfuscate("Math.acosh(1)"), "0");
+        assert_eq!(deobfuscate("Math.acosh(2)"), "1.3169578969248166");
+        assert_eq!(deobfuscate("Math.acosh(3)"), "1.762747174039086");
+        assert_eq!(deobfuscate("Math.acosh(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.acosh(-1)"), "NaN");
+    }
+
+    #[test]
+    fn test_math_asinh() {
+        assert_eq!(deobfuscate("Math.asinh(0)"), "0");
+        assert_eq!(deobfuscate("Math.asinh(1)"), "0.881373587019543");
+        assert_eq!(deobfuscate("Math.asinh(-1)"), "-0.881373587019543");
+        assert_eq!(deobfuscate("Math.asinh(2)"), "1.4436354751788103");
+        assert_eq!(deobfuscate("Math.asinh(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.asinh()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_atanh() {
+        assert_eq!(deobfuscate("Math.atanh(0)"), "0");
+        assert_eq!(deobfuscate("Math.atanh(0.5)"), "0.5493061443340548");
+        assert_eq!(deobfuscate("Math.atanh(-0.5)"), "-0.5493061443340548");
+        assert_eq!(deobfuscate("Math.atanh(1)"), "Infinity");
+        assert_eq!(deobfuscate("Math.atanh(-1)"), "-Infinity");
+        assert_eq!(deobfuscate("Math.atanh(2)"), "NaN");
+        assert_eq!(deobfuscate("Math.atanh(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.atanh()"), "NaN");
     }
 }
