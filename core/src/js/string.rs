@@ -1526,8 +1526,6 @@ mod tests_js_string {
             StringConstructor::default(),
             Concat::default(),
             AddInt::default(),
-            Split::default(),
-            Replace::default(),
             StringRaw::default(),
             TemplateString::default(),
             GetArrayElement::default(),
