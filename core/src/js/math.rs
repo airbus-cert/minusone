@@ -32,6 +32,10 @@ use log::trace;
 /// - `Math.log10(x)`
 /// - `Math.log2(x)`
 /// - `Math.exp(x)`
+/// - `Math.expm1(x)`
+/// - `Math.min(x)`
+/// - `Math.max(x)`
+/// - `Math.random(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -55,6 +59,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("log10", math_builtin_log10),
     ("log2", math_builtin_log2),
     ("exp", math_builtin_exp),
+    ("expm1", math_builtin_expm1),
     ("min", math_builtin_min),
     ("max", math_builtin_max),
     ("random", |_| Some(Raw(Num(rand::random::<f64>())))),
@@ -348,6 +353,16 @@ fn math_builtin_exp(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+fn math_builtin_expm1(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.exp() - 1.0))),
+        _ => Some(NaN),
+    }
+}
+
 // min/max
 fn math_builtin_max(args: &[JavaScript]) -> Option<JavaScript> {
     if args.is_empty() {
@@ -628,6 +643,7 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.log10()"), "NaN");
     }
 
+    // Exponential
     #[test]
     fn test_math_exp() {
         assert_eq!(deobfuscate("Math.exp(0)"), "1");
@@ -636,6 +652,16 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.exp(-Infinity)"), "0");
         assert_eq!(deobfuscate("Math.exp(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.exp()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_expm1() {
+        assert_eq!(deobfuscate("Math.expm1(0)"), "0");
+        assert_eq!(deobfuscate("Math.expm1(1)"), "1.718281828459045");
+        assert_eq!(deobfuscate("Math.expm1(-1)"), "-0.6321205588285577");
+        assert_eq!(deobfuscate("Math.expm1(-Infinity)"), "-1");
+        assert_eq!(deobfuscate("Math.expm1(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.expm1()"), "NaN");
     }
 
     #[test]
