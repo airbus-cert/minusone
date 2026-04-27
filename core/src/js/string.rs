@@ -131,17 +131,532 @@ fn unescaped_js_string(s: &str) -> String {
     result
 }
 
-/// Infers charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+/// Centralized dispatcher for string literal builtins.
+///
+/// This includes :
+/// - `str.at(n)`
+/// - `str.charAt(n)`
+/// - `str.codePointAt(n)`
+/// - `str.startsWith(substring)`
+/// - `str.endsWith(substring)`
+/// - `str.includes(substring)`
+/// - `str.indexOf(substring)`
+/// - `str.lastIndexOf(substring)`
+/// - `str.padStart(targetLength, [padString])`
+/// - `str.padEnd(targetLength, [padString])`
+/// - `str.repeat(count)`
+/// - `str.slice(start, [end])`
+/// - `str.substring(start, [end])`
+/// - `str.toLowerCase()`
+/// - `str.toUpperCase()`
+/// - `str.trim()`
+/// - `str.trimStart()`
+/// - `str.trimEnd()`
+/// - `str.split(separator, limit)`
+/// - `str.replace(searchValue, replaceValue)`
+/// - `str.replaceAll(searchValue, replaceValue)`
+/// - `str.link(url)`   _(deprecated but still supported)_
+/// - `str.anchor(name)`   _(deprecated but still supported)_
+type StringBuiltinHandler = fn(&str, &[JavaScript]) -> Option<JavaScript>;
+
+const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
+    ("at", string_builtin_at),
+    ("charAt", string_builtin_char_at),
+    ("split", string_builtin_split),
+    ("replace", string_builtin_replace),
+    ("replaceAll", string_builtin_replace_all),
+    ("link", string_builtin_link),
+    ("anchor", string_builtin_anchor),
+    ("codePointAt", string_builtin_code_point_at),
+    ("startsWith", string_builtin_start_with),
+    ("endsWith", string_builtin_end_with),
+    ("includes", string_builtin_includes),
+    ("indexOf", string_builtin_index_of),
+    ("lastIndexOf", string_builtin_last_index_of),
+    ("padStart", string_builtin_pad_start),
+    ("padEnd", string_builtin_pad_end),
+    ("repeat", string_builtin_repeat),
+    ("slice", string_builtin_slice),
+    ("substring", string_builtin_substring),
+    ("toLowerCase", |input, _| {
+        Some(Raw(Str(input.to_lowercase())))
+    }),
+    ("toUpperCase", |input, _| {
+        Some(Raw(Str(input.to_uppercase())))
+    }),
+    ("trim", |input, _| Some(Raw(Str(input.trim().to_string())))),
+    ("trimStart", |input, _| {
+        Some(Raw(Str(input.trim_start().to_string())))
+    }),
+    ("trimEnd", |input, _| {
+        Some(Raw(Str(input.trim_end().to_string())))
+    }),
+];
+
+#[derive(Default)]
+pub struct StringBuiltins;
+
+impl<'a> RuleMut<'a> for StringBuiltins {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Str(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+        let mut arg_values = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data().cloned() else {
+                return Ok(());
+            };
+            arg_values.push(value);
+        }
+
+        let Some(result) = dispatch_string_builtin(&method, input, &arg_values) else {
+            return Ok(());
+        };
+
+        trace!(
+            "StringBuiltins: reducing '{}'.{}(...) to {}",
+            input, method, result
+        );
+        node.reduce(result);
+        Ok(())
+    }
+}
+
+fn dispatch_string_builtin(method: &str, input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    STRING_BUILTINS
+        .iter()
+        .find_map(|(name, handler)| (*name == method).then(|| handler(input, args)))
+        .flatten()
+}
+
+fn string_builtin_at(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let index = js_index_from_optional_arg(args.first());
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len() as i64;
+    let normalized = if index >= 0 { index } else { len + index };
+
+    if normalized < 0 || normalized >= len {
+        return Some(Undefined);
+    }
+
+    Some(Raw(Str(chars[normalized as usize].to_string())))
+}
+
+/// The `charAt` method works the same way as `at`, BUT it does not support negative indices and
+/// returns an empty string if the index is out of bounds, instead of `undefined`. It seems to me that
+/// JavaScript was developed by several developers, but that they never look at each other's code...
+fn string_builtin_char_at(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let index = js_index_from_optional_arg(args.first());
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len() as i64;
+
+    if index < 0 || index >= len {
+        return Some(Raw(Str(String::new())));
+    }
+
+    Some(Raw(Str(chars[index as usize].to_string())))
+}
+
+fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let index = js_index_from_optional_arg(args.first());
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len() as i64;
+
+    if index < 0 || index >= len {
+        return Some(Undefined);
+    }
+
+    Some(Raw(Num(chars[index as usize] as u32 as f64)))
+}
+
+fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
+    match value {
+        None => 0,
+        Some(v) => match v.as_js_num() {
+            Raw(Num(n)) if n.is_finite() => n.trunc() as i64,
+            Raw(Num(_)) | NaN => 0,
+            _ => 0,
+        },
+    }
+}
+
+fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Bool(false)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Bool(input.starts_with(&to_find))))
+}
+
+fn string_builtin_end_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Bool(false)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Bool(input.ends_with(&to_find))))
+}
+
+fn string_builtin_includes(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Bool(false)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Bool(input.contains(&to_find))))
+}
+
+fn string_builtin_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(-1.0)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Num(input
+        .find(&to_find)
+        .map(|i| i as f64)
+        .unwrap_or(-1.0))))
+}
+
+fn string_builtin_last_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(-1.0)));
+    }
+
+    let to_find = match args.first()? {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    };
+
+    Some(Raw(Num(input
+        .rfind(&to_find)
+        .map(|i| i as f64)
+        .unwrap_or(-1.0))))
+}
+
+fn string_builtin_pad(input: &str, args: &[JavaScript], pad_start: bool) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let target_length = match args.first()? {
+        Raw(Num(n)) if n.is_finite() && *n >= 0.0 => *n as usize,
+        _ => 0,
+    };
+
+    let pad_string = match args.get(1) {
+        None => " ".to_string(),
+        Some(Raw(Str(s))) => s.clone(),
+        Some(Array(a)) => flatten_array(a, None),
+        Some(js) => js.to_string(),
+    };
+
+    if input.len() >= target_length {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let padding_needed = target_length - input.len();
+    match pad_string.as_str() {
+        "" => Some(Raw(Str(input.to_string()))),
+        _ => {
+            let repeated_pad =
+                pad_string.repeat((padding_needed + pad_string.len() - 1) / pad_string.len());
+            let final_pad = &repeated_pad[..padding_needed];
+            if pad_start {
+                Some(Raw(Str(format!("{}{}", final_pad, input))))
+            } else {
+                Some(Raw(Str(format!("{}{}", input, final_pad))))
+            }
+        }
+    }
+}
+fn string_builtin_pad_start(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_pad(input, args, true)
+}
+
+fn string_builtin_pad_end(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_pad(input, args, false)
+}
+
+fn string_builtin_repeat(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let count = match args.first()? {
+        Raw(Num(n)) if n.is_finite() && *n >= 0.0 => *n,
+        _ => return None,
+    };
+
+    if count < 0.0 {
+        error!(
+            "Repeat: negative repeat count {} should crash the JS runtime, treating as empty string. This should crash the engine, skipping.",
+            count
+        );
+        return None;
+    }
+
+    Some(Raw(Str(input.repeat(count as usize))))
+}
+
+fn string_builtin_slice(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let start = match args.first()?.as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => 0,
+    };
+
+    let end = match args.get(1) {
+        None => len,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as isize,
+            _ => len,
+        },
+    };
+
+    let start = if start < 0 {
+        (len + start).max(0) as usize
+    } else {
+        start as usize
+    };
+    let end = if end < 0 {
+        (len + end).max(0) as usize
+    } else {
+        end as usize
+    };
+
+    if start >= end || start >= input.len() {
+        return Some(Raw(Str(String::new())));
+    }
+
+    let end = end.min(input.len());
+    Some(Raw(Str(input[start..end].to_string())))
+}
+
+/// In JS substring is the same as slice, but it's not in the spec... If a param is NaN or negative,
+/// it fallbacks to 0 and if start is > that end, it swaps the args instead of returning an empty
+/// string. I don't understand why they made it like this, but here we are...
+pub fn string_builtin_substring(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let mut start = match args.first()?.as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => 0,
+    };
+
+    let mut end = match args.get(1) {
+        None => len,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as isize,
+            _ => len,
+        },
+    };
+
+    if start < 0 {
+        start = 0;
+    }
+    if end < 0 {
+        end = 0;
+    }
+    if end > len {
+        end = len;
+    }
+    if start > end {
+        std::mem::swap(&mut start, &mut end);
+    }
+
+    let start = start as usize;
+    let end = end as usize;
+
+    if start >= input.len() {
+        return Some(Raw(Str(String::new())));
+    }
+
+    let end = end.min(input.len());
+    Some(Raw(Str(input[start..end].to_string())))
+}
+
+fn string_builtin_split(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let separator_owned: Option<String> = match args.first() {
+        None => None,
+        Some(Undefined) => None,
+        Some(Raw(Str(s))) => Some(s.clone()),
+        Some(Raw(Num(n))) => Some(n.to_string()),
+        _ => return None,
+    };
+
+    let limit = match args.get(1) {
+        None => None,
+        Some(Raw(Num(n))) if *n >= 0.0 => Some(*n as usize),
+        Some(Raw(Num(_))) => Some(0),
+        _ => return None,
+    };
+
+    let mut parts = split_parts(input, separator_owned.as_deref());
+    if let Some(limit) = limit {
+        parts.truncate(limit);
+    }
+
+    Some(Array(parts.into_iter().map(|s| Raw(Str(s))).collect()))
+}
+
+fn string_builtin_replace(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_replace_like(input, args, false)
+}
+
+fn string_builtin_replace_all(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_replace_like(input, args, true)
+}
+
+fn string_builtin_replace_like(
+    input: &str,
+    args: &[JavaScript],
+    replace_all: bool,
+) -> Option<JavaScript> {
+    let replacement = match args.get(1) {
+        None => "undefined".to_string(),
+        Some(Raw(Str(s))) => s.clone(),
+        Some(js) => js.to_string(),
+    };
+
+    let result = match args.first() {
+        None => return None,
+        Some(Regex { pattern, flags }) => {
+            let regex = RegexExec::compile(pattern, flags)?;
+            if replace_all {
+                if !flags.contains('g') {
+                    error!(
+                        "Replace: replaceAll called with regex without global flag, treating as replace. This should crash the engine, skipping."
+                    );
+                    return None;
+                }
+                regex.replace_all(input, &replacement).to_string()
+            } else if flags.contains('g') {
+                regex.replace_all(input, &replacement).to_string()
+            } else {
+                regex.replace(input, &replacement).to_string()
+            }
+        }
+        Some(Raw(Str(s))) => {
+            if replace_all {
+                input.replace(s, &replacement)
+            } else {
+                input.replacen(s, &replacement, 1)
+            }
+        }
+        Some(js) => {
+            let pattern = js.to_string();
+            if replace_all {
+                input.replace(&pattern, &replacement)
+            } else {
+                input.replacen(&pattern, &replacement, 1)
+            }
+        }
+    };
+
+    Some(Raw(Str(result)))
+}
+
+fn string_builtin_link(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_dynamic_tag(input, args, true)
+}
+
+fn string_builtin_anchor(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    string_builtin_dynamic_tag(input, args, false)
+}
+
+fn string_builtin_dynamic_tag(
+    input: &str,
+    args: &[JavaScript],
+    is_link: bool,
+) -> Option<JavaScript> {
+    let tag_content = match args.first() {
+        None => "undefined".to_string(),
+        Some(Raw(Str(s))) => s.clone(),
+        Some(js) => js.to_string(),
+    };
+
+    let escaped = tag_content.replace('"', "&quot;");
+    let result = if is_link {
+        format!(r#"<a href="{}">{}</a>"#, escaped, input)
+    } else {
+        format!(r#"<a name="{}">{}</a>"#, escaped, input)
+    };
+
+    Some(Raw(Str(result)))
+}
+
+/// Infers charAt with bracket calls on string literals and reduces them to single-character string
+/// literals using arrays indexes
 ///
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, CharAt};
+/// use minusone::js::string::{ParseString, BracketCharAt};
 /// use minusone::js::integer::ParseInt;
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 'test'[1];").unwrap();
-/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), CharAt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), BracketCharAt::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -149,9 +664,9 @@ fn unescaped_js_string(s: &str) -> String {
 /// assert_eq!(linter.output, "var x = 'e';");
 /// ```
 #[derive(Default)]
-pub struct CharAt;
+pub struct BracketCharAt;
 
-impl<'a> RuleMut<'a> for CharAt {
+impl<'a> RuleMut<'a> for BracketCharAt {
     type Language = JavaScript;
 
     fn enter(
@@ -171,125 +686,28 @@ impl<'a> RuleMut<'a> for CharAt {
         if view.kind() == "subscript_expression" {
             if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
                 match (string.data(), index.data()) {
-                    (Some(Raw(Str(s))), Some(Raw(Num(i)))) => {
-                        return if *i >= 0.0 && (*i as usize) < s.chars().count() {
-                            let ch = s.chars().nth(*i as usize).unwrap();
-                            trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
-                            node.reduce(Raw(Str(ch.to_string())));
-                            Ok(())
-                        } else {
-                            trace!(
-                                "InferCharAt: index {} out of bounds, setting to undefined",
-                                i
-                            );
-                            node.reduce(Undefined);
-                            Ok(())
-                        };
-                    }
-                    (Some(Raw(Str(s))), Some(Raw(Str(i)))) => {
-                        if let Ok(i) = i.parse::<f64>() {
-                            return if i >= 0.0 && (i as usize) < s.chars().count() {
-                                let ch = s.chars().nth(i as usize).unwrap();
-                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
+                    (Some(Raw(Str(str))), Some(js)) => match js.as_js_num() {
+                        Raw(Num(i)) => {
+                            let index = i as i64;
+                            if index >= 0 && (index as usize) < str.chars().count() {
+                                let ch = str.chars().nth(index as usize).unwrap();
+                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", str, index, ch);
                                 node.reduce(Raw(Str(ch.to_string())));
-                                Ok(())
                             } else {
                                 trace!(
                                     "InferCharAt: index {} out of bounds, setting to undefined",
-                                    i
+                                    index
                                 );
                                 node.reduce(Undefined);
-                                Ok(())
-                            };
-                        } else {
-                            warn!("InferCharAt: cannot parse index '{}' as number", i);
+                            }
                         }
-                    }
+                        _ => {}
+                    },
                     _ => {}
-                }
-
-                if let Some(Raw(Str(s))) = string.data() {
-                    if let Ok(t) = index.text() {
-                        if let Ok(i) = t.trim_matches(['\'', '"']).parse::<f64>() {
-                            return if i >= 0.0 && (i as usize) < s.chars().count() {
-                                let ch = s.chars().nth(i as usize).unwrap();
-                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", s, i, ch);
-                                node.reduce(Raw(Str(ch.to_string())));
-                                Ok(())
-                            } else {
-                                trace!(
-                                    "InferCharAt: index {} out of bounds, setting to undefined",
-                                    i
-                                );
-                                node.reduce(Undefined);
-                                Ok(())
-                            };
-                        }
-                    }
                 }
             }
             return Ok(());
         }
-
-        if view.kind() != "call_expression" {
-            return Ok(());
-        }
-
-        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
-            return Ok(());
-        };
-
-        let Some(method) = method_name(&callee) else {
-            return Ok(());
-        };
-        if method != "charAt" {
-            return Ok(());
-        }
-
-        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
-            return Ok(());
-        };
-        let Some(Raw(Str(input))) = object.data() else {
-            return Ok(());
-        };
-
-        let args = view.named_child("arguments");
-        let positional_args = get_positional_arguments(args);
-
-        let index = match positional_args.first() {
-            None => 0.0,
-            Some(arg) => match arg.data() {
-                Some(Raw(Num(n))) => *n,
-                Some(Raw(Str(s))) => s.parse::<f64>().ok().unwrap_or(f64::NAN),
-                _ => arg
-                    .text()
-                    .ok()
-                    .and_then(|t| t.trim_matches(['\'', '"']).parse::<f64>().ok())
-                    .unwrap_or(f64::NAN),
-            },
-        };
-
-        let result = if index.is_finite() && index >= 0.0 {
-            input
-                .chars()
-                .nth(index as usize)
-                .map(|c| c.to_string())
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-
-        trace!(
-            "InferCharAt: reducing '{}'.charAt({}) to '{}'",
-            input,
-            if positional_args.is_empty() {
-                "".to_string()
-            } else {
-                index.to_string()
-            },
-            result
-        );
-        node.reduce(Raw(Str(result)));
 
         Ok(())
     }
@@ -310,25 +728,6 @@ pub fn escape_js_string(s: &str) -> String {
     format!("'{}'", escaped)
 }
 
-/// Infers Split calls on strings
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, Split, ToString};
-/// use minusone::js::integer::ParseInt;
-/// use minusone::js::array::ParseArray;
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = 'a,b'.split(',');").unwrap();
-/// tree.apply_mut(&mut (
-///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), Split::default()
-/// )).unwrap();
-///
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = ['a', 'b'];");
-/// ```
 #[derive(Default)]
 pub struct CharCodeAt;
 
@@ -882,234 +1281,6 @@ impl<'a> RuleMut<'a> for ToString {
     }
 }
 
-/// Infers Split calls on strings
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, Split, ToString};
-/// use minusone::js::integer::ParseInt;
-/// use minusone::js::array::ParseArray;
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = 'a,b'.split(',');").unwrap();
-/// tree.apply_mut(&mut (
-///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), Split::default()
-/// )).unwrap();
-///
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = ['a', 'b'];");
-/// ```
-#[derive(Default)]
-pub struct Split;
-
-impl<'a> RuleMut<'a> for Split {
-    type Language = JavaScript;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() != "call_expression" {
-            return Ok(());
-        }
-
-        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
-            return Ok(());
-        };
-
-        let Some(method) = method_name(&callee) else {
-            return Ok(());
-        };
-        if method != "split" {
-            return Ok(());
-        }
-
-        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
-            return Ok(());
-        };
-        let Some(Raw(Str(input))) = object.data() else {
-            return Ok(());
-        };
-
-        let args = view.named_child("arguments");
-        let positional_args = get_positional_arguments(args);
-
-        let separator_owned: Option<String> = match positional_args.first().and_then(|a| a.data()) {
-            None => None,
-            Some(Undefined) => None,
-            Some(Raw(Str(s))) => Some(s.clone()),
-            Some(Raw(Num(n))) => Some(n.to_string()),
-            _ => return Ok(()),
-        };
-
-        let limit = match positional_args.get(1).and_then(|a| a.data()) {
-            None => None,
-            Some(Raw(Num(n))) if *n >= 0.0 => Some(*n as usize),
-            Some(Raw(Num(_))) => Some(0),
-            _ => return Ok(()),
-        };
-
-        let mut parts = split_parts(input, separator_owned.as_deref());
-        if let Some(limit) = limit {
-            parts.truncate(limit);
-        }
-
-        trace!(
-            "Split: reducing split call on '{}' => {} parts",
-            input,
-            parts.len()
-        );
-        node.reduce(Array(parts.into_iter().map(|s| Raw(Str(s))).collect()));
-
-        Ok(())
-    }
-}
-
-/// Infers replace and replaceAll calls on strings with string or regex patterns and reduces them to single string literals
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, Replace, Split, ToString};
-/// use minusone::js::integer::ParseInt;
-/// use minusone::js::array::ParseArray;
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = 'a,b,c'.replace(',', '');").unwrap();
-/// tree.apply_mut(&mut (
-///     ParseString::default(), Replace::default()
-/// )).unwrap();
-///
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = 'ab,c';");
-/// ```
-#[derive(Default)]
-pub struct Replace;
-
-impl<'a> RuleMut<'a> for Replace {
-    type Language = JavaScript;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() != "call_expression" {
-            return Ok(());
-        }
-
-        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
-            return Ok(());
-        };
-
-        let Some(method) = method_name(&callee) else {
-            return Ok(());
-        };
-        if method != "replace" && method != "replaceAll" {
-            return Ok(());
-        }
-
-        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
-            return Ok(());
-        };
-        let Some(Raw(Str(input))) = object.data() else {
-            return Ok(());
-        };
-
-        let args = view.named_child("arguments");
-        let positional_args = get_positional_arguments(args);
-
-        let replacement = match positional_args.get(1).and_then(|a| a.data()) {
-            None => "undefined".to_string(),
-            Some(Raw(Str(s))) => s.clone(),
-            Some(js) => js.to_string(),
-        };
-
-        match positional_args.first().and_then(|a| a.data()) {
-            None => Ok(()),
-            Some(Regex { pattern, flags }) => {
-                let Some(regex) = RegexExec::compile(pattern, flags) else {
-                    return Ok(());
-                };
-
-                //let result = regex.replace_all(input, &replacement);+
-                let result = match method.as_str() {
-                    "replace" => match flags.contains("g") {
-                        true => regex.replace_all(input, &replacement),
-                        false => regex.replace(input, &replacement),
-                    },
-                    "replaceAll" => match flags.contains("g") {
-                        true => regex.replace_all(input, &replacement),
-                        false => {
-                            error!(
-                                "Replace: replaceAll called with regex without global flag, treating as replace. This should crash the engine, skipping."
-                            );
-                            return Ok(());
-                        }
-                    },
-                    _ => unreachable!(),
-                };
-                trace!(
-                    "Replace: reducing regex replace call on '{}' => '{}'",
-                    input, result
-                );
-                node.reduce(Raw(Str(result.to_string())));
-                Ok(())
-            }
-            Some(Raw(Str(s))) => {
-                let pattern = s.clone();
-                let result = match method.as_str() {
-                    "replace" => input.replacen(&pattern, &replacement, 1),
-                    "replaceAll" => input.replace(&pattern, &replacement),
-                    _ => unreachable!(),
-                };
-                trace!(
-                    "Replace: reducing string replace call on '{}' => '{}'",
-                    input, result
-                );
-                node.reduce(Raw(Str(result.to_string())));
-                Ok(())
-            }
-            Some(js) => {
-                let pattern = js.to_string();
-                let result = match method.as_str() {
-                    "replace" => input.replacen(&pattern, &replacement, 1),
-                    "replaceAll" => input.replace(&pattern, &replacement),
-                    _ => unreachable!(),
-                };
-                trace!(
-                    "Replace: reducing string replace call on '{}' => '{}'",
-                    input, result
-                );
-                node.reduce(Raw(Str(result.to_string())));
-                Ok(())
-            }
-        }
-    }
-}
-
 fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
     match separator {
         None => vec![input.to_string()],
@@ -1321,7 +1492,7 @@ mod tests_js_string {
     use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
     use crate::tree::EmptyStorage;
 
-    fn deobfuscate_string(input: &str) -> String {
+    fn deobfuscate(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
         let mut bracket_to_member = BracketCallToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
@@ -1333,16 +1504,15 @@ mod tests_js_string {
             ParseInt::default(),
             ParseArray::default(),
             ParseRegex::default(),
+            StringBuiltins::default(),
             Forward::default(),
             PosNeg::default(),
-            CharAt::default(),
+            BracketCharAt::default(),
             CharCodeAt::default(),
             FromCharCode::default(),
             StringConstructor::default(),
             Concat::default(),
             AddInt::default(),
-            Split::default(),
-            Replace::default(),
             StringRaw::default(),
             TemplateString::default(),
             GetArrayElement::default(),
@@ -1384,57 +1554,40 @@ mod tests_js_string {
     #[test]
     fn test_concat() {
         assert_eq!(
-            deobfuscate_string("var x = 'Hello, ' + 'world!' + 1;"),
+            deobfuscate("var x = 'Hello, ' + 'world!' + 1;"),
             "var x = 'Hello, world!1';"
         );
     }
 
     #[test]
     fn test_charat() {
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt();"),
-            "var x = 'a';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt(1);"),
-            "var x = 'b';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'['charAt'](2);"),
-            "var x = 'c';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt(3);"),
-            "var x = '';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt(-3);"),
-            "var x = '';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'.charAt('1');"),
-            "var x = 'b';"
-        );
-        assert_eq!(deobfuscate_string("var x = 'test'[1];"), "var x = 'e';");
-        assert_eq!(
-            deobfuscate_string("var x = 'test'[10];"),
-            "var x = undefined;"
-        );
-        assert_eq!(deobfuscate_string("var x = 'abc'[0];"), "var x = 'a';");
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'[-1];"),
-            "var x = undefined;"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'abc'[3];"),
-            "var x = undefined;"
-        );
+        assert_eq!(deobfuscate("var x = 'abc'.charAt();"), "var x = 'a';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt(1);"), "var x = 'b';");
+        assert_eq!(deobfuscate("var x = 'abc'['charAt'](2);"), "var x = 'c';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt(3);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt(-3);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abc'.charAt('1');"), "var x = 'b';");
+        assert_eq!(deobfuscate("var x = 'test'[1];"), "var x = 'e';");
+        assert_eq!(deobfuscate("var x = 'test'[10];"), "var x = undefined;");
+        assert_eq!(deobfuscate("var x = 'abc'[0];"), "var x = 'a';");
+        assert_eq!(deobfuscate("var x = 'abc'[-1];"), "var x = undefined;");
+        assert_eq!(deobfuscate("var x = 'abc'[3];"), "var x = undefined;");
+    }
+
+    #[test]
+    fn test_at() {
+        assert_eq!(deobfuscate("var x = 'abc'.at();"), "var x = 'a';");
+        assert_eq!(deobfuscate("var x = 'abc'.at(1);"), "var x = 'b';");
+        assert_eq!(deobfuscate("var x = 'abc'.at(-1);"), "var x = 'c';");
+        assert_eq!(deobfuscate("var x = 'abc'.at('2');"), "var x = 'c';");
+        assert_eq!(deobfuscate("var x = 'abc'['at']('-2');"), "var x = 'b';");
+        assert_eq!(deobfuscate("var x = 'abc'.at(10);"), "var x = undefined;");
     }
 
     #[test]
     fn test_charat_concat() {
         assert_eq!(
-            deobfuscate_string(
+            deobfuscate(
                 "var x = 'minusone'[0] + 'minusone'[1] + 'minusone'[2] + 'minusone'[3] + 'minusone'[4] + 'minusone'[5] + 'minusone'[6] + 'minusone'[7];"
             ),
             "var x = 'minusone';"
@@ -1443,71 +1596,281 @@ mod tests_js_string {
 
     #[test]
     fn test_charcodeat() {
-        assert_eq!(
-            deobfuscate_string("var x = 'ABC'.charCodeAt(0);"),
-            "var x = 65;"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = 'ABC'.charCodeAt(14);"),
-            "var x = NaN;"
-        );
+        assert_eq!(deobfuscate("var x = 'ABC'.charCodeAt(0);"), "var x = 65;");
+        assert_eq!(deobfuscate("var x = 'ABC'.charCodeAt(14);"), "var x = NaN;");
     }
 
     #[test]
     fn test_from_char_code() {
         assert_eq!(
-            deobfuscate_string(
-                "var x = String.fromCharCode(0x4f, 0x72, 0x44, 0x65, 0x52, 0x5f, 0x37, 0x30, 0x37, 0x37);"
+            deobfuscate(
+                "var x = String.fromCharCode(0x6D, 0x69, 0x6E, 0x75, 0x73, 0x6F, 0x6E, 0x65);"
             ),
-            "var x = 'OrDeR_7077';"
+            "var x = 'minusone';"
         );
         assert_eq!(
-            deobfuscate_string("var x = String['fromCharCode'](65, 66, 67);"),
+            deobfuscate("var x = String['fromCharCode'](65, 66, 67);"),
             "var x = 'ABC';"
         );
     }
 
     #[test]
+    fn test_code_point_at() {
+        assert_eq!(deobfuscate("var x = 'abc'.codePointAt(1);"), "var x = 98;");
+        assert_eq!(deobfuscate("var x = 'abc'.codePointAt();"), "var x = 97;");
+        assert_eq!(
+            deobfuscate("var x = '☃★♲'.codePointAt(1);"),
+            "var x = 9733;"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.codePointAt(-1);"),
+            "var x = undefined;"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.codePointAt(3);"),
+            "var x = undefined;"
+        );
+    }
+
+    #[test]
     fn test_string_constructor() {
-        assert_eq!(deobfuscate_string("var x = String(1);"), "var x = '1';");
-        assert_eq!(deobfuscate_string("var x = String();"), "var x = '';");
+        assert_eq!(deobfuscate("var x = String(1);"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = String();"), "var x = '';");
     }
 
     #[test]
     fn test_string_plus_minus() {
         assert_eq!(
-            deobfuscate_string("var x = +'42'; var y = -'42';"),
+            deobfuscate("var x = +'42'; var y = -'42';"),
             "var x = 42; var y = -42;"
         );
-        assert_eq!(deobfuscate_string("var x = +'0xff';"), "var x = 255;");
-        assert_eq!(deobfuscate_string("var x = +'-0x56';"), "var x = NaN;");
-        assert_eq!(deobfuscate_string("var x = +'-56';"), "var x = -56;");
+        assert_eq!(deobfuscate("var x = +'0xff';"), "var x = 255;");
+        assert_eq!(deobfuscate("var x = +'-0x56';"), "var x = NaN;");
+        assert_eq!(deobfuscate("var x = +'-56';"), "var x = -56;");
         assert_eq!(
-            deobfuscate_string("var x = 'b' + 'a' + +'a' + 'a'"),
+            deobfuscate("var x = 'b' + 'a' + +'a' + 'a'"),
             "var x = 'baNaNa'"
         );
     }
 
     #[test]
+    fn test_start_with() {
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith('1');"),
+            "var x = true;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith('2');"),
+            "var x = false;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith([1]);"),
+            "var x = true;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith('');"),
+            "var x = true;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.startsWith([]);"),
+            "var x = true;"
+        );
+    }
+
+    #[test]
+    fn test_end_with() {
+        assert_eq!(deobfuscate("var x = '123'.endsWith('3');"), "var x = true;");
+        assert_eq!(
+            deobfuscate("var x = '123'.endsWith('2');"),
+            "var x = false;"
+        );
+        assert_eq!(deobfuscate("var x = '123'.endsWith([3]);"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.endsWith('');"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.endsWith([]);"), "var x = true;");
+    }
+
+    #[test]
+    fn test_includes() {
+        assert_eq!(deobfuscate("var x = '123'.includes('3');"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.includes('2');"), "var x = true;");
+        assert_eq!(
+            deobfuscate("var x = '123'.includes('4');"),
+            "var x = false;"
+        );
+        assert_eq!(deobfuscate("var x = '123'.includes([1]);"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.includes('');"), "var x = true;");
+        assert_eq!(deobfuscate("var x = '123'.includes([]);"), "var x = true;");
+    }
+
+    #[test]
+    fn test_index_of() {
+        assert_eq!(deobfuscate("var x = '123'.indexOf('3');"), "var x = 2;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf('2');"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf('4');"), "var x = -1;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf([1]);"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf('');"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf();"), "var x = -1;");
+        assert_eq!(deobfuscate("var x = '123'.indexOf([]);"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_last_index_of() {
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('3');"),
+            "var x = 5;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('2');"),
+            "var x = 4;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('4');"),
+            "var x = -1;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf([1]);"),
+            "var x = 3;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf('');"),
+            "var x = 6;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf();"),
+            "var x = -1;"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123123'.lastIndexOf([]);"),
+            "var x = 6;"
+        );
+    }
+
+    #[test]
+    fn to_upper_or_lower_case() {
+        assert_eq!(
+            deobfuscate("var x = 'abc'.toUpperCase();"),
+            "var x = 'ABC';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'ABC'.toLowerCase();"),
+            "var x = 'abc';"
+        );
+    }
+
+    #[test]
+    fn test_trim() {
+        assert_eq!(deobfuscate("var x = '  abc  '.trim();"), "var x = 'abc';");
+        assert_eq!(
+            deobfuscate("var x = '\\t\\nabc\\n\\t'.trim();"),
+            "var x = 'abc';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '  abc  '.trimStart();"),
+            "var x = 'abc  ';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '  abc  '.trimEnd();"),
+            "var x = '  abc';"
+        );
+    }
+
+    #[test]
+    fn test_pad() {
+        assert_eq!(
+            deobfuscate("var x = '123'.padStart(5, '0');"),
+            "var x = '00123';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.padEnd(5, '0');"),
+            "var x = '12300';"
+        );
+        assert_eq!(
+            deobfuscate("var x = '123'.padStart(5);"),
+            "var x = '  123';"
+        );
+        assert_eq!(deobfuscate("var x = '123'.padEnd(5);"), "var x = '123  ';");
+    }
+
+    #[test]
+    fn test_repeat() {
+        assert_eq!(
+            deobfuscate("var x = 'abc'.repeat(3);"),
+            "var x = 'abcabcabc';"
+        );
+        assert_eq!(deobfuscate("var x = 'abc'.repeat(0);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abc'.repeat(1.5);"), "var x = 'abc';");
+    }
+
+    #[test]
+    fn test_slice() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.slice(1, 4);"),
+            "var x = 'bcd';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(2);"), "var x = 'cdef';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(-3);"), "var x = 'def';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.slice(-4, -1);"),
+            "var x = 'cde';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(2, 1);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.slice(10);"), "var x = '';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.slice();"),
+            "var x = 'abcdef';"
+        );
+    }
+
+    #[test]
+    fn test_substring() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(1, 4);"),
+            "var x = 'bcd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(4, 1);"),
+            "var x = 'bcd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(2);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(-3);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(-4, -1);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(2, 1);"),
+            "var x = 'b';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring(10);"),
+            "var x = '';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substring();"),
+            "var x = 'abcdef';"
+        );
+    }
+
+    #[test]
     fn test_to_string_dot_and_subscript() {
-        assert_eq!(
-            deobfuscate_string("var x = (1)['toString']();"),
-            "var x = '1';"
-        );
-        assert_eq!(
-            deobfuscate_string("var x = (1).toString();"),
-            "var x = '1';"
-        );
+        assert_eq!(deobfuscate("var x = (1)['toString']();"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = (1).toString();"), "var x = '1';");
     }
 
     #[test]
     fn test_split_with_params() {
         assert_eq!(
-            deobfuscate_string("var x = 'alert164t50t471t47t51'['split']('t')[0];"),
+            deobfuscate("var x = 'alert164t50t471t47t51'['split']('t')[0];"),
             "var x = 'aler';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.split(',', 2)[1];"),
+            deobfuscate("var x = 'a,b,c'.split(',', 2)[1];"),
             "var x = 'b';"
         );
     }
@@ -1516,53 +1879,81 @@ mod tests_js_string {
     fn test_replace() {
         // string
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replace(',', '');"),
+            deobfuscate("var x = 'a,b,c'.replace(',', '');"),
             "var x = 'ab,c';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replaceAll(',', '');"),
+            deobfuscate("var x = 'a,b,c'.replaceAll(',', '');"),
             "var x = 'abc';"
         );
 
         // num
         assert_eq!(
-            deobfuscate_string("var x = '124'.replaceAll(4, 3);"),
+            deobfuscate("var x = '124'.replaceAll(4, 3);"),
             "var x = '123';"
         );
 
         // regex
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/g, '');"),
+            deobfuscate("var x = 'a,b,c'.replaceAll(/,/g, '');"),
             "var x = 'abc';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replaceAll(/,/, '');"),
+            deobfuscate("var x = 'a,b,c'.replaceAll(/,/, '');"),
             "var x = 'a,b,c'.replaceAll(/,/, '');"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replace(/,/g, '');"),
+            deobfuscate("var x = 'a,b,c'.replace(/,/g, '');"),
             "var x = 'abc';"
         );
         assert_eq!(
-            deobfuscate_string("var x = 'a,b,c'.replace(/,/, '');"),
+            deobfuscate("var x = 'a,b,c'.replace(/,/, '');"),
             "var x = 'ab,c';"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_tags() {
+        assert_eq!(
+            deobfuscate("var x = 'minusone'.link('https://minusone.skyblue.team/');"),
+            "var x = '<a href=\"https://minusone.skyblue.team/\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'minusone'.anchor('minusone');"),
+            "var x = '<a name=\"minusone\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'minusone'.link();"),
+            "var x = '<a href=\"undefined\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'minusone'.anchor();"),
+            "var x = '<a name=\"undefined\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'minusone'['link']('https://minusone.skyblue.team/');"),
+            "var x = '<a href=\"https://minusone.skyblue.team/\">minusone</a>';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'minusone'.link('\"');"),
+            "var x = '<a href=\"&quot;\">minusone</a>';"
         );
     }
 
     #[test]
     fn test_template_string() {
         assert_eq!(
-            deobfuscate_string("var x = `hello ${1} ${'world'}`;"),
+            deobfuscate("var x = `hello ${1} ${'world'}`;"),
             "var x = 'hello 1 world';"
         );
 
         assert_eq!(
-            deobfuscate_string("var x = `hello ${1} ${1+1}`;"),
+            deobfuscate("var x = `hello ${1} ${1+1}`;"),
             "var x = 'hello 1 2';"
         );
 
         assert_eq!(
-            deobfuscate_string("console.log(`hello ${a} ${1+1}`)"),
+            deobfuscate("console.log(`hello ${a} ${1+1}`)"),
             "console.log(`hello ${a} 2`)"
         );
     }
@@ -1570,17 +1961,17 @@ mod tests_js_string {
     #[test]
     fn test_string_raw_tagged_template() {
         assert_eq!(
-            deobfuscate_string("console.log(String.raw`minusone`)"),
+            deobfuscate("console.log(String.raw`minusone`)"),
             "console.log('minusone')"
         );
 
         assert_eq!(
-            deobfuscate_string("let a = 'a'; console.log(String.raw`${a}`);"),
+            deobfuscate("let a = 'a'; console.log(String.raw`${a}`);"),
             "let a = 'a'; console.log('a');"
         );
 
         assert_eq!(
-            deobfuscate_string("let a = 1; console.log(String.raw`${a + 1}`);"),
+            deobfuscate("let a = 1; console.log(String.raw`${a + 1}`);"),
             "let a = 1; console.log('2');"
         );
     }

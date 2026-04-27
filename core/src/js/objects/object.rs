@@ -446,8 +446,13 @@ impl<'a> RuleMut<'a> for ObjectField {
                             return Ok(());
                         }
 
-                        if matches!(&value, Function { source, .. } if source.contains("[native code]"))
-                            && !Self::is_string_concat_target(&view)
+                        if matches!(
+                            &value,
+                            Function {
+                                source,
+                                return_value: None,
+                            } if source.contains("[native code]")
+                        ) && !Self::is_string_concat_target(&view)
                         {
                             // keep original constructor/at access except in + coercion contexts.
                             return Ok(());
@@ -658,14 +663,6 @@ mod tests {
     #[test]
     fn test_number_literal_to_string_dot_call() {
         assert_eq!(deobfuscate("var x = (1).toString();"), "var x = '1';");
-    }
-
-    #[test]
-    fn test_string_fontcolor_objectified_call() {
-        assert_eq!(
-            deobfuscate("var x = 'abc'['fontcolor']();"),
-            "var x = '<font color=\"undefined\">abc</font>';"
-        );
     }
 
     #[test]

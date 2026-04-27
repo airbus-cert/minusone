@@ -152,7 +152,8 @@ impl_javascript_ruleset!(
     BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
     AddBool,           // Infer boolean addition operations
     CombineArrays,     // Infer + operations on two arrays
-    CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    StringBuiltins,    // Shared dispatcher for string literal builtins (.at, etc.)
+    BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
     StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
@@ -164,8 +165,6 @@ impl_javascript_ruleset!(
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
     StringRaw,      // Infer String.raw tagged template literals
     TemplateString, // Infer template string literals with deterministic substitutions
-    Split,          // Infer string split calls on literal strings
-    Replace,        // Infer string replace calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
