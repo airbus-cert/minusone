@@ -11,10 +11,10 @@ impl From<PyMinusOneError> for PyErr {
     fn from(err: PyMinusOneError) -> Self {
         match err.0 {
             minusone::error::Error::Utf8Error(_) => {
-                PyErr::new::<PyRuntimeError, _>(format!("Invalid UTF8 token"))
+                PyErr::new::<PyRuntimeError, _>("Invalid UTF8 token".to_string())
             }
             minusone::error::Error::MinusOneError(minusone_error) => {
-                PyErr::new::<PyRuntimeError, _>(format!("{}", minusone_error.message))
+                PyErr::new::<PyRuntimeError, _>(minusone_error.message.to_string())
             }
         }
     }

@@ -825,13 +825,12 @@ impl<'a, T> Node<'a, T> {
     }
 
     pub fn smallest_child(&self) -> Node<'a, T> {
-        if let Some(first_child) = self.child(0) {
-            if self.start_abs() == first_child.start_abs()
+        if let Some(first_child) = self.child(0)
+            && self.start_abs() == first_child.start_abs()
                 && self.end_abs() == first_child.end_abs()
             {
                 return first_child.smallest_child();
             }
-        }
 
         Node::new(self.node, self.source, self.storage)
     }
@@ -980,11 +979,10 @@ impl<'a, T> Iterator for NodeIterator<'a, T> {
     type Item = Node<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(end) = self.end {
-            if self.index >= end {
+        if let Some(end) = self.end
+            && self.index >= end {
                 return None;
             }
-        }
 
         match self.inner.child(self.index) {
             Some(node) => {

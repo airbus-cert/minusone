@@ -202,7 +202,7 @@ fn format_f64_to_string(n: f64) -> String {
         return "0".to_string();
     }
 
-    if abs >= 1e21 || abs < 1e-6 {
+    if !(1e-6..1e21).contains(&abs) {
         to_js_scientific(n)
     } else {
         format!("{}", n)

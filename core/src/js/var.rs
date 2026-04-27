@@ -41,17 +41,11 @@ use log::trace;
 ///
 /// assert_eq!(linter.output, "var a = 'hello'; console.log('hello');");
 /// ```
+#[derive(Default)]
 pub struct Var {
     scope_manager: ScopeManager<JavaScript>,
 }
 
-impl Default for Var {
-    fn default() -> Self {
-        Var {
-            scope_manager: ScopeManager::default(),
-        }
-    }
-}
 
 impl Var {
     fn is_subscript_index_read(node: &Node<JavaScript>) -> bool {
@@ -93,14 +87,13 @@ impl Var {
                 }
                 "variable_declarator" => {
                     // declaration in an unpredictable branch: forget the name
-                    if let Some(name_node) = child.named_child("name") {
-                        if name_node.kind() == "identifier" {
+                    if let Some(name_node) = child.named_child("name")
+                        && name_node.kind() == "identifier" {
                             let var_name = name_node.text()?.to_string();
                             self.scope_manager
                                 .current_mut()
                                 .forget(&var_name, node.is_ongoing_transaction());
                         }
-                    }
                 }
                 _ => {
                     self.forget_assigned_var(&child)?;
@@ -121,8 +114,8 @@ impl Var {
                     }
                 }
                 "assignment_expression" | "augmented_assignment_expression" => {
-                    if let Some(left) = parent.child(0) {
-                        if node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
+                    if let Some(left) = parent.child(0)
+                        && node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
                         {
                             // In `obj[expr] = ...`, identifiers inside `expr` are reads, not writes.
                             if Self::is_subscript_index_read(node) {
@@ -130,7 +123,6 @@ impl Var {
                             }
                             return true;
                         }
-                    }
                 }
                 "update_expression" => {
                     return true;
@@ -198,30 +190,26 @@ impl<'a> RuleMut<'a> for Var {
                 }
             }
             "}" => {
-                if let Some(parent) = view.parent() {
-                    match parent.kind() {
-                        "statement_block" => {
-                            if let Some(grandparent) = parent.parent() {
-                                match grandparent.kind() {
-                                    "function_declaration"
-                                    | "function"
-                                    | "arrow_function"
-                                    | "method_definition"
-                                    | "generator_function_declaration"
-                                    | "generator_function" => {
-                                        self.scope_manager.leave_function();
-                                    }
-                                    _ => {
-                                        self.scope_manager.leave();
-                                    }
+                if let Some(parent) = view.parent()
+                    && parent.kind() == "statement_block" {
+                        if let Some(grandparent) = parent.parent() {
+                            match grandparent.kind() {
+                                "function_declaration"
+                                | "function"
+                                | "arrow_function"
+                                | "method_definition"
+                                | "generator_function_declaration"
+                                | "generator_function" => {
+                                    self.scope_manager.leave_function();
                                 }
-                            } else {
-                                self.scope_manager.leave();
+                                _ => {
+                                    self.scope_manager.leave();
+                                }
                             }
+                        } else {
+                            self.scope_manager.leave();
                         }
-                        _ => {}
                     }
-                }
             }
             _ => {}
         }
@@ -238,11 +226,11 @@ impl<'a> RuleMut<'a> for Var {
             // var/let/const
             "variable_declarator" => {
                 // child(0) = name (identifier), child(1) = "=", child(2) = value
-                if let Some(name_node) = view.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = view.named_child("name")
+                    && name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
-                        if let Some(value_node) = view.named_child("value") {
-                            if let Some(data) = value_node.data() {
+                        if let Some(value_node) = view.named_child("value")
+                            && let Some(data) = value_node.data() {
                                 trace!("Var (L): Assigning variable '{}' = {:?}", var_name, data);
                                 self.scope_manager.current_mut().assign(
                                     &var_name,
@@ -250,20 +238,17 @@ impl<'a> RuleMut<'a> for Var {
                                     node.is_ongoing_transaction(),
                                 );
                             }
-                        }
                         // variable_declaration = var, lexical_declaration = let/const
-                        if let Some(parent) = view.parent() {
-                            if parent.kind() == "variable_declaration" {
+                        if let Some(parent) = view.parent()
+                            && parent.kind() == "variable_declaration" {
                                 self.scope_manager.current_mut().set_non_local(&var_name);
                             }
-                        }
                     }
-                }
             }
             // reassignment
             "assignment_expression" => {
-                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
-                    if left.kind() == "identifier" {
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2))
+                    && left.kind() == "identifier" {
                         let var_name = left.text()?.to_string();
                         if let Some(data) = right.data() {
                             trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
@@ -279,12 +264,11 @@ impl<'a> RuleMut<'a> for Var {
                                 .forget(&var_name, node.is_ongoing_transaction());
                         }
                     }
-                }
             }
             // function test() {} / function* test() {}
             "function_declaration" | "generator_function_declaration" => {
-                if let Some(name_node) = view.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = view.named_child("name")
+                    && name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
                         let value = view
                             .data()
@@ -305,13 +289,11 @@ impl<'a> RuleMut<'a> for Var {
                             node.is_ongoing_transaction(),
                         );
 
-                        if let Some(parent) = view.parent() {
-                            if parent.kind() == "program" {
+                        if let Some(parent) = view.parent()
+                            && parent.kind() == "program" {
                                 self.scope_manager.current_mut().set_non_local(&var_name);
                             }
-                        }
                     }
-                }
             }
             // x++, x--, ++x, --x
             "update_expression" => {

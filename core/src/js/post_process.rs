@@ -458,11 +458,10 @@ impl RemoveUnused {
                 if count > 1 {
                     return None;
                 }
-                if let Some(name_node) = child.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = child.named_child("name")
+                    && name_node.kind() == "identifier" {
                         name = Some(name_node.text().ok()?.to_string());
                     }
-                }
             }
         }
         name
@@ -609,21 +608,19 @@ impl<'a> Rule<'a> for RemoveUnused {
             // var x = ...; / let x = ...; / const x = ...;
             "variable_declaration" | "lexical_declaration" => {
                 // split chained declarations so clean output emits one var/let/const per statement.
-                if !Self::in_for_header(node) {
-                    if let Some(replacement) = Self::split_declaration_text(node) {
+                if !Self::in_for_header(node)
+                    && let Some(replacement) = Self::split_declaration_text(node) {
                         trace!("RemoveUnusedVar: splitting chained declaration");
                         self.replace_node_with_text(node, &replacement)?;
                         return Ok(false);
                     }
-                }
 
-                if let Some(var_name) = Self::single_declarator_name(node) {
-                    if self.rule.is_unused(&var_name) {
+                if let Some(var_name) = Self::single_declarator_name(node)
+                    && self.rule.is_unused(&var_name) {
                         trace!("RemoveUnusedVar: removing declaration of '{}'", var_name);
                         self.remove_node(node)?;
                         return Ok(false);
                     }
-                }
             }
             // x = ...;  (expression_statement wrapping an assignment_expression)
             // also removes bare literal expression statements (e.g. 1;, 'hello';, true;)
@@ -637,8 +634,8 @@ impl<'a> Rule<'a> for RemoveUnused {
                 if let Some(child) = node.child(0) {
                     match child.kind() {
                         "assignment_expression" => {
-                            if let Some(left) = child.child(0) {
-                                if left.kind() == "identifier" {
+                            if let Some(left) = child.child(0)
+                                && left.kind() == "identifier" {
                                     let var_name = left.text()?.to_string();
                                     if self.rule.is_unused(&var_name) {
                                         trace!(
@@ -649,7 +646,6 @@ impl<'a> Rule<'a> for RemoveUnused {
                                         return Ok(false);
                                     }
                                 }
-                            }
                         }
                         // bare literals are dead code
                         "number" | "string" | "true" | "false" | "null" | "undefined" => {
@@ -666,8 +662,8 @@ impl<'a> Rule<'a> for RemoveUnused {
             }
             // function foo() { ... }  where foo is never called
             "function_declaration" => {
-                if let Some(name_node) = node.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = node.named_child("name")
+                    && name_node.kind() == "identifier" {
                         let fn_name = name_node.text()?.to_string();
                         if self.rule.is_unused(&fn_name) {
                             trace!(
@@ -678,7 +674,6 @@ impl<'a> Rule<'a> for RemoveUnused {
                             return Ok(false);
                         }
                     }
-                }
             }
             // if statements with known boolean conditions
             "if_statement" => {
@@ -689,8 +684,8 @@ impl<'a> Rule<'a> for RemoveUnused {
                             for child in node.iter() {
                                 if child.kind() == "else_clause" {
                                     for else_child in child.iter() {
-                                        if else_child.kind() == "statement_block" {
-                                            if let Some(inner) = Self::block_inner_text(&else_child)
+                                        if else_child.kind() == "statement_block"
+                                            && let Some(inner) = Self::block_inner_text(&else_child)
                                             {
                                                 trace!(
                                                     "RemoveUnusedVar: replacing if (false) ... else with else body"
@@ -698,7 +693,6 @@ impl<'a> Rule<'a> for RemoveUnused {
                                                 self.replace_node_with_text(node, &inner)?;
                                                 return Ok(false);
                                             }
-                                        }
                                     }
                                 }
                             }
@@ -710,13 +704,12 @@ impl<'a> Rule<'a> for RemoveUnused {
                         }
                     } else if Self::is_literal_bool(&condition, true) {
                         // if (true) { BODY } ... -> keep BODY, discard else
-                        if let Some(consequence) = node.named_child("consequence") {
-                            if let Some(inner) = Self::block_inner_text(&consequence) {
+                        if let Some(consequence) = node.named_child("consequence")
+                            && let Some(inner) = Self::block_inner_text(&consequence) {
                                 trace!("RemoveUnusedVar: replacing if (true) with if body");
                                 self.replace_node_with_text(node, &inner)?;
                                 return Ok(false);
                             }
-                        }
                     }
                 }
             }

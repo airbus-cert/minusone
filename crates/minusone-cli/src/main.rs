@@ -77,7 +77,7 @@ fn main() {
             error!("No language specified. Use --lang to specify the language.");
             error!("Available languages:");
             for l in Language::value_variants() {
-                error!("- {}", l.to_string());
+                error!("- {}", l);
             }
             process::exit(1);
         }
@@ -118,18 +118,10 @@ fn main() {
     } else if let Some(input) = cli.input {
         let use_utf_8 = match lang {
             Language::Powershell => {
-                if cli.utf {
-                    true
-                } else {
-                    false
-                }
+                cli.utf
             }
             _ => {
-                if cli.utf {
-                    false
-                } else {
-                    true
-                }
+                !cli.utf
             }
         };
 

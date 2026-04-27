@@ -42,7 +42,7 @@ impl<'a> RuleMut<'a> for ParseString {
             warn!("ParseString: error getting text for node: {}", e);
             return Ok(());
         }
-        let value = unescaped_js_string(&value?);
+        let value = unescaped_js_string(value?);
 
         trace!("ParseString (L): string literal with value '{}'", value);
         node.reduce(Raw(Str(value)));
@@ -72,7 +72,7 @@ fn unescaped_js_string(s: &str) -> String {
                         let mut hex = String::new();
                         if let Some('{') = chars.peek() {
                             chars.next(); // consume '{'
-                            while let Some(h) = chars.next() {
+                            for h in chars.by_ref() {
                                 if h == '}' {
                                     break;
                                 }
@@ -413,8 +413,7 @@ fn string_builtin_pad(input: &str, args: &[JavaScript], pad_start: bool) -> Opti
     match pad_string.as_str() {
         "" => Some(Raw(Str(input.to_string()))),
         _ => {
-            let repeated_pad =
-                pad_string.repeat((padding_needed + pad_string.len() - 1) / pad_string.len());
+            let repeated_pad = pad_string.repeat(padding_needed.div_ceil(pad_string.len()));
             let final_pad = &repeated_pad[..padding_needed];
             if pad_start {
                 Some(Raw(Str(format!("{}{}", final_pad, input))))
@@ -684,26 +683,21 @@ impl<'a> RuleMut<'a> for BracketCharAt {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "subscript_expression" {
-            if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
-                match (string.data(), index.data()) {
-                    (Some(Raw(Str(str))), Some(js)) => match js.as_js_num() {
-                        Raw(Num(i)) => {
-                            let index = i as i64;
-                            if index >= 0 && (index as usize) < str.chars().count() {
-                                let ch = str.chars().nth(index as usize).unwrap();
-                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", str, index, ch);
-                                node.reduce(Raw(Str(ch.to_string())));
-                            } else {
-                                trace!(
-                                    "InferCharAt: index {} out of bounds, setting to undefined",
-                                    index
-                                );
-                                node.reduce(Undefined);
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
+            if let (Some(string), Some(index)) = (view.child(0), view.child(2))
+                && let (Some(Raw(Str(str))), Some(js)) = (string.data(), index.data())
+                && let Raw(Num(i)) = js.as_js_num()
+            {
+                let index = i as i64;
+                if index >= 0 && (index as usize) < str.chars().count() {
+                    let ch = str.chars().nth(index as usize).unwrap();
+                    trace!("InferCharAt: reducing '{}'[{}] to '{}'", str, index, ch);
+                    node.reduce(Raw(Str(ch.to_string())));
+                } else {
+                    trace!(
+                        "InferCharAt: index {} out of bounds, setting to undefined",
+                        index
+                    );
+                    node.reduce(Undefined);
                 }
             }
             return Ok(());
@@ -972,7 +966,7 @@ fn js_to_number_for_from_char_code(value: &JavaScript) -> Option<f64> {
             } else if let Ok(n) = t.parse::<f64>() {
                 Some(n)
             } else {
-                match ParseInt::from_str(t) {
+                match ParseInt::from_string(t) {
                     Raw(Num(n)) => Some(n),
                     _ => None,
                 }
@@ -1026,120 +1020,119 @@ impl<'a> RuleMut<'a> for Concat {
 
         if let (Some(left), Some(operator), Some(right)) =
             (view.child(0), view.child(1), view.child(2))
+            && operator.text()? == "+"
         {
-            if operator.text()? == "+" {
-                match (left.data(), right.data()) {
-                    (Some(Raw(Str(s1))), Some(Raw(Str(s2)))) => {
-                        trace!(
-                            "Concat: reducing '{}' + '{}' to '{}'",
-                            s1,
-                            s2,
-                            s1.to_string() + s2
-                        );
-                        node.reduce(Raw(Str(s1.to_string() + s2)));
-                    }
-                    // numbers + strings should also be concatenated as strings
-                    (Some(Raw(Num(n))), Some(Raw(Str(s)))) => {
-                        trace!(
-                            "Concat: reducing {} + '{}' to '{}'",
-                            n,
-                            s,
-                            n.to_string() + s
-                        );
-                        node.reduce(Raw(Str(n.to_string() + s)));
-                    }
-                    (Some(Raw(Str(s))), Some(Raw(Num(n)))) => {
-                        trace!(
-                            "Concat: reducing '{}' + {} to '{}'",
-                            s,
-                            n,
-                            s.to_string() + n.to_string().as_str()
-                        );
-                        node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
-                    }
-                    (Some(Array(array)), Some(Raw(Str(s)))) => {
-                        let array_str = flatten_array(array, None);
-                        trace!(
-                            "Concat: reducing array + '{}' to '{}'",
-                            s,
-                            array_str.to_string() + s
-                        );
-                        node.reduce(Raw(Str(array_str.to_string() + s)));
-                    }
-                    (Some(Raw(Str(s))), Some(Array(array))) => {
-                        let array_str = flatten_array(array, None);
-                        trace!(
-                            "Concat: reducing '{}' + array to '{}'",
-                            s,
-                            s.to_string() + array_str.as_str()
-                        );
-                        node.reduce(Raw(Str(s.to_string() + array_str.as_str())));
-                    }
-                    (Some(Raw(Str(s))), Some(Raw(BigInt(b)))) => {
-                        trace!(
-                            "Concat: reducing '{}' + {}n to '{}'",
-                            s,
-                            b,
-                            s.to_string() + b.to_string().as_str()
-                        );
-                        node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
-                    }
-                    (Some(Raw(BigInt(b))), Some(Raw(Str(s)))) => {
-                        trace!(
-                            "Concat: reducing {}n + '{}' to '{}'",
-                            b,
-                            s,
-                            b.to_string() + s.to_string().as_str()
-                        );
-                        node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
-                    }
-
-                    (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
-                        trace!(
-                            "Concat: reducing '{}' + {} to '{}'",
-                            s,
-                            b,
-                            s.to_string() + b.to_string().as_str()
-                        );
-                        node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
-                    }
-                    (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
-                        trace!(
-                            "Concat: reducing {} + '{}' to '{}'",
-                            b,
-                            s,
-                            b.to_string() + s.to_string().as_str()
-                        );
-                        node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
-                    }
-                    (
-                        Some(Raw(Str(s))),
-                        Some(Object {
-                            to_string_override: Some(obj_str),
-                            ..
-                        }),
-                    ) => {
-                        trace!(
-                            "Concat: reducing '{}' + object override to '{}{}'",
-                            s, s, obj_str
-                        );
-                        node.reduce(Raw(Str(format!("{}{}", s, obj_str))));
-                    }
-                    (
-                        Some(Object {
-                            to_string_override: Some(obj_str),
-                            ..
-                        }),
-                        Some(Raw(Str(s))),
-                    ) => {
-                        trace!(
-                            "Concat: reducing object override + '{}' to '{}{}'",
-                            s, obj_str, s
-                        );
-                        node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
-                    }
-                    _ => {}
+            match (left.data(), right.data()) {
+                (Some(Raw(Str(s1))), Some(Raw(Str(s2)))) => {
+                    trace!(
+                        "Concat: reducing '{}' + '{}' to '{}'",
+                        s1,
+                        s2,
+                        s1.to_string() + s2
+                    );
+                    node.reduce(Raw(Str(s1.to_string() + s2)));
                 }
+                // numbers + strings should also be concatenated as strings
+                (Some(Raw(Num(n))), Some(Raw(Str(s)))) => {
+                    trace!(
+                        "Concat: reducing {} + '{}' to '{}'",
+                        n,
+                        s,
+                        n.to_string() + s
+                    );
+                    node.reduce(Raw(Str(n.to_string() + s)));
+                }
+                (Some(Raw(Str(s))), Some(Raw(Num(n)))) => {
+                    trace!(
+                        "Concat: reducing '{}' + {} to '{}'",
+                        s,
+                        n,
+                        s.to_string() + n.to_string().as_str()
+                    );
+                    node.reduce(Raw(Str(s.to_string() + n.to_string().as_str())));
+                }
+                (Some(Array(array)), Some(Raw(Str(s)))) => {
+                    let array_str = flatten_array(array, None);
+                    trace!(
+                        "Concat: reducing array + '{}' to '{}'",
+                        s,
+                        array_str.to_string() + s
+                    );
+                    node.reduce(Raw(Str(array_str.to_string() + s)));
+                }
+                (Some(Raw(Str(s))), Some(Array(array))) => {
+                    let array_str = flatten_array(array, None);
+                    trace!(
+                        "Concat: reducing '{}' + array to '{}'",
+                        s,
+                        s.to_string() + array_str.as_str()
+                    );
+                    node.reduce(Raw(Str(s.to_string() + array_str.as_str())));
+                }
+                (Some(Raw(Str(s))), Some(Raw(BigInt(b)))) => {
+                    trace!(
+                        "Concat: reducing '{}' + {}n to '{}'",
+                        s,
+                        b,
+                        s.to_string() + b.to_string().as_str()
+                    );
+                    node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
+                }
+                (Some(Raw(BigInt(b))), Some(Raw(Str(s)))) => {
+                    trace!(
+                        "Concat: reducing {}n + '{}' to '{}'",
+                        b,
+                        s,
+                        b.to_string() + s.to_string().as_str()
+                    );
+                    node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                }
+
+                (Some(Raw(Str(s))), Some(Raw(Bool(b)))) => {
+                    trace!(
+                        "Concat: reducing '{}' + {} to '{}'",
+                        s,
+                        b,
+                        s.to_string() + b.to_string().as_str()
+                    );
+                    node.reduce(Raw(Str(s.to_string() + b.to_string().as_str())));
+                }
+                (Some(Raw(Bool(b))), Some(Raw(Str(s)))) => {
+                    trace!(
+                        "Concat: reducing {} + '{}' to '{}'",
+                        b,
+                        s,
+                        b.to_string() + s.to_string().as_str()
+                    );
+                    node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
+                }
+                (
+                    Some(Raw(Str(s))),
+                    Some(Object {
+                        to_string_override: Some(obj_str),
+                        ..
+                    }),
+                ) => {
+                    trace!(
+                        "Concat: reducing '{}' + object override to '{}{}'",
+                        s, s, obj_str
+                    );
+                    node.reduce(Raw(Str(format!("{}{}", s, obj_str))));
+                }
+                (
+                    Some(Object {
+                        to_string_override: Some(obj_str),
+                        ..
+                    }),
+                    Some(Raw(Str(s))),
+                ) => {
+                    trace!(
+                        "Concat: reducing object override + '{}' to '{}{}'",
+                        s, obj_str, s
+                    );
+                    node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
+                }
+                _ => {}
             }
         }
 

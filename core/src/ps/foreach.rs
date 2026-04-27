@@ -92,15 +92,13 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "variable" && view.text()? == "$_" {
-            if let Some(script_block_expression) =
+        if view.kind() == "variable" && view.text()? == "$_"
+            && let Some(script_block_expression) =
                 view.get_parent_of_types(vec!["script_block_expression"])
-            {
-                if let Some(foreach_command) =
+                && let Some(foreach_command) =
                     script_block_expression.get_parent_of_types(vec!["command"])
-                {
-                    if is_foreach_command(&foreach_command) {
-                        if let Some(previous) = find_previous_expr(&foreach_command)? {
+                    && is_foreach_command(&foreach_command)
+                        && let Some(previous) = find_previous_expr(&foreach_command)? {
                             // the previous in the pipeline
                             match previous.data() {
                                 Some(Array(values)) => {
@@ -120,10 +118,6 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
                                 _ => (),
                             }
                         }
-                    }
-                }
-            }
-        }
 
         Ok(())
     }
@@ -184,14 +178,13 @@ impl<'a> RuleMut<'a> for ForEach {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if is_foreach_command(&view) {
-            if let Some(script_block_expression) = view
+        if is_foreach_command(&view)
+            && let Some(script_block_expression) = view
                 .named_child("command_elements")
                 .and_then(|n| n.child(1))
                 .map(|n| n.smallest_child())
-            {
-                if script_block_expression.kind() == "script_block_expression" {
-                    if let Some(previous_command) = find_previous_expr(&view)? {
+                && script_block_expression.kind() == "script_block_expression"
+                    && let Some(previous_command) = find_previous_expr(&view)? {
                         // if the previous pipeline was inferred as an array
                         let mut previous_values = Vec::new();
                         match previous_command.data() {
@@ -205,8 +198,8 @@ impl<'a> RuleMut<'a> for ForEach {
                             .ok_or(Error::invalid_child())? // script_block node
                             .named_child("script_block_body");
 
-                        if let Some(script_block_body_node) = script_block_body {
-                            if let Some(statement_list) =
+                        if let Some(script_block_body_node) = script_block_body
+                            && let Some(statement_list) =
                                 script_block_body_node.named_child("statement_list")
                             {
                                 // determine the number of loop
@@ -243,11 +236,7 @@ impl<'a> RuleMut<'a> for ForEach {
                                     node.set(Array(result));
                                 }
                             }
-                        }
                     }
-                }
-            }
-        }
 
         Ok(())
     }

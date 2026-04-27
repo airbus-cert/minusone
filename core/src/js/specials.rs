@@ -36,12 +36,12 @@ impl<'a> RuleMut<'a> for ParseSpecials {
                 return Ok(());
             }
             "identifier" => {
-                if view.data() == None && view.text()? == "NaN" {
+                if view.data().is_none() && view.text()? == "NaN" {
                     trace!("ParseSpecials (L): NaN");
                     node.reduce(NaN);
                     return Ok(());
                 }
-                if view.data() == None && view.text()? == "null" {
+                if view.data().is_none() && view.text()? == "null" {
                     trace!("ParseSpecials (L): null");
                     node.reduce(Null);
                     return Ok(());
@@ -114,8 +114,8 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
             return Ok(());
         }
 
-        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
-            if op.kind() == "+" {
+        if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2))
+            && op.kind() == "+" {
                 match (left.data(), right.data()) {
                     (Some(Array(array)), Some(Undefined)) => {
                         if array.is_empty() {
@@ -226,7 +226,6 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                     _ => {}
                 }
             }
-        }
 
         Ok(())
     }

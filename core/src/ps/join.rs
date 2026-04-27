@@ -58,11 +58,10 @@ impl<'a> RuleMut<'a> for JoinComparison {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "comparison_expression" {
-            if let (Some(left_expression), Some(operator), Some(right_expression)) =
+        if view.kind() == "comparison_expression"
+            && let (Some(left_expression), Some(operator), Some(right_expression)) =
                 (view.child(0), view.child(1), view.child(2))
-            {
-                if let (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) = (
+                && let (Some(Array(src_array)), "-join", Some(Raw(Str(join_token)))) = (
                     left_expression.data(),
                     operator.text()?.to_lowercase().as_str(),
                     right_expression.data(),
@@ -75,8 +74,6 @@ impl<'a> RuleMut<'a> for JoinComparison {
                     trace!("JoinComparison: Setting node with result: {}", result);
                     node.set(Raw(Str(result)));
                 }
-            }
-        }
         Ok(())
     }
 }
@@ -238,9 +235,9 @@ impl<'a> RuleMut<'a> for JoinOperator {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "expression_with_unary_operator" {
-            if let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1)) {
-                if let ("-join", Some(Array(values))) = (
+        if view.kind() == "expression_with_unary_operator"
+            && let (Some(operator), Some(unary_expression)) = (view.child(0), view.child(1))
+                && let ("-join", Some(Array(values))) = (
                     operator.text()?.to_lowercase().as_str(),
                     unary_expression.data(),
                 ) {
@@ -253,8 +250,6 @@ impl<'a> RuleMut<'a> for JoinOperator {
                     trace!("JoinOperator: Setting node with result: {}", result);
                     node.set(Raw(Str(result)));
                 }
-            }
-        }
         Ok(())
     }
 }

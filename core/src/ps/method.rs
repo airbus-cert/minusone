@@ -51,8 +51,8 @@ impl<'a> RuleMut<'a> for Length {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "member_access" {
-            if let (Some(primary_expression), Some(operator), Some(member_name)) =
+        if view.kind() == "member_access"
+            && let (Some(primary_expression), Some(operator), Some(member_name)) =
                 (view.child(0), view.child(1), view.child(2))
             {
                 match (
@@ -81,7 +81,6 @@ impl<'a> RuleMut<'a> for Length {
                     _ => (),
                 }
             }
-        }
         Ok(())
     }
 }
@@ -163,8 +162,8 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                     _ => (),
                 }
             }
-        } else if view.kind() == "invokation_expression" {
-            if let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
+        } else if view.kind() == "invokation_expression"
+            && let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 match (
@@ -184,9 +183,8 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                         // get the argument list if present
                         if let Some(argument_expression_list) =
                             args_list.named_child("argument_expression_list")
-                        {
-                            if let Some(arg_1) = argument_expression_list.child(0) {
-                                if let Some(Raw(Str(s))) = arg_1.data() {
+                            && let Some(arg_1) = argument_expression_list.child(0)
+                                && let Some(Raw(Str(s))) = arg_1.data() {
                                     match general_purpose::STANDARD.decode(s) {
                                         Ok(bytes) => {
                                             let decoded_array: Vec<_> =
@@ -205,13 +203,10 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                                         }
                                     }
                                 }
-                            }
-                        }
                     }
                     _ => {}
                 }
             }
-        }
 
         Ok(())
     }
@@ -317,8 +312,8 @@ impl<'a> RuleMut<'a> for FromUTF {
                     _ => (),
                 }
             }
-        } else if view.kind() == "invokation_expression" {
-            if let (Some(type_node), Some(op), Some(member_name), Some(args_list)) =
+        } else if view.kind() == "invokation_expression"
+            && let (Some(type_node), Some(op), Some(member_name), Some(args_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 match (
@@ -338,9 +333,8 @@ impl<'a> RuleMut<'a> for FromUTF {
                     {
                         if let Some(argument_expression_list) =
                             args_list.named_child("argument_expression_list")
-                        {
-                            if let Some(arg_1) = argument_expression_list.child(0) {
-                                if let Some(Array(a)) = arg_1.data() {
+                            && let Some(arg_1) = argument_expression_list.child(0)
+                                && let Some(Array(a)) = arg_1.data() {
                                     let mut int_vec = Vec::new();
                                     for value in a.iter() {
                                         if let Num(n) = value {
@@ -355,8 +349,6 @@ impl<'a> RuleMut<'a> for FromUTF {
                                         node.set(Raw(Str(s)));
                                     }
                                 }
-                            }
-                        }
                     }
                     (Some(Type(typename)), ".", m, _)
                     | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
@@ -369,9 +361,8 @@ impl<'a> RuleMut<'a> for FromUTF {
                     {
                         if let Some(argument_expression_list) =
                             args_list.named_child("argument_expression_list")
-                        {
-                            if let Some(arg_1) = argument_expression_list.child(0) {
-                                if let Some(Array(a)) = arg_1.data() {
+                            && let Some(arg_1) = argument_expression_list.child(0)
+                                && let Some(Array(a)) = arg_1.data() {
                                     let mut int_vec = Vec::new();
                                     for value in a.iter() {
                                         if let Num(n) = value {
@@ -393,13 +384,10 @@ impl<'a> RuleMut<'a> for FromUTF {
                                         node.set(Raw(Str(s)));
                                     }
                                 }
-                            }
-                        }
                     }
                     _ => (),
                 }
             }
-        }
         Ok(())
     }
 }

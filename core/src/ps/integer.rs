@@ -120,10 +120,9 @@ impl<'a> RuleMut<'a> for AddInt {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let node_view = node.view();
-        if node_view.kind() == "additive_expression"
-            || node_view.kind() == "additive_argument_expression"
-        {
-            if let (Some(left_op), Some(operator), Some(right_op)) =
+        if (node_view.kind() == "additive_expression"
+            || node_view.kind() == "additive_argument_expression")
+            && let (Some(left_op), Some(operator), Some(right_op)) =
                 (node_view.child(0), node_view.child(1), node_view.child(2))
             {
                 match (left_op.data(), operator.text()?, right_op.data()) {
@@ -144,7 +143,6 @@ impl<'a> RuleMut<'a> for AddInt {
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }
@@ -190,10 +188,9 @@ impl<'a> RuleMut<'a> for MultInt {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let node_view = node.view();
-        if node_view.kind() == "multiplicative_expression"
-            || node_view.kind() == "multiplicative_argument_expression"
-        {
-            if let (Some(left_op), Some(operator), Some(right_op)) =
+        if (node_view.kind() == "multiplicative_expression"
+            || node_view.kind() == "multiplicative_argument_expression")
+            && let (Some(left_op), Some(operator), Some(right_op)) =
                 (node_view.child(0), node_view.child(1), node_view.child(2))
             {
                 match (left_op.data(), operator.text()?, right_op.data()) {
@@ -217,7 +214,6 @@ impl<'a> RuleMut<'a> for MultInt {
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }

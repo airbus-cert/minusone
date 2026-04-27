@@ -84,21 +84,20 @@ impl<'a> RuleMut<'a> for AccessString {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "element_access" {
-            if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+        if view.kind() == "element_access"
+            && let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
                 match (element.data(), expression.data()) {
                     // We will handle the case of indexing string by an array
                     // ex: "foo"[1,2] => ["o", "o"]
                     (Some(Raw(Str(string_element))), Some(Array(index))) => {
                         let mut result = vec![];
                         for index_value in index {
-                            if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                                if let Some(string_result) =
+                            if let Some(parsed_index_value) = index_value.clone().to_i64()
+                                && let Some(string_result) =
                                     get_at_index(string_element, parsed_index_value)
                                 {
                                     result.push(Str(string_result));
                                 }
-                            }
                         }
                         trace!(
                             "AccessString (L): Setting node with string array result: {:?}",
@@ -108,8 +107,8 @@ impl<'a> RuleMut<'a> for AccessString {
                     }
                     // "foo"[0]
                     (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
-                        if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                            if let Some(string_result) =
+                        if let Some(parsed_index_value) = index_value.clone().to_i64()
+                            && let Some(string_result) =
                                 get_at_index(string_element, parsed_index_value)
                             {
                                 trace!(
@@ -118,12 +117,10 @@ impl<'a> RuleMut<'a> for AccessString {
                                 );
                                 node.set(Raw(Str(string_result)));
                             }
-                        }
                     }
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }
@@ -148,19 +145,18 @@ impl<'a> RuleMut<'a> for AccessArray {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "element_access" {
-            if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
+        if view.kind() == "element_access"
+            && let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
                 match (element.data(), expression.data()) {
                     (Some(Array(array_element)), Some(Array(index))) => {
                         let mut result = vec![];
                         for index_value in index {
-                            if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                                if let Some(value) =
+                            if let Some(parsed_index_value) = index_value.clone().to_i64()
+                                && let Some(value) =
                                     get_array_at_index(array_element, parsed_index_value)
                                 {
                                     result.push(value.clone());
                                 }
-                            }
                         }
                         trace!(
                             "AccessArray (L): Setting node with array result: {:?}",
@@ -170,19 +166,17 @@ impl<'a> RuleMut<'a> for AccessArray {
                     }
                     // "foo"[0]
                     (Some(Array(array_element)), Some(Raw(index_value))) => {
-                        if let Some(parsed_index_value) = index_value.clone().to_i64() {
-                            if let Some(value) =
+                        if let Some(parsed_index_value) = index_value.clone().to_i64()
+                            && let Some(value) =
                                 get_array_at_index(array_element, parsed_index_value)
                             {
                                 trace!("AccessArray (L): Setting node with value: {:?}", value);
                                 node.set(Raw(value.clone()));
                             }
-                        }
                     }
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }
@@ -248,8 +242,8 @@ impl<'a> RuleMut<'a> for AccessHashMap {
         let view = node.view();
         match view.kind() {
             "element_access" => {
-                if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
-                    if let (Some(Powershell::HashMap(map)), Some(Raw(value))) =
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2))
+                    && let (Some(Powershell::HashMap(map)), Some(Raw(value))) =
                         (element.data(), expression.data())
                     {
                         let value_n = &value.normalize();
@@ -261,11 +255,10 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                             node.set(Raw(map[value_n].clone()))
                         }
                     }
-                }
             }
             "member_access" => {
-                if let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
-                    if let Some(Powershell::HashMap(map)) = element.data() {
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2))
+                    && let Some(Powershell::HashMap(map)) = element.data() {
                         if let Some(Raw(value)) = expression.data() {
                             let value_n = &value.normalize();
                             if map.contains_key(value_n) {
@@ -275,8 +268,8 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                                 );
                                 node.set(Raw(map[value_n].clone()))
                             }
-                        } else if let Some(child) = expression.child(0) {
-                            if child.kind() == "simple_name" {
+                        } else if let Some(child) = expression.child(0)
+                            && child.kind() == "simple_name" {
                                 let value = Str(expression.text()?.to_lowercase());
                                 if map.contains_key(&value) {
                                     trace!(
@@ -286,9 +279,7 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                                     node.set(Raw(map[&value].clone()))
                                 }
                             }
-                        }
                     }
-                }
             }
             _ => (),
         }

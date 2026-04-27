@@ -47,27 +47,27 @@ where
     <B as DeobfuscationBackend>::Language: Debug,
 {
     let cleaned = DeobfuscateEngine::<B>::remove_extra(source)
-        .map_err(|e| MinusonejsError::MinusoneError(e))?;
+        .map_err(MinusonejsError::MinusoneError)?;
     let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)
-        .map_err(|e| MinusonejsError::MinusoneError(e))?;
+        .map_err(MinusonejsError::MinusoneError)?;
 
     if let Some(rules) = rule_set {
         engine
             .deobfuscate_with_custom_ruleset(rules.iter().map(AsRef::as_ref).collect())
-            .map_err(|e| MinusonejsError::MinusoneError(e))?;
+            .map_err(MinusonejsError::MinusoneError)?;
     } else if let Some(skip_rules) = skip_rule_set {
         engine
             .deobfuscate_without_custom_ruleset(skip_rules.iter().map(AsRef::as_ref).collect())
-            .map_err(|e| MinusonejsError::MinusoneError(e))?;
+            .map_err(MinusonejsError::MinusoneError)?;
     } else {
         engine
             .deobfuscate()
-            .map_err(|e| MinusonejsError::MinusoneError(e))?;
+            .map_err(MinusonejsError::MinusoneError)?;
     }
 
-    Ok(engine
+    engine
         .lint()
-        .map_err(|e| MinusonejsError::MinusoneError(e))?)
+        .map_err(MinusonejsError::MinusoneError)
 }
 
 struct Minusone;
