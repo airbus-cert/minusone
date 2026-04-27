@@ -9,6 +9,7 @@ pub mod functions;
 pub mod globals;
 pub mod integer;
 pub mod linter;
+mod math;
 pub mod node;
 pub mod objects;
 pub mod post_process;
@@ -31,6 +32,7 @@ use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::math::*;
 use self::node::buffer::*;
 use self::objects::object::*;
 use self::regex::*;
@@ -148,6 +150,7 @@ impl_javascript_ruleset!(
     PowInt,            // Infer ** operations on integers
     ShiftInt,          // Infer <<, >> and >>> operations on integers
     BitwiseInt,        // Infer &, |, ^ and ~ operations on integers
+    MathBuiltins,      // Infer static Math.x(...) builtins
     ObjectField,       // Track objects field assignments and access
     NotBool,           // Infer unary ! operations on booleans
     BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
