@@ -44,6 +44,7 @@ use log::trace;
 /// - `Math.acosh(x)`
 /// - `Math.asinh(x)`
 /// - `Math.atanh(x)`
+/// - `Math.hypot(x, ...)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -79,6 +80,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("acosh", math_builtin_acosh),
     ("asinh", math_builtin_asinh),
     ("atanh", math_builtin_atanh),
+    ("hypot", math_builtin_hypot),
 ];
 
 #[derive(Default)]
@@ -492,6 +494,21 @@ fn math_builtin_atanh(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Hypotenuse
+fn math_builtin_hypot(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(0.0)));
+    }
+    let mut sum_sq = 0.0_f64;
+    for arg in args {
+        match arg.as_js_num() {
+            Raw(Num(x)) => sum_sq += x * x,
+            _ => return Some(NaN),
+        }
+    }
+    Some(Raw(Num(sum_sq.sqrt())))
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -876,5 +893,16 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.atanh(2)"), "NaN");
         assert_eq!(deobfuscate("Math.atanh(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.atanh()"), "NaN");
+    }
+
+    // Hypotenuse
+    #[test]
+    fn test_math_hypot() {
+        assert_eq!(deobfuscate("Math.hypot(3, 4)"), "5");
+        assert_eq!(deobfuscate("Math.hypot(5, 12)"), "13");
+        assert_eq!(deobfuscate("Math.hypot(3, 4, 5)"), "7.0710678118654755");
+        assert_eq!(deobfuscate("Math.hypot(-5)"), "5");
+        assert_eq!(deobfuscate("Math.hypot()"), "0");
+        assert_eq!(deobfuscate("Math.hypot(NaN)"), "NaN");
     }
 }
