@@ -5,6 +5,7 @@ use crate::js::Value::*;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use half::f16;
 use log::trace;
 
 /// Centralized dispatcher for static Math.x(...) builtins.
@@ -20,6 +21,12 @@ use log::trace;
 /// - `Math.sin(x)`
 /// - `Math.sqrt(x)`
 /// - `Math.tan(x)`
+/// - `Math.ceil(x)`
+/// - `Math.f16round(x)`
+/// - `Math.floor(x)`
+/// - `Math.fround(x)`
+/// - `Math.round(x)`
+/// - `Math.trunc(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -32,6 +39,12 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("sin", math_builtin_sin),
     ("sqrt", math_builtin_sqrt),
     ("tan", math_builtin_tan),
+    ("ceil", math_builtin_ceil),
+    ("f16round", math_builtin_f16round),
+    ("floor", math_builtin_floor),
+    ("fround", math_builtin_fround),
+    ("round", math_builtin_round),
+    ("trunc", math_builtin_trunc),
 ];
 
 #[derive(Default)]
@@ -208,6 +221,68 @@ fn math_builtin_sqrt(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Rounding
+fn math_builtin_ceil(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.ceil()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_f16round(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(f16::from_f64(n).to_f64()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_floor(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.floor()))),
+        _ => Some(NaN),
+    }
+}
+
+pub fn math_builtin_fround(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num((n as f32) as f64))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_round(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        // rust f64::round(x) != js Math.round(x)
+        Raw(Num(n)) => Some(Raw(Num((n + 0.5).floor()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_trunc(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.trunc()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::build_javascript_tree;
@@ -350,5 +425,66 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.sqrt(-1)"), "NaN");
         assert_eq!(deobfuscate("Math.sqrt(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.sqrt()"), "NaN");
+    }
+
+    // Rounding
+    #[test]
+    fn test_math_ceil() {
+        assert_eq!(deobfuscate("Math.ceil(3.2)"), "4");
+        assert_eq!(deobfuscate("Math.ceil(-3.2)"), "-3");
+        assert_eq!(deobfuscate("Math.ceil(0)"), "0");
+        assert_eq!(deobfuscate("Math.ceil(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.ceil()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_f16round() {
+        assert_eq!(deobfuscate("Math.f16round(5.5)"), "5.5");
+        assert_eq!(deobfuscate("Math.f16round(5.05)"), "5.05078125");
+        assert_eq!(deobfuscate("Math.f16round(5)"), "5");
+        assert_eq!(deobfuscate("Math.f16round(-5.05)"), "-5.05078125");
+        assert_eq!(deobfuscate("Math.f16round(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.f16round()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_floor() {
+        assert_eq!(deobfuscate("Math.floor(3.2)"), "3");
+        assert_eq!(deobfuscate("Math.floor(-3.2)"), "-4");
+        assert_eq!(deobfuscate("Math.floor(0)"), "0");
+        assert_eq!(deobfuscate("Math.floor(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.floor()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_fround() {
+        assert_eq!(deobfuscate("Math.fround(5.5)"), "5.5");
+        assert_eq!(deobfuscate("Math.fround(5.05)"), "5.050000190734863");
+        assert_eq!(deobfuscate("Math.fround(5)"), "5");
+        assert_eq!(deobfuscate("Math.fround(-5.05)"), "-5.050000190734863");
+        assert_eq!(deobfuscate("Math.fround(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.fround()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_round() {
+        assert_eq!(deobfuscate("Math.round(3.5)"), "4");
+        assert_eq!(deobfuscate("Math.round(3.2)"), "3");
+        assert_eq!(deobfuscate("Math.round(-3.5)"), "-3");
+        assert_eq!(deobfuscate("Math.round(-3.2)"), "-3");
+        assert_eq!(deobfuscate("Math.round(0)"), "0");
+        assert_eq!(deobfuscate("Math.round(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.round()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_trunc() {
+        assert_eq!(deobfuscate("Math.trunc(3.5)"), "3");
+        assert_eq!(deobfuscate("Math.trunc(3.2)"), "3");
+        assert_eq!(deobfuscate("Math.trunc(-3.5)"), "-3");
+        assert_eq!(deobfuscate("Math.trunc(-3.2)"), "-3");
+        assert_eq!(deobfuscate("Math.trunc(0)"), "0");
+        assert_eq!(deobfuscate("Math.trunc(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.trunc()"), "NaN");
     }
 }
