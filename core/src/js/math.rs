@@ -46,6 +46,7 @@ use log::trace;
 /// - `Math.atanh(x)`
 /// - `Math.hypot(x, ...)`
 /// - `Math.imul(x, y)`
+/// - `Math.sign(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -83,6 +84,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("atanh", math_builtin_atanh),
     ("hypot", math_builtin_hypot),
     ("imul", math_builtin_imul),
+    ("sign", math_builtin_sign),
 ];
 
 #[derive(Default)]
@@ -526,6 +528,23 @@ fn math_builtin_imul(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Sign
+fn math_builtin_sign(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args[0].as_js_num() {
+        Raw(Num(n)) => {
+            // it doesn't sign 0.0 to 1.0, but keeps it as 0.0
+            if n == 0.0 {
+                Some(Raw(Num(n)))
+            } else {
+                Some(Raw(Num(n.signum())))
+            }
+        }
+        _ => Some(NaN),
+    }
+}
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -933,5 +952,18 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.imul(1, 2, 3)"), "2");
         assert_eq!(deobfuscate("Math.imul(1)"), "0");
         assert_eq!(deobfuscate("Math.imul()"), "0");
+    }
+
+    // Sign
+    #[test]
+    fn test_math_sign() {
+        assert_eq!(deobfuscate("Math.sign(3)"), "1");
+        assert_eq!(deobfuscate("Math.sign(-3)"), "-1");
+        assert_eq!(deobfuscate("Math.sign(0)"), "0");
+        assert_eq!(deobfuscate("Math.sign(-0)"), "-0");
+        assert_eq!(deobfuscate("Math.sign(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.sign()"), "NaN");
+        assert_eq!(deobfuscate("Math.sign(Infinity)"), "1");
+        assert_eq!(deobfuscate("Math.sign(-Infinity)"), "-1");
     }
 }
