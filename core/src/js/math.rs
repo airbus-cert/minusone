@@ -31,6 +31,7 @@ use log::trace;
 /// - `Math.log1p(x)`
 /// - `Math.log10(x)`
 /// - `Math.log2(x)`
+/// - `Math.exp(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -53,6 +54,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("log1p", math_builtin_log1p),
     ("log10", math_builtin_log10),
     ("log2", math_builtin_log2),
+    ("exp", math_builtin_exp),
 ];
 
 #[derive(Default)]
@@ -332,6 +334,17 @@ fn math_builtin_log10(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Exponential
+fn math_builtin_exp(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.exp()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::build_javascript_tree;
@@ -579,5 +592,15 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.log10(-1)"), "NaN");
         assert_eq!(deobfuscate("Math.log10(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.log10()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_exp() {
+        assert_eq!(deobfuscate("Math.exp(0)"), "1");
+        assert_eq!(deobfuscate("Math.exp(1)"), "2.718281828459045");
+        assert_eq!(deobfuscate("Math.exp(-1)"), "0.36787944117144233");
+        assert_eq!(deobfuscate("Math.exp(-Infinity)"), "0");
+        assert_eq!(deobfuscate("Math.exp(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.exp()"), "NaN");
     }
 }
