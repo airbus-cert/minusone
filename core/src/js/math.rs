@@ -45,6 +45,7 @@ use log::trace;
 /// - `Math.asinh(x)`
 /// - `Math.atanh(x)`
 /// - `Math.hypot(x, ...)`
+/// - `Math.imul(x, y)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -81,6 +82,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("asinh", math_builtin_asinh),
     ("atanh", math_builtin_atanh),
     ("hypot", math_builtin_hypot),
+    ("imul", math_builtin_imul),
 ];
 
 #[derive(Default)]
@@ -509,6 +511,21 @@ fn math_builtin_hypot(args: &[JavaScript]) -> Option<JavaScript> {
     Some(Raw(Num(sum_sq.sqrt())))
 }
 
+// Multiplication
+fn math_builtin_imul(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.len() < 2 {
+        return Some(Raw(Num(0.0)));
+    }
+    match (args[0].as_js_num(), args[1].as_js_num()) {
+        (Raw(Num(x)), Raw(Num(y))) => {
+            let a = to_js_uint32(x) as i32;
+            let b = to_js_uint32(y) as i32;
+            Some(Raw(Num(a.wrapping_mul(b) as f64)))
+        }
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -904,5 +921,17 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.hypot(-5)"), "5");
         assert_eq!(deobfuscate("Math.hypot()"), "0");
         assert_eq!(deobfuscate("Math.hypot(NaN)"), "NaN");
+    }
+
+    // Multiplication
+    #[test]
+    fn test_math_imul() {
+        assert_eq!(deobfuscate("Math.imul(3, 4)"), "12");
+        assert_eq!(deobfuscate("Math.imul(-5, 12)"), "-60");
+        assert_eq!(deobfuscate("Math.imul(0xffffffff, 5)"), "-5");
+        assert_eq!(deobfuscate("Math.imul(0xfffffffe, 5)"), "-10");
+        assert_eq!(deobfuscate("Math.imul(1, 2, 3)"), "2");
+        assert_eq!(deobfuscate("Math.imul(1)"), "0");
+        assert_eq!(deobfuscate("Math.imul()"), "0");
     }
 }
