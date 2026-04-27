@@ -1,5 +1,6 @@
 {pkgs, ...}: {
   packages = [
+    pkgs.maturin
     pkgs.wget
     pkgs.nil
     pkgs.nixd
@@ -17,7 +18,7 @@
       venv.enable = true;
       uv = {
         enable = true;
-        sync.enable = true;  
+        sync.enable = true;
       };
     };
     javascript = {
@@ -45,6 +46,5 @@
 
   enterTest = ''
     just test
-    just test-py
   '';
 }

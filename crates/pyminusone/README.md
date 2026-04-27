@@ -35,11 +35,7 @@ pip install maturin
 maturin build
 ```
 
-Or in the devenv shell, just use the `uv` venv:
-
-```shell
-uv run maturin build
-```
+In the devenv shell, `maturin` is already installed and `pyminusone` is installed in `--editable` mode
 
 ## Use
 
@@ -56,4 +52,3 @@ import pyminusone
 pyminusone.deobfuscate_powershell_html("1+2")
 '<span class="number">3</span>\n'
 ```
-
