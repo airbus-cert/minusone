@@ -1,6 +1,5 @@
 {pkgs, ...}: {
   packages = [
-    pkgs.maturin
     pkgs.wget
     pkgs.nil
     pkgs.nixd
