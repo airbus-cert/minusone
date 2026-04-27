@@ -1,6 +1,6 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
-use crate::js::deadcode::{RemoveUnusedVar, UnusedVar};
+use crate::js::post_process::*;
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
     JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
@@ -15,7 +15,69 @@ impl DeobfuscationBackend for JavaScriptBackend {
     type Language = JavaScript;
 
     fn remove_extra(src: &str) -> MinusOneResult<String> {
-        remove_javascript_extra(src)
+        // remove comments and other non-code nodes
+        let mut current = remove_javascript_extra(src)?;
+
+        // inline simple anonymous IIFEs so classic rules can see direct statements
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut inline_iife = InlineIife::default();
+            tree.apply(&mut inline_iife)?;
+            current = inline_iife.clear()?;
+        }
+
+        // rewrite augmented assignments to plain assignments for easier follow-up processing
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut rewrite_augmented = ExpandAugmentedAssignment::default();
+            tree.apply(&mut rewrite_augmented)?;
+            current = rewrite_augmented.clear()?;
+        }
+
+        // reduce safe comma sequences to their last expression
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut reduce_sequence = ReduceSequenceExpression::default();
+            tree.apply(&mut reduce_sequence)?;
+            current = reduce_sequence.clear()?;
+        }
+
+        // remove obvious dead code
+        let mut i = 0;
+        loop {
+            i += 1;
+            trace!(
+                "Pre-clean pass iteration {}: current code length = {}",
+                i,
+                current.len()
+            );
+
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+
+            let mut rule = UnusedVar::default();
+            tree.apply(&mut rule)?;
+
+            let mut clean_view = RemoveUnused::new(rule);
+            tree.apply(&mut clean_view)?;
+            let next = clean_view.clear()?;
+
+            if next == current {
+                current = next;
+                break;
+            }
+
+            current = next;
+        }
+
+        // simplify bracket calls to member expressions to help some rules
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut bracket_to_member = BracketCallToMember::default();
+            tree.apply(&mut bracket_to_member)?;
+            current = bracket_to_member.clear()?;
+        }
+
+        Ok(current)
     }
 
     fn build_deob_tree<'a>(
@@ -89,28 +151,44 @@ impl CleanBackend for JavaScriptBackend {
     fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String> {
         let mut current = root.root()?.text()?.to_string();
 
-        // re-run deadcode elimination until no more nodes are removed, this handles cascading cases
-        for i in 0..16 {
+        // remove remaining dead code
+        let mut i = 0;
+        loop {
+            i += 1;
             trace!(
-                "Clean pass iteration {}: current code length = {}",
-                i + 1,
+                "Post-lean pass iteration {}: current code length = {}",
+                i,
                 current.len()
             );
+
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
             let mut rule = UnusedVar::default();
             tree.apply(&mut rule)?;
 
-            let mut clean_view = RemoveUnusedVar::new(rule);
+            let mut clean_view = RemoveUnused::new(rule);
             tree.apply(&mut clean_view)?;
             let next = clean_view.clear()?;
 
             if next == current {
-                return Ok(next);
+                current = next;
+                break;
             }
 
             current = next;
         }
+
+        // simplify bracket calls to member expressions to make it more "human readable"
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+        let mut bracket_to_member = BracketCallToMember::default();
+        tree.apply(&mut bracket_to_member)?;
+        current = bracket_to_member.clear()?;
+
+        // simplify some for loops to while loops
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+        let mut for_to_while = ForToWhile::default();
+        tree.apply(&mut for_to_while)?;
+        current = for_to_while.clear()?;
 
         Ok(current)
     }

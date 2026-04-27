@@ -4,13 +4,14 @@ pub mod backend;
 pub mod bool;
 pub mod comparator;
 mod converter;
-pub mod deadcode;
 pub mod forward;
 pub mod functions;
 pub mod globals;
 pub mod integer;
 pub mod linter;
+pub mod node;
 pub mod objects;
+pub mod post_process;
 pub mod regex;
 pub mod specials;
 pub mod strategy;
@@ -29,6 +30,7 @@ use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::node::buffer::*;
 use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
@@ -72,6 +74,7 @@ pub enum JavaScript {
     // `btoa` calls, and it's converted to string when it's used in a string context, but it gets
     // most of the type converted into a string
     Bytes(Vec<u8>),
+    Buffer(Vec<u8>),
     Object {
         map: HashMap<String, JavaScript>,
         to_string_override: Option<String>,
@@ -159,13 +162,19 @@ impl_javascript_ruleset!(
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
+    StringRaw,      // Infer String.raw tagged template literals
+    TemplateString, // Infer template string literals with deterministic substitutions
     Split,          // Infer string split calls on literal strings
     Replace,        // Infer string replace calls on literal strings
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
+    BufferFrom,     // Infer deterministic Buffer.from(...) calls
+    BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites
+    BufferIndex,    // Infer deterministic Buffer[index] reads/writes
+    BufferToString, // Infer Buffer.toString(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==

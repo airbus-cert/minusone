@@ -41,6 +41,7 @@ fn constructor_name(value: &JavaScript) -> &'static str {
         Bytes(_) => "String",
         Null => "null",
         Object { .. } => "Object",
+        Buffer(_) => "Buffer",
     }
 }
 
@@ -108,7 +109,7 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         "constructor".to_string(),
         native_function(constructor_name(value)),
     );
-    if !matches!(value, NaN | Undefined) {
+    if !matches!(value, NaN | Undefined | Buffer(_)) {
         map.insert(
             "toString".to_string(),
             Function {

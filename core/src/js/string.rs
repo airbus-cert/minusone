@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Null, Object, Raw, Regex};
+use crate::js::JavaScript::{Array, Buffer, Null, Object, Raw, Regex};
 use crate::js::JavaScript::{NaN, Undefined};
 use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
@@ -758,7 +758,7 @@ impl<'a> RuleMut<'a> for Concat {
 /// use minusone::js::array::ParseArray;
 /// use minusone::js::linter::Linter;
 ///
-/// let mut tree = build_javascript_tree("var x = 31['toString']('32');").unwrap();
+/// let mut tree = build_javascript_tree("var x = (31).toString('32');").unwrap();
 /// tree.apply_mut(&mut (
 ///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default()
 /// )).unwrap();
@@ -795,27 +795,7 @@ impl<'a> RuleMut<'a> for ToString {
             return Ok(());
         };
 
-        let is_to_string = match callee.kind() {
-            "subscript_expression" => callee
-                .child(2)
-                .map(|property| {
-                    property.data() == Some(&Raw(Str("toString".to_string())))
-                        || property
-                            .text()
-                            .ok()
-                            .map(|t| t.trim_matches(['\'', '"']).to_string())
-                            .as_deref()
-                            == Some("toString")
-                })
-                .unwrap_or(false),
-            "member_expression" => callee
-                .named_child("property")
-                .and_then(|p| p.text().ok().map(|t| t == "toString"))
-                .unwrap_or(false),
-            _ => false,
-        };
-
-        if !is_to_string {
+        if method_name(&callee).as_deref() != Some("toString") {
             return Ok(());
         }
 
@@ -885,6 +865,7 @@ impl<'a> RuleMut<'a> for ToString {
             Some(Raw(Bool(b))) => b.to_string(),
             Some(Raw(Str(s))) => s.to_string(),
             Some(Array(array)) => flatten_array(array, None),
+            Some(Buffer(_)) => return Ok(()),
             _ => {
                 warn!("ToString: unsupported object type for toString call");
                 return Ok(());
@@ -1137,20 +1118,216 @@ fn split_parts(input: &str, separator: Option<&str>) -> Vec<String> {
     }
 }
 
+/// Infers `String.raw` tagged templates.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::StringRaw;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = String.raw`minusone`;").unwrap();
+/// tree.apply_mut(&mut (StringRaw::default(),)).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'minusone';");
+/// ```
+#[derive(Default)]
+pub struct StringRaw;
+
+impl<'a> RuleMut<'a> for StringRaw {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+        if method != "raw" {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        if object.text()? != "String" {
+            return Ok(());
+        }
+
+        let Some(template) = view.child(1) else {
+            return Ok(());
+        };
+        if template.kind() != "template_string" {
+            return Ok(());
+        }
+
+        let mut out = String::new();
+        for child in template.iter() {
+            match child.kind() {
+                "string_fragment" => out.push_str(child.text()?),
+                "template_substitution" => {
+                    let Some(expr) = child.child(1) else {
+                        return Ok(());
+                    };
+                    let Some(value) = expr.data() else {
+                        return Ok(());
+                    };
+                    let subst = match value {
+                        Raw(Str(s)) => s.clone(),
+                        any => any.to_string(),
+                    };
+                    out.push_str(&subst);
+                }
+                _ => {}
+            }
+        }
+
+        trace!(
+            "StringRaw: reducing String.raw tagged template to '{}'",
+            out
+        );
+        node.reduce(Raw(Str(out)));
+        Ok(())
+    }
+}
+
+/// Infers template string literals.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::string::{ParseString, TemplateString};
+/// use minusone::js::integer::{ParseInt, AddInt};
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("var x = `hello ${1} ${1+1}`;").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(),
+///     ParseInt::default(),
+///     AddInt::default(),
+///     TemplateString::default(),
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "var x = 'hello 1 2';");
+/// ```
+#[derive(Default)]
+pub struct TemplateString;
+
+impl<'a> RuleMut<'a> for TemplateString {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "template_string" {
+            return Ok(());
+        }
+
+        let mut out = String::new();
+        let mut all_known = true;
+        let mut substitution_updates: Vec<(usize, JavaScript)> = Vec::new();
+        for child in view.iter() {
+            match child.kind() {
+                "string_fragment" => {
+                    out.push_str(child.text()?);
+                }
+                "template_substitution" => {
+                    let Some(expr) = child.child(1) else {
+                        all_known = false;
+                        continue;
+                    };
+                    let Some(value) = expr.data() else {
+                        all_known = false;
+                        continue;
+                    };
+
+                    let subst = match value {
+                        Raw(Str(s)) => s.clone(),
+                        any => any.to_string(),
+                    };
+
+                    substitution_updates.push((
+                        child.id(),
+                        JavaScript::Function {
+                            source: subst.clone(),
+                            return_value: None,
+                        },
+                    ));
+
+                    out.push_str(&subst);
+                }
+                _ => {}
+            }
+        }
+
+        for (node_id, data) in substitution_updates {
+            node.set_by_node_id(node_id, data);
+        }
+
+        if all_known {
+            trace!("TemplateString: reducing template literal to '{}'", out);
+            node.reduce(Raw(Str(out)));
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_string {
     use crate::js::array::{GetArrayElement, ParseArray};
-    use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::{ParseInt, PosNeg};
+    use crate::js::integer::{AddInt, ParseInt, PosNeg};
     use crate::js::linter::Linter;
+    use crate::js::post_process::BracketCallToMember;
     use crate::js::regex::ParseRegex;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::*;
-    use crate::js::string::{escape_js_string, unescaped_js_string};
+    use crate::js::var::Var;
+    use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
+    use crate::tree::EmptyStorage;
 
     fn deobfuscate_string(input: &str) -> String {
-        let mut tree = build_javascript_tree(input).unwrap();
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut bracket_to_member = BracketCallToMember::default();
+        tree.apply(&mut bracket_to_member).unwrap();
+        let input = bracket_to_member.clear().unwrap();
+
+        let mut tree = build_javascript_tree(&input).unwrap();
         tree.apply_mut(&mut (
             ParseString::default(),
             ParseInt::default(),
@@ -1163,11 +1340,15 @@ mod tests_js_string {
             FromCharCode::default(),
             StringConstructor::default(),
             Concat::default(),
+            AddInt::default(),
             Split::default(),
             Replace::default(),
+            StringRaw::default(),
+            TemplateString::default(),
             GetArrayElement::default(),
             ToString::default(),
             AddSubSpecials::default(),
+            Var::default(),
         ))
         .unwrap();
 
@@ -1365,6 +1546,42 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate_string("var x = 'a,b,c'.replace(/,/, '');"),
             "var x = 'ab,c';"
+        );
+    }
+
+    #[test]
+    fn test_template_string() {
+        assert_eq!(
+            deobfuscate_string("var x = `hello ${1} ${'world'}`;"),
+            "var x = 'hello 1 world';"
+        );
+
+        assert_eq!(
+            deobfuscate_string("var x = `hello ${1} ${1+1}`;"),
+            "var x = 'hello 1 2';"
+        );
+
+        assert_eq!(
+            deobfuscate_string("console.log(`hello ${a} ${1+1}`)"),
+            "console.log(`hello ${a} 2`)"
+        );
+    }
+
+    #[test]
+    fn test_string_raw_tagged_template() {
+        assert_eq!(
+            deobfuscate_string("console.log(String.raw`minusone`)"),
+            "console.log('minusone')"
+        );
+
+        assert_eq!(
+            deobfuscate_string("let a = 'a'; console.log(String.raw`${a}`);"),
+            "let a = 'a'; console.log('a');"
+        );
+
+        assert_eq!(
+            deobfuscate_string("let a = 1; console.log(String.raw`${a + 1}`);"),
+            "let a = 1; console.log('2');"
         );
     }
 }

@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
@@ -51,6 +52,24 @@ impl Default for Var {
 }
 
 impl Var {
+    fn is_subscript_index_read(node: &Node<JavaScript>) -> bool {
+        let mut current = node.parent();
+        while let Some(parent) = current {
+            if parent.kind() == "subscript_expression"
+                && parent
+                    .named_child("index")
+                    .map(|idx| {
+                        node.start_abs() >= idx.start_abs() && node.end_abs() <= idx.end_abs()
+                    })
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+            current = parent.parent();
+        }
+        false
+    }
+
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             match child.kind() {
@@ -101,8 +120,14 @@ impl Var {
                 }
                 "assignment_expression" | "augmented_assignment_expression" => {
                     if let Some(left) = parent.child(0) {
-                        return node.start_abs() >= left.start_abs()
-                            && node.end_abs() <= left.end_abs();
+                        if node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
+                        {
+                            // In `obj[expr] = ...`, identifiers inside `expr` are reads, not writes.
+                            if Self::is_subscript_index_read(node) {
+                                return false;
+                            }
+                            return true;
+                        }
                     }
                 }
                 "update_expression" => {
@@ -302,7 +327,7 @@ impl<'a> RuleMut<'a> for Var {
             }
             // read
             "identifier" => {
-                if !Var::is_write_target(&view) {
+                if !is_write_target(&view) {
                     if let Some(parent) = view.parent()
                         && parent.kind() == "call_expression"
                         && parent
@@ -347,7 +372,6 @@ mod tests {
     use crate::js::var::Var;
 
     fn deobfuscate(input: &str) -> String {
-        // todo: same method on other js tests with logic scopes
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut_with_strategy(
             &mut (
