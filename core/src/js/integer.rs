@@ -55,7 +55,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 
         match view.kind() {
             "number" => {
-                node.reduce(Self::from_str(token));
+                node.reduce(Self::from_string(token));
             }
             "identifier" => {
                 if view.text()? == "Infinity" {
@@ -67,44 +67,46 @@ impl<'a> RuleMut<'a> for ParseInt {
                 if let Some(func) = view.child(0) {
                     if func.text()? == "BigInt" {
                         if let Some(args) = view.child(1)
-                            && let Some(arg) = args.child(1) {
-                                if let Some(Raw(Str(s))) = arg.data() {
-                                    let negate;
-                                    let s = if s.starts_with("-") {
-                                        negate = true;
-                                        &s[1..]
-                                    } else {
-                                        negate = false;
-                                        s
-                                    };
-                                    let bigint = Self::bigint_from_str(s, negate);
-                                    trace!("ParseInt (L): BigInt {:?}", bigint);
-                                    node.reduce(bigint);
-                                } else if let Some(Raw(Num(n))) = arg.data() {
-                                    let bigint = num_bigint::BigInt::from(*n as u64);
-                                    trace!("ParseInt (L): BigInt from number {} => {}n", n, bigint);
-                                    node.reduce(Raw(BigInt(bigint)));
-                                }
+                            && let Some(arg) = args.child(1)
+                        {
+                            if let Some(Raw(Str(s))) = arg.data() {
+                                let negate;
+                                let s = if s.starts_with("-") {
+                                    negate = true;
+                                    &s[1..]
+                                } else {
+                                    negate = false;
+                                    s
+                                };
+                                let bigint = Self::bigint_from_str(s, negate);
+                                trace!("ParseInt (L): BigInt {:?}", bigint);
+                                node.reduce(bigint);
+                            } else if let Some(Raw(Num(n))) = arg.data() {
+                                let bigint = num_bigint::BigInt::from(*n as u64);
+                                trace!("ParseInt (L): BigInt from number {} => {}n", n, bigint);
+                                node.reduce(Raw(BigInt(bigint)));
                             }
+                        }
                     } else if (func.text()? == "parseInt" || func.text()? == "Number")
                         && let Some(args) = view.child(1)
-                            && let Some(value) = args.child(1) {
-                                let radix = args.child(2);
-                                let radix = radix.and_then(|r| r.data().cloned());
-                                let result = Self::js_parse_int(
-                                    value.data().cloned().unwrap_or(Undefined),
-                                    radix.clone(),
-                                    func.text()? == "parseInt",
-                                );
+                        && let Some(value) = args.child(1)
+                    {
+                        let radix = args.child(2);
+                        let radix = radix.and_then(|r| r.data().cloned());
+                        let result = Self::js_parse_int(
+                            value.data().cloned().unwrap_or(Undefined),
+                            radix.clone(),
+                            func.text()? == "parseInt",
+                        );
 
-                                trace!(
-                                    "ParseInt (L): parseInt({:?}, {:?}) = {:?}",
-                                    value.data(),
-                                    radix,
-                                    result
-                                );
-                                node.reduce(result);
-                            }
+                        trace!(
+                            "ParseInt (L): parseInt({:?}, {:?}) = {:?}",
+                            value.data(),
+                            radix,
+                            result
+                        );
+                        node.reduce(result);
+                    }
                 }
             }
             _ => {}
@@ -115,7 +117,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 }
 
 impl ParseInt {
-    pub fn from_str(input: &str) -> JavaScript {
+    pub fn from_string(input: &str) -> JavaScript {
         let negate = input.starts_with("-");
         let bigint = input.ends_with("n");
         let input = if negate { &input[1..] } else { input };
@@ -152,14 +154,15 @@ impl ParseInt {
             }
         } else {
             if input.starts_with("0")
-                && let Ok(n) = u64::from_str_radix(&input[1..], 8) {
-                    trace!("ParseInt (L): octal {} => {}", input, n);
-                    return if negate {
-                        Raw(Num(-(n as f64)))
-                    } else {
-                        Raw(Num(n as f64))
-                    };
-                }
+                && let Ok(n) = u64::from_str_radix(&input[1..], 8)
+            {
+                trace!("ParseInt (L): octal {} => {}", input, n);
+                return if negate {
+                    Raw(Num(-(n as f64)))
+                } else {
+                    Raw(Num(n as f64))
+                };
+            }
 
             // JS fallback to decimal parsing on fail
             if let Ok(n) = input.parse::<f64>() {
@@ -177,17 +180,17 @@ impl ParseInt {
 
     pub fn bigint_from_str(input: &str, negate: bool) -> JavaScript {
         if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
-            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 16) {
+            if let Some(n) = num::BigInt::parse_bytes(&input.as_bytes()[2..], 16) {
                 trace!("ParseInt (L): hex BigInt {} => {}", input, n);
                 return Raw(BigInt(if negate { -n } else { n }));
             }
         } else if input.len() > 2 && (input.starts_with("0o") || input.starts_with("0O")) {
-            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 8) {
+            if let Some(n) = num::BigInt::parse_bytes(&input.as_bytes()[2..], 8) {
                 trace!("ParseInt (L): octal BigInt {} => {}", input, n);
                 return Raw(BigInt(if negate { -n } else { n }));
             }
         } else if input.len() > 2 && (input.starts_with("0b") || input.starts_with("0B")) {
-            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 2) {
+            if let Some(n) = num::BigInt::parse_bytes(&input.as_bytes()[2..], 2) {
                 trace!("ParseInt (L): binary BigInt {} => {}", input, n);
                 return Raw(BigInt(if negate { -n } else { n }));
             }
@@ -408,9 +411,10 @@ impl<'a> RuleMut<'a> for IncrDecr {
 
         // skip for header
         if let Some(parent) = view.parent()
-            && parent.kind() == "for_statement" {
-                return Ok(());
-            }
+            && parent.kind() == "for_statement"
+        {
+            return Ok(());
+        }
 
         let (is_increment, operand_index): (bool, usize) = {
             let (Some(first), Some(_second)) = (view.child(0), view.child(1)) else {
@@ -1131,17 +1135,18 @@ impl<'a> RuleMut<'a> for BitwiseInt {
             }
             "unary_expression" => {
                 if let (Some(op), Some(operand)) = (view.child(0), view.child(1))
-                    && op.text()? == "~" {
-                        if let Some(Raw(Num(n))) = operand.data() {
-                            let n = *n as i64;
-                            trace!("BitwiseInt (L): ~{} = {}", n, !n);
-                            node.reduce(Raw(Num((!n) as f64)));
-                        } else if let Some(Raw(BigInt(n))) = operand.data() {
-                            let result = !n;
-                            trace!("BitwiseInt (L): ~{}n = {}n", n, result);
-                            node.reduce(Raw(BigInt(result)));
-                        }
+                    && op.text()? == "~"
+                {
+                    if let Some(Raw(Num(n))) = operand.data() {
+                        let n = *n as i64;
+                        trace!("BitwiseInt (L): ~{} = {}", n, !n);
+                        node.reduce(Raw(Num((!n) as f64)));
+                    } else if let Some(Raw(BigInt(n))) = operand.data() {
+                        let result = !n;
+                        trace!("BitwiseInt (L): ~{}n = {}n", n, result);
+                        node.reduce(Raw(BigInt(result)));
                     }
+                }
             }
             _ => (),
         }
