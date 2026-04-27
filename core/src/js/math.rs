@@ -57,6 +57,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("exp", math_builtin_exp),
     ("min", math_builtin_min),
     ("max", math_builtin_max),
+    ("random", |_| Some(Raw(Num(rand::random::<f64>())))),
 ];
 
 #[derive(Default)]
