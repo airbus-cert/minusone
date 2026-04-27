@@ -368,6 +368,98 @@ impl<'a> RuleMut<'a> for PosNeg {
     }
 }
 
+/// Infers `++` and `--` (update expressions) applied to known numeric values, excluding occurrences
+/// that appear directly as the update clause of a `for` loop.
+///
+/// *For var increments, see the `Var` rule on the `update_expression` part*
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::{ParseInt, IncrDecr};
+/// use minusone::js::linter::Linter;
+/// use minusone::js::var::Var;
+///
+/// let mut tree = build_javascript_tree("var x = ++5;").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), IncrDecr::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = 6;");
+/// ```
+#[derive(Default)]
+pub struct IncrDecr;
+
+impl<'a> RuleMut<'a> for IncrDecr {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "update_expression" {
+            return Ok(());
+        }
+
+        // skip for header
+        if let Some(parent) = view.parent() {
+            if parent.kind() == "for_statement" {
+                return Ok(());
+            }
+        }
+
+        let (is_increment, operand_index): (bool, usize) = {
+            let (Some(first), Some(_second)) = (view.child(0), view.child(1)) else {
+                return Ok(());
+            };
+            let first_text = first.text()?;
+            if first_text == "++" || first_text == "--" {
+                (first_text == "++", 1)
+            } else {
+                let second = view.child(1).unwrap();
+                (second.text()? == "++", 0)
+            }
+        };
+
+        let Some(operand) = view.child(operand_index) else {
+            return Ok(());
+        };
+
+        if let Some(value) = operand.data() {
+            match value.as_js_num() {
+                Raw(Num(n)) => {
+                    let result = if is_increment { n + 1.0 } else { n - 1.0 };
+                    trace!(
+                        "IncrDecr (L): {}({}) = {}",
+                        if is_increment { "++" } else { "--" },
+                        n,
+                        result
+                    );
+                    node.reduce(Raw(Num(result)));
+                }
+                NaN => {
+                    trace!("IncrDecr (L): operand is NaN, result is NaN");
+                    node.reduce(NaN);
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Infer addition operations on integers
 ///
 /// # Example
@@ -1082,6 +1174,7 @@ mod tests_js_integer {
             PosNeg::default(),
             AddInt::default(),
             Substract::default(),
+            IncrDecr::default(),
             MultDivMod::default(),
             PowInt::default(),
             ShiftInt::default(),
@@ -1244,6 +1337,23 @@ mod tests_js_integer {
         assert_eq!(
             deobfuscate("var x = 0x15487596n ^ 0x5216598n | 0x36598745n & ~0x21215487n;"),
             "var x = 377066318n;",
+        );
+    }
+
+    #[test]
+    fn test_incr_decr() {
+        assert_eq!(deobfuscate("var y = ++5;"), "var y = 6;");
+        assert_eq!(deobfuscate("var y = --5;"), "var y = 4;");
+        assert_eq!(deobfuscate("var y = 5++;"), "var y = 6;");
+        assert_eq!(deobfuscate("var y = 5--;"), "var y = 4;");
+        assert_eq!(deobfuscate("var y = ++5 + 1;"), "var y = 7;");
+        assert_eq!(
+            deobfuscate("for (var i = 0; i < 10; i++) {}"),
+            "for (var i = 0; i < 10; i++) {}"
+        );
+        assert_eq!(
+            deobfuscate("for (var i = 0; i < 10; --i) {}"),
+            "for (var i = 0; i < 10; --i) {}"
         );
     }
 }
