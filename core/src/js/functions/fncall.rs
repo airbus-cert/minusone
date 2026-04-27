@@ -1001,15 +1001,17 @@ impl<'a> RuleMut<'a> for FnCall {
             "call_expression" => {
                 // check known fn
                 if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
+                    let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
                     let has_args =
                         !get_positional_arguments(view.named_child("arguments")).is_empty();
-                    let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
-                    let is_tostring_function_value = matches!(
-                        func_node.data(),
-                        Some(JavaScript::Function { source, .. }) if source.starts_with("function toString(")
-                    );
-                    // keep radix-aware toString handling in the dedicated ToString rule for integers
-                    if has_args && (is_tostring_method || is_tostring_function_value) {
+                    let tostring_on_buffer = is_tostring_method
+                        && func_node
+                            .child(0)
+                            .or_else(|| func_node.named_child("object"))
+                            .map(|obj| matches!(obj.data(), Some(JavaScript::Buffer(_))))
+                            .unwrap_or(false);
+                    // keep Buffer.toString and argument-aware toString in dedicated rules
+                    if is_tostring_method && (tostring_on_buffer || has_args) {
                         return Ok(());
                     }
 

@@ -35,6 +35,13 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "{{{}}}", obj_str)
             }
+            Buffer(b) => {
+                let hex = b
+                    .iter()
+                    .map(|byte| format!("{:02x}", byte))
+                    .collect::<String>();
+                write!(f, "Buffer.from('{}', 'hex')", hex)
+            }
         }
     }
 }
@@ -121,6 +128,10 @@ impl JavaScript {
             Null => Raw(Num(0.0)),
             Bytes(bytes) => Raw(Str(js_bytes_to_string(bytes))).as_js_num(),
             Object { .. } => NaN,
+            Buffer(b) => match String::from_utf8(b.clone()) {
+                Ok(s) => Raw(Str(s)).as_js_num(),
+                Err(_) => NaN,
+            },
         }
     }
 
@@ -148,6 +159,7 @@ impl JavaScript {
                 true
             }
             Object { .. } => true,
+            Buffer(_) => true,
         }
     }
 
@@ -168,6 +180,7 @@ impl JavaScript {
             Null => "object", // what ?
             Bytes(_) => "string",
             Object { .. } => "object",
+            Buffer(_) => "object",
         }
     }
 }
