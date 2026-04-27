@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
@@ -326,7 +327,7 @@ impl<'a> RuleMut<'a> for Var {
             }
             // read
             "identifier" => {
-                if !Var::is_write_target(&view) {
+                if !is_write_target(&view) {
                     if let Some(parent) = view.parent()
                         && parent.kind() == "call_expression"
                         && parent
