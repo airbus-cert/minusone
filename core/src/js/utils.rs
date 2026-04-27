@@ -30,3 +30,15 @@ pub fn get_positional_arguments(args: Option<Node<JavaScript>>) -> Vec<Node<Java
     }
     positional_args
 }
+
+pub fn to_js_uint32(x: f64) -> u32 {
+    if x.is_nan() || x.is_infinite() || x == 0.0 {
+        return 0;
+    }
+    let n = x.trunc() % 4_294_967_296.0; // 2^32
+    if n < 0.0 {
+        (n + 4_294_967_296.0) as u32
+    } else {
+        n as u32
+    }
+}

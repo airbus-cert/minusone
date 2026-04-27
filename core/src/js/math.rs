@@ -2,7 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::*;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use half::f16;
@@ -37,6 +37,7 @@ use log::trace;
 /// - `Math.max(x, ...)`
 /// - `Math.random(x)`
 /// - `Math.pow(x)`
+/// - `Math.clz32(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -65,6 +66,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("max", math_builtin_max),
     ("random", |_| Some(Raw(Num(rand::random::<f64>())))),
     ("pow", math_builtin_pow),
+    ("clz32", math_builtin_clz32),
 ];
 
 #[derive(Default)]
@@ -405,6 +407,17 @@ fn math_builtin_pow(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Count leading zeros
+fn math_builtin_clz32(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Num(32.0)));
+    }
+    match args[0].as_js_num() {
+        Raw(Num(x)) => Some(Raw(Num(to_js_uint32(x).leading_zeros() as f64))),
+        _ => Some(Raw(Num(32.0))),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -710,5 +723,22 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.pow(NaN, 2)"), "NaN");
         assert_eq!(deobfuscate("Math.pow(2, NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.pow()"), "NaN");
+    }
+
+    // Count leading zeros
+    #[test]
+    fn test_math_clz32() {
+        assert_eq!(deobfuscate("Math.clz32(0)"), "32");
+        assert_eq!(deobfuscate("Math.clz32(1)"), "31");
+        assert_eq!(deobfuscate("Math.clz32(2)"), "30");
+        assert_eq!(deobfuscate("Math.clz32(3)"), "30");
+        assert_eq!(deobfuscate("Math.clz32(4)"), "29");
+        assert_eq!(deobfuscate("Math.clz32(1024)"), "21");
+        assert_eq!(deobfuscate("Math.clz32(4294967295)"), "0");
+        assert_eq!(deobfuscate("Math.clz32(-1)"), "0");
+        assert_eq!(deobfuscate("Math.clz32(NaN)"), "32");
+        assert_eq!(deobfuscate("Math.clz32()"), "32");
+        assert_eq!(deobfuscate("Math.clz32(Infinity)"), "32");
+        assert_eq!(deobfuscate("Math.clz32(-Infinity)"), "32");
     }
 }
