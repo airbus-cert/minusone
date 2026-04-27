@@ -52,6 +52,24 @@ impl Default for Var {
 }
 
 impl Var {
+    fn is_subscript_index_read(node: &Node<JavaScript>) -> bool {
+        let mut current = node.parent();
+        while let Some(parent) = current {
+            if parent.kind() == "subscript_expression"
+                && parent
+                    .named_child("index")
+                    .map(|idx| {
+                        node.start_abs() >= idx.start_abs() && node.end_abs() <= idx.end_abs()
+                    })
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+            current = parent.parent();
+        }
+        false
+    }
+
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             match child.kind() {
@@ -88,6 +106,40 @@ impl Var {
             }
         }
         Ok(())
+    }
+
+    fn is_write_target(node: &Node<JavaScript>) -> bool {
+        let mut current = node.parent();
+        while let Some(parent) = current {
+            match parent.kind() {
+                "variable_declarator" => {
+                    if let Some(name_child) = parent.child(0) {
+                        return node.start_abs() >= name_child.start_abs()
+                            && node.end_abs() <= name_child.end_abs();
+                    }
+                }
+                "assignment_expression" | "augmented_assignment_expression" => {
+                    if let Some(left) = parent.child(0) {
+                        if node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
+                        {
+                            // In `obj[expr] = ...`, identifiers inside `expr` are reads, not writes.
+                            if Self::is_subscript_index_read(node) {
+                                return false;
+                            }
+                            return true;
+                        }
+                    }
+                }
+                "update_expression" => {
+                    return true;
+                }
+                _ => {}
+            }
+
+            current = parent.parent();
+        }
+
+        false
     }
 }
 
@@ -320,7 +372,6 @@ mod tests {
     use crate::js::var::Var;
 
     fn deobfuscate(input: &str) -> String {
-        // todo: same method on other js tests with logic scopes
         let mut tree = build_javascript_tree(input).unwrap();
         tree.apply_mut_with_strategy(
             &mut (
