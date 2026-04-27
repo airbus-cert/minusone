@@ -27,6 +27,10 @@ use log::trace;
 /// - `Math.fround(x)`
 /// - `Math.round(x)`
 /// - `Math.trunc(x)`
+/// - `Math.log(x)`
+/// - `Math.log1p(x)`
+/// - `Math.log10(x)`
+/// - `Math.log2(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -45,6 +49,10 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("fround", math_builtin_fround),
     ("round", math_builtin_round),
     ("trunc", math_builtin_trunc),
+    ("log", math_builtin_log),
+    ("log1p", math_builtin_log1p),
+    ("log10", math_builtin_log10),
+    ("log2", math_builtin_log2),
 ];
 
 #[derive(Default)]
@@ -283,6 +291,47 @@ fn math_builtin_trunc(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Log
+fn math_builtin_log(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.ln()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_log1p(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num((1.0 + n).ln()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_log2(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.log2()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_log10(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.log10()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::build_javascript_tree;
@@ -486,5 +535,49 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.trunc(0)"), "0");
         assert_eq!(deobfuscate("Math.trunc(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.trunc()"), "NaN");
+    }
+
+    // Log
+    #[test]
+    fn test_math_log() {
+        assert_eq!(deobfuscate("Math.log(1)"), "0");
+        assert_eq!(deobfuscate("Math.log(Math.E)"), "1");
+        assert_eq!(deobfuscate("Math.log(0)"), "-Infinity");
+        assert_eq!(deobfuscate("Math.log(-1)"), "NaN");
+        assert_eq!(deobfuscate("Math.log(8) / Math.log(2)"), "3");
+        assert_eq!(deobfuscate("Math.log(625) / Math.log(5)"), "4");
+        assert_eq!(deobfuscate("Math.log(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.log()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_log1p() {
+        assert_eq!(deobfuscate("Math.log1p(0)"), "0");
+        assert_eq!(deobfuscate("Math.log1p(Math.E - 1)"), "1");
+        assert_eq!(deobfuscate("Math.log1p(-1)"), "-Infinity");
+        assert_eq!(deobfuscate("Math.log1p(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.log1p()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_log2() {
+        assert_eq!(deobfuscate("Math.log2(3)"), "1.584962500721156");
+        assert_eq!(deobfuscate("Math.log2(2)"), "1");
+        assert_eq!(deobfuscate("Math.log2(1)"), "0");
+        assert_eq!(deobfuscate("Math.log2(0)"), "-Infinity");
+        assert_eq!(deobfuscate("Math.log2(-1)"), "NaN");
+        assert_eq!(deobfuscate("Math.log2(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.log2()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_log10() {
+        assert_eq!(deobfuscate("Math.log10(100000)"), "5");
+        assert_eq!(deobfuscate("Math.log10(2)"), "0.3010299956639812");
+        assert_eq!(deobfuscate("Math.log10(1)"), "0");
+        assert_eq!(deobfuscate("Math.log10(0)"), "-Infinity");
+        assert_eq!(deobfuscate("Math.log10(-1)"), "NaN");
+        assert_eq!(deobfuscate("Math.log10(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.log10()"), "NaN");
     }
 }
