@@ -661,11 +661,11 @@ impl<'a> RuleMut<'a> for Substract {
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, MultInt};
+/// use minusone::js::integer::{ParseInt, MultDivMod};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 3 * 4;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), MultInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), MultDivMod::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -673,9 +673,9 @@ impl<'a> RuleMut<'a> for Substract {
 /// assert_eq!(linter.output, "var x = 12;");
 /// ```
 #[derive(Default)]
-pub struct MultInt;
+pub struct MultDivMod;
 
-impl<'a> RuleMut<'a> for MultInt {
+impl<'a> RuleMut<'a> for MultDivMod {
     type Language = JavaScript;
 
     fn enter(
@@ -697,93 +697,73 @@ impl<'a> RuleMut<'a> for MultInt {
         }
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
-                (Some(Raw(Num(l))), "*", Some(Raw(Num(r)))) => {
+                (Some(Raw(BigInt(l))), "*", Some(Raw(BigInt(r)))) => {
                     let result = l * r;
-                    trace!("MultInt (L): {} * {} = {}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    trace!("MultDivMod (L): {}n * {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(BigInt(l))), "*", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
+                (Some(l), "*", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("MultDivMod (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
+                    }
+
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l * r;
-                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultDivMod (L): {} * {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to multiply BigInt and non-BigInt: {}n * {}. This should crash the Js engine",
-                            l, r
+                            "MultDivMod (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
-                (Some(l), "*", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
-                        let result = l * r;
-                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to multiply non-BigInt and BigInt: {} * {}n. This should crash the Js engine",
-                            l, r
-                        );
-                    }
-                }
-                (Some(Raw(Num(l))), "/", Some(Raw(Num(r)))) => {
+                (Some(Raw(BigInt(l))), "/", Some(Raw(BigInt(r)))) => {
                     let result = l / r;
-                    trace!("MultInt (L): {} / {} = {}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    trace!("MultDivMod (L): {}n / {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(BigInt(l))), "/", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
+                (Some(l), "/", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("MultDivMod (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
+                    }
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l / r;
-                        trace!("MultInt (L): {}n / {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultDivMod (L): {} / {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to divide BigInt and non-BigInt: {}n / {}. This should crash the Js engine",
-                            l, r
+                            "MultDivMod (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
-                (Some(l), "/", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
-                        let result = l / r;
-                        trace!("MultInt (L): {}n / {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to divide non-BigInt and BigInt: {} / {}n. This should crash the Js engine",
-                            l, r
-                        );
-                    }
+                (Some(Raw(BigInt(l))), "%", Some(Raw(BigInt(r)))) => {
+                    let result = l % r;
+                    trace!("MultDivMod (L): {}n % {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(Num(l))), "%", Some(Raw(Num(r)))) => {
-                    if *r != 0.0 {
-                        trace!("MultInt (L): {} % {} = {}", l, r, l % r);
-                        node.reduce(Raw(Num(l % r)));
-                    } else {
-                        warn!("MultInt (L): modulo by zero {} % {}", l, r);
+                (Some(l), "%", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("MultDivMod (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
                     }
-                }
-                (Some(Raw(BigInt(l))), "%", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l % r;
-                        trace!("MultInt (L): {}n % {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultDivMod (L): {} % {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to apply mod on BigInt and non-BigInt: {}n % {}. This should crash the Js engine",
-                            l, r
-                        );
-                    }
-                }
-                (Some(l), "%", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
-                        let result = l % r;
-                        trace!("MultInt (L): {}n % {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to apply mod on non-BigInt and BigInt: {} % {}n. This should crash the Js engine",
-                            l, r
+                            "MultDivMod (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
@@ -1180,6 +1160,7 @@ impl<'a> RuleMut<'a> for BitwiseInt {
 #[cfg(test)]
 mod tests_js_integer {
     use super::*;
+    use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
@@ -1189,11 +1170,12 @@ mod tests_js_integer {
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
+            ParseArray::default(),
             PosNeg::default(),
             AddInt::default(),
             Substract::default(),
             IncrDecr::default(),
-            MultInt::default(),
+            MultDivMod::default(),
             PowInt::default(),
             ShiftInt::default(),
             BitwiseInt::default(),
@@ -1267,8 +1249,18 @@ mod tests_js_integer {
     fn test_mult_div_mod_int() {
         assert_eq!(deobfuscate("var x = 3 * 4;"), "var x = 12;");
         assert_eq!(deobfuscate("var x = 10 / 2;"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = 10 / 0;"), "var x = Infinity;");
+        assert_eq!(deobfuscate("var x = 0 / 0;"), "var x = NaN;");
         assert_eq!(deobfuscate("var x = 10 % 3;"), "var x = 1;");
         assert_eq!(deobfuscate("var x = 10 * 2 / 5 % 2;"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_wierd_mult_div_mod_int() {
+        assert_eq!(deobfuscate("var x = '3' * [4];"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = '10' / [2];"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = '10' % [3];"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = '10' * [2] / 5 % 2;"), "var x = 0;");
     }
 
     #[test]
