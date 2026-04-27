@@ -212,14 +212,13 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                         .map(|n| n.id())
                         == self.loop_id =>
             {
-                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
-                    if let Some(Powershell::Raw(value)) = right.data() {
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2))
+                    && let Some(Powershell::Raw(value)) = right.data() {
                         self.iterators.push(IteratorVariable::new(
                             left.text().unwrap().to_string(),
                             value.clone(),
                         ));
                     }
-                }
             }
             "variable" => {
                 if let Some(iterator_variable) = self
@@ -255,8 +254,7 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     && self.loop_id == Some(parent.id())
                     && parent.data().is_none()
                     && self.statment_count == 1
-                {
-                    if let Some(statement_list) = view.named_child("statement_list") {
+                    && let Some(statement_list) = view.named_child("statement_list") {
                         let mut iter = statement_list
                             .iter()
                             .skip_while(|n| n.kind() != "flow_control_statement");
@@ -287,7 +285,6 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                             _ => {}
                         }
                     }
-                }
             }
             _ => (),
         }

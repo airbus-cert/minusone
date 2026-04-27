@@ -66,8 +66,8 @@ impl<'a> RuleMut<'a> for ParseInt {
             "call_expression" => {
                 if let Some(func) = view.child(0) {
                     if func.text()? == "BigInt" {
-                        if let Some(args) = view.child(1) {
-                            if let Some(arg) = args.child(1) {
+                        if let Some(args) = view.child(1)
+                            && let Some(arg) = args.child(1) {
                                 if let Some(Raw(Str(s))) = arg.data() {
                                     let negate;
                                     let s = if s.starts_with("-") {
@@ -86,10 +86,9 @@ impl<'a> RuleMut<'a> for ParseInt {
                                     node.reduce(Raw(BigInt(bigint)));
                                 }
                             }
-                        }
-                    } else if func.text()? == "parseInt" || func.text()? == "Number" {
-                        if let Some(args) = view.child(1) {
-                            if let Some(value) = args.child(1) {
+                    } else if (func.text()? == "parseInt" || func.text()? == "Number")
+                        && let Some(args) = view.child(1)
+                            && let Some(value) = args.child(1) {
                                 let radix = args.child(2);
                                 let radix = radix.and_then(|r| r.data().cloned());
                                 let result = Self::js_parse_int(
@@ -106,8 +105,6 @@ impl<'a> RuleMut<'a> for ParseInt {
                                 );
                                 node.reduce(result);
                             }
-                        }
-                    }
                 }
             }
             _ => {}
@@ -154,8 +151,8 @@ impl ParseInt {
                 return if negate { NaN } else { Raw(Num(n as f64)) };
             }
         } else {
-            if input.starts_with("0") {
-                if let Ok(n) = u64::from_str_radix(&input[1..], 8) {
+            if input.starts_with("0")
+                && let Ok(n) = u64::from_str_radix(&input[1..], 8) {
                     trace!("ParseInt (L): octal {} => {}", input, n);
                     return if negate {
                         Raw(Num(-(n as f64)))
@@ -163,7 +160,6 @@ impl ParseInt {
                         Raw(Num(n as f64))
                     };
                 }
-            }
 
             // JS fallback to decimal parsing on fail
             if let Ok(n) = input.parse::<f64>() {
@@ -200,11 +196,9 @@ impl ParseInt {
                 "ParseInt (L): BigInt literals cannot start with 0, this will crash the JS engine but found {}n",
                 input
             );
-        } else {
-            if let Some(n) = num::BigInt::parse_bytes(input.as_bytes(), 10) {
-                trace!("ParseInt (L): decimal BigInt {} => {}", input, n);
-                return Raw(BigInt(if negate { -n } else { n }));
-            }
+        } else if let Some(n) = num::BigInt::parse_bytes(input.as_bytes(), 10) {
+            trace!("ParseInt (L): decimal BigInt {} => {}", input, n);
+            return Raw(BigInt(if negate { -n } else { n }));
         }
         warn!(
             "ParseInt (L): Unable to parse BigInt {}, falling back to NaN",
@@ -238,7 +232,7 @@ impl ParseInt {
         let (sign, s): (f64, &str) = match s.chars().next() {
             Some('-') => (-1.0, &s[1..]),
             Some('+') => (1.0, &s[1..]),
-            _ => (1.0, &*s),
+            _ => (1.0, s),
         };
 
         let r_raw = radix.as_ref().map(to_int32).unwrap_or(0);
@@ -413,11 +407,10 @@ impl<'a> RuleMut<'a> for IncrDecr {
         }
 
         // skip for header
-        if let Some(parent) = view.parent() {
-            if parent.kind() == "for_statement" {
+        if let Some(parent) = view.parent()
+            && parent.kind() == "for_statement" {
                 return Ok(());
             }
-        }
 
         let (is_increment, operand_index): (bool, usize) = {
             let (Some(first), Some(_second)) = (view.child(0), view.child(1)) else {
@@ -1137,8 +1130,8 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                 }
             }
             "unary_expression" => {
-                if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
-                    if op.text()? == "~" {
+                if let (Some(op), Some(operand)) = (view.child(0), view.child(1))
+                    && op.text()? == "~" {
                         if let Some(Raw(Num(n))) = operand.data() {
                             let n = *n as i64;
                             trace!("BitwiseInt (L): ~{} = {}", n, !n);
@@ -1149,7 +1142,6 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                             node.reduce(Raw(BigInt(result)));
                         }
                     }
-                }
             }
             _ => (),
         }

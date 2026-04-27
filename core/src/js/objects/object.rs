@@ -59,8 +59,8 @@ impl<'a> RuleMut<'a> for ParseObject {
         if view.kind() == "object" {
             let mut map = HashMap::new();
             for child in view.iter() {
-                if child.kind() == "pair" {
-                    if let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
+                if child.kind() == "pair"
+                    && let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
                         if let Some(key) = key_from_node(&key) {
                             if let Some(value_data) = value.data() {
                                 map.insert(key, value_data.clone());
@@ -79,7 +79,6 @@ impl<'a> RuleMut<'a> for ParseObject {
                             );
                         }
                     }
-                }
             }
             trace!("ParseObject: map = {:?}", map);
             node.reduce(Object {
@@ -185,8 +184,8 @@ impl ObjectField {
             break;
         }
 
-        if let Some(parent) = node.parent() {
-            if parent.kind() == "binary_expression"
+        if let Some(parent) = node.parent()
+            && parent.kind() == "binary_expression"
                 && let Some(op) = parent.child(1)
                 && op.text().ok() == Some("+")
             {
@@ -199,7 +198,6 @@ impl ObjectField {
                         .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
                         .unwrap_or(false);
             }
-        }
 
         false
     }
@@ -304,8 +302,8 @@ impl<'a> RuleMut<'a> for ObjectField {
         let view = node.view();
         match view.kind() {
             "variable_declarator" => {
-                if let Some(name_node) = view.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = view.named_child("name")
+                    && name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
                         if let Some(value_node) =
                             view.named_child("value").or_else(|| view.child(2))
@@ -329,7 +327,6 @@ impl<'a> RuleMut<'a> for ObjectField {
                             }
                         }
                     }
-                }
             }
             "assignment_expression" => {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
@@ -351,8 +348,8 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .current_mut()
                                 .forget(&var_name, node.is_ongoing_transaction());
                         }
-                    } else if let Some(access) = Self::extract_member_access(&left) {
-                        if let Some(base_name) = access.base_name {
+                    } else if let Some(access) = Self::extract_member_access(&left)
+                        && let Some(base_name) = access.base_name {
                             if access.keys.is_empty() {
                                 return Ok(());
                             }
@@ -403,7 +400,6 @@ impl<'a> RuleMut<'a> for ObjectField {
                                     .forget(&base_name, node.is_ongoing_transaction());
                             }
                         }
-                    }
                 }
             }
             "member_expression" | "subscript_expression" => {

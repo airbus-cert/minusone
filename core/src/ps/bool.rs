@@ -114,8 +114,8 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // Booleans in powershell are variables
-        if view.kind() == "logical_expression" {
-            if let (Some(left_node), Some(operator), Some(right_node)) =
+        if view.kind() == "logical_expression"
+            && let (Some(left_node), Some(operator), Some(right_node)) =
                 (view.child(0), view.child(1), view.child(2))
             {
                 match (
@@ -142,7 +142,6 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
                     _ => (),
                 }
             }
-        }
         Ok(())
     }
 }
@@ -196,19 +195,16 @@ impl<'a> RuleMut<'a> for Comparison {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // Booleans in powershell are variables
-        if view.kind() == "comparison_expression" {
-            if let (Some(left_node), Some(operator), Some(right_node)) =
+        if view.kind() == "comparison_expression"
+            && let (Some(left_node), Some(operator), Some(right_node)) =
                 (view.child(0), view.child(1), view.child(2))
-            {
-                if let Some(infered_bool) = infer_comparison(&left_node, &operator, &right_node) {
+                && let Some(infered_bool) = infer_comparison(&left_node, &operator, &right_node) {
                     trace!(
                         "Comparison (L): Setting node with inferred value: {}",
                         infered_bool
                     );
                     node.set(Raw(Bool(infered_bool)));
                 }
-            }
-        }
         Ok(())
     }
 }
@@ -233,14 +229,12 @@ impl<'a> RuleMut<'a> for Not {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let node_view = node.view();
-        if node_view.kind() == "expression_with_unary_operator" {
-            if let (Some(operator), Some(expression)) = (node_view.child(0), node_view.child(1)) {
-                if let ("!", Some(Raw(Bool(b)))) = (operator.text()?, expression.data()) {
+        if node_view.kind() == "expression_with_unary_operator"
+            && let (Some(operator), Some(expression)) = (node_view.child(0), node_view.child(1))
+                && let ("!", Some(Raw(Bool(b)))) = (operator.text()?, expression.data()) {
                     trace!("Not (L): Setting node with inferred value: {}", !(*b));
                     node.set(Raw(Bool(!(*b))));
                 }
-            }
-        }
         Ok(())
     }
 }

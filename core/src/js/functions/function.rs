@@ -51,14 +51,13 @@ fn walk_for_returns(
                 *found_count += 1;
                 if *found_count == 1 {
                     for i in 0..child.child_count() {
-                        if let Some(c) = child.child(i) {
-                            if c.kind() != "return" && c.kind() != ";" {
+                        if let Some(c) = child.child(i)
+                            && c.kind() != "return" && c.kind() != ";" {
                                 if let Some(data) = c.data() {
                                     *return_value = Some(data.clone());
                                 }
                                 break;
                             }
-                        }
                     }
                 }
             }
@@ -181,8 +180,7 @@ impl<'a> RuleMut<'a> for ConcatFunction {
 
         if let (Some(left), Some(operator), Some(right)) =
             (view.child(0), view.child(1), view.child(2))
-        {
-            if operator.text()? == "+" {
+            && operator.text()? == "+" {
                 match (left.data(), right.data()) {
                     (Some(Function { source, .. }), Some(Raw(Str(s)))) => {
                         trace!("Concat: reducing function + '{}' to '{}...'", s, source);
@@ -221,7 +219,6 @@ impl<'a> RuleMut<'a> for ConcatFunction {
                     _ => {}
                 }
             }
-        }
 
         Ok(())
     }

@@ -272,7 +272,7 @@ impl<'a> RuleMut<'a> for BufferIndex {
                         && object.kind() == "identifier"
                         && let Ok(name) = object.text()
                         && let Some(index) =
-                            js_to_positive_number(&index_node.data().unwrap_or(&Undefined))
+                            js_to_positive_number(index_node.data().unwrap_or(&Undefined))
                         && let Some(value) = right.data().and_then(js_to_byte_for_buffer)
                         && let Some(buf) = self.vars.get_mut(name)
                         && index < buf.len()
@@ -296,7 +296,7 @@ impl<'a> RuleMut<'a> for BufferIndex {
                 if let (Some(object), Some(index_node)) = (view.child(0), view.child(2))
                     && let Some(Buffer(bytes)) = object.data()
                     && let Some(index) =
-                        js_to_positive_number(&index_node.data().unwrap_or(&Undefined))
+                        js_to_positive_number(index_node.data().unwrap_or(&Undefined))
                 {
                     if index < bytes.len() {
                         node.reduce(Raw(Num(bytes[index] as f64)));
@@ -544,7 +544,7 @@ fn array_node_to_bytes(array_node: &Vec<JavaScript>) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(array_node.len());
 
     for item in array_node {
-        bytes.push(array_item_to_u8(&item));
+        bytes.push(array_item_to_u8(item));
     }
 
     bytes

@@ -42,7 +42,7 @@ impl<'a> RuleMut<'a> for ParseString {
             warn!("ParseString: error getting text for node: {}", e);
             return Ok(());
         }
-        let value = unescaped_js_string(&value?);
+        let value = unescaped_js_string(value?);
 
         trace!("ParseString (L): string literal with value '{}'", value);
         node.reduce(Raw(Str(value)));
@@ -72,7 +72,7 @@ fn unescaped_js_string(s: &str) -> String {
                         let mut hex = String::new();
                         if let Some('{') = chars.peek() {
                             chars.next(); // consume '{'
-                            while let Some(h) = chars.next() {
+                            for h in chars.by_ref() {
                                 if h == '}' {
                                     break;
                                 }
@@ -414,7 +414,7 @@ fn string_builtin_pad(input: &str, args: &[JavaScript], pad_start: bool) -> Opti
         "" => Some(Raw(Str(input.to_string()))),
         _ => {
             let repeated_pad =
-                pad_string.repeat((padding_needed + pad_string.len() - 1) / pad_string.len());
+                pad_string.repeat(padding_needed.div_ceil(pad_string.len()));
             let final_pad = &repeated_pad[..padding_needed];
             if pad_start {
                 Some(Raw(Str(format!("{}{}", final_pad, input))))
@@ -685,26 +685,20 @@ impl<'a> RuleMut<'a> for BracketCharAt {
         let view = node.view();
         if view.kind() == "subscript_expression" {
             if let (Some(string), Some(index)) = (view.child(0), view.child(2)) {
-                match (string.data(), index.data()) {
-                    (Some(Raw(Str(str))), Some(js)) => match js.as_js_num() {
-                        Raw(Num(i)) => {
-                            let index = i as i64;
-                            if index >= 0 && (index as usize) < str.chars().count() {
-                                let ch = str.chars().nth(index as usize).unwrap();
-                                trace!("InferCharAt: reducing '{}'[{}] to '{}'", str, index, ch);
-                                node.reduce(Raw(Str(ch.to_string())));
-                            } else {
-                                trace!(
-                                    "InferCharAt: index {} out of bounds, setting to undefined",
-                                    index
-                                );
-                                node.reduce(Undefined);
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
+                if let (Some(Raw(Str(str))), Some(js)) = (string.data(), index.data()) { if let Raw(Num(i)) = js.as_js_num() {
+                    let index = i as i64;
+                    if index >= 0 && (index as usize) < str.chars().count() {
+                        let ch = str.chars().nth(index as usize).unwrap();
+                        trace!("InferCharAt: reducing '{}'[{}] to '{}'", str, index, ch);
+                        node.reduce(Raw(Str(ch.to_string())));
+                    } else {
+                        trace!(
+                            "InferCharAt: index {} out of bounds, setting to undefined",
+                            index
+                        );
+                        node.reduce(Undefined);
+                    }
+                } }
             }
             return Ok(());
         }
@@ -1026,8 +1020,7 @@ impl<'a> RuleMut<'a> for Concat {
 
         if let (Some(left), Some(operator), Some(right)) =
             (view.child(0), view.child(1), view.child(2))
-        {
-            if operator.text()? == "+" {
+            && operator.text()? == "+" {
                 match (left.data(), right.data()) {
                     (Some(Raw(Str(s1))), Some(Raw(Str(s2)))) => {
                         trace!(
@@ -1141,7 +1134,6 @@ impl<'a> RuleMut<'a> for Concat {
                     _ => {}
                 }
             }
-        }
 
         Ok(())
     }

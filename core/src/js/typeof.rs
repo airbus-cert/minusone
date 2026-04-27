@@ -47,23 +47,20 @@ impl<'a> RuleMut<'a> for Typeof {
             return Ok(());
         }
 
-        if let Ok(text) = view.text() {
-            if text == "typeof window" || text == "typeof document" || text == "typeof browser" {
+        if let Ok(text) = view.text()
+            && (text == "typeof window" || text == "typeof document" || text == "typeof browser") {
                 warn!(
                     "The script tried to detect if the environment is a browser by using '{}'.",
                     text
                 );
             }
-        }
 
-        if let (Some(left), Some(right)) = (view.child(0), view.child(1)) {
-            if left.text()? == "typeof" {
-                if let Some(r) = right.data() {
+        if let (Some(left), Some(right)) = (view.child(0), view.child(1))
+            && left.text()? == "typeof"
+                && let Some(r) = right.data() {
                     let r = r.clone();
                     node.reduce(Raw(Str(r.r#typeof().to_string())));
                 }
-            }
-        }
         Ok(())
     }
 }

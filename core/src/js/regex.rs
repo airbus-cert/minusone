@@ -129,12 +129,11 @@ impl<'a> RuleMut<'a> for ParseRegex {
         let view = node.view();
         match view.kind() {
             "regex" => {
-                if let Ok(text) = view.text() {
-                    if let Some((pattern, flags)) = Self::parse_regex_literal(text) {
+                if let Ok(text) = view.text()
+                    && let Some((pattern, flags)) = Self::parse_regex_literal(text) {
                         trace!("ParseRegex (L): /{}/{}", pattern, flags);
                         node.reduce(Regex { pattern, flags });
                     }
-                }
             }
             "call_expression" => {
                 let callee = view.named_child("function").or_else(|| view.child(0));
@@ -358,7 +357,7 @@ impl<'a> RuleMut<'a> for RegexConcat {
         }
 
         if changed {
-            Concat::default().leave(node, flow)?;
+            Concat.leave(node, flow)?;
         }
 
         Ok(())

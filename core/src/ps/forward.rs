@@ -75,76 +75,67 @@ impl<'a> RuleMut<'a> for Forward {
             | "while_condition"
             | "for_condition"
             | "member_name" => {
-                if view.child_count() == 1 {
-                    if let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
+                if view.child_count() == 1
+                    && let Some(child_data) = view.child(0).ok_or(Error::invalid_child())?.data() {
                         node.reduce(child_data.clone());
                     }
-                }
             }
             "sub_expression" => {
                 if let Some(expression) = view.named_child("statements") {
                     // A sub expression must have only one statement to be reduced
-                    if expression.child_count() == 1 {
-                        if let Some(expression_data) =
+                    if expression.child_count() == 1
+                        && let Some(expression_data) =
                             expression.child(0).ok_or(Error::invalid_child())?.data()
                         {
                             node.reduce(expression_data.clone())
                         }
-                    }
                 } else {
                     // an empty subexpression is considering as null output
                     node.reduce(Null)
                 }
             }
             "parenthesized_expression" => {
-                if let Some(expression) = view.child(1) {
-                    if let Some(expression_data) = expression.data() {
+                if let Some(expression) = view.child(1)
+                    && let Some(expression_data) = expression.data() {
                         node.reduce(expression_data.clone())
                     }
-                }
             }
 
             // we infer pipeline type with the value of the last expression
             "pipeline" | "pipeline_chain" => {
-                if let Some(expression) = view.child(view.child_count() - 1) {
-                    if let Some(expression_data) = expression.data() {
+                if let Some(expression) = view.child(view.child_count() - 1)
+                    && let Some(expression_data) = expression.data() {
                         trace!(
                             "Forward (L): Setting node with pipeline expression data: {:?}",
                             expression_data
                         );
                         node.set(expression_data.clone())
                     }
-                }
             }
             "command" => {
-                if let Some(sub_command) = view.child(0) {
-                    if sub_command.kind() == "foreach_command" {
-                        if let Some(expression_data) = sub_command.data() {
+                if let Some(sub_command) = view.child(0)
+                    && sub_command.kind() == "foreach_command"
+                        && let Some(expression_data) = sub_command.data() {
                             node.reduce(expression_data.clone())
                         }
-                    }
-                }
             }
             "type_literal" => {
-                if let Some(expression) = view.child(1) {
-                    if let Some(expression_data) = expression.data() {
+                if let Some(expression) = view.child(1)
+                    && let Some(expression_data) = expression.data() {
                         node.reduce(expression_data.clone())
                     }
-                }
             }
             "key_expression" => {
-                if let Some(expression) = view.child(0) {
-                    if let Some(expression_data) = expression.data() {
+                if let Some(expression) = view.child(0)
+                    && let Some(expression_data) = expression.data() {
                         node.reduce(expression_data.clone())
                     }
-                }
             }
             "hash_literal_expression" => {
-                if let Some(expression) = view.child(1) {
-                    if let Some(expression_data) = expression.data() {
+                if let Some(expression) = view.child(1)
+                    && let Some(expression_data) = expression.data() {
                         node.reduce(expression_data.clone())
                     }
-                }
             }
             _ => (),
         }

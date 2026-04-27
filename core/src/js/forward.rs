@@ -25,19 +25,15 @@ impl<'a> RuleMut<'a> for Forward {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        match view.kind() {
-            "parenthesized_expression" => {
-                if let Some(expression) = view.child(1) {
-                    if let Some(expression_data) = expression.data() {
-                        trace!(
-                            "Forward (L): Forwarding data from child to parent: {:?}",
-                            expression_data
-                        );
-                        node.reduce(expression_data.clone())
-                    }
+        if view.kind() == "parenthesized_expression" {
+            if let Some(expression) = view.child(1)
+                && let Some(expression_data) = expression.data() {
+                    trace!(
+                        "Forward (L): Forwarding data from child to parent: {:?}",
+                        expression_data
+                    );
+                    node.reduce(expression_data.clone())
                 }
-            }
-            _ => {}
         }
 
         Ok(())
