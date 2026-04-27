@@ -33,9 +33,10 @@ use log::trace;
 /// - `Math.log2(x)`
 /// - `Math.exp(x)`
 /// - `Math.expm1(x)`
-/// - `Math.min(x)`
-/// - `Math.max(x)`
+/// - `Math.min(x, ...)`
+/// - `Math.max(x, ...)`
 /// - `Math.random(x)`
+/// - `Math.pow(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("abs", math_builtin_abs),
@@ -63,6 +64,7 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("min", math_builtin_min),
     ("max", math_builtin_max),
     ("random", |_| Some(Raw(Num(rand::random::<f64>())))),
+    ("pow", math_builtin_pow),
 ];
 
 #[derive(Default)]
@@ -392,6 +394,17 @@ pub fn math_builtin_min(args: &[JavaScript]) -> Option<JavaScript> {
     Some(min)
 }
 
+// Power
+fn math_builtin_pow(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.len() < 2 {
+        return Some(NaN);
+    }
+    match (args[0].as_js_num(), args[1].as_js_num()) {
+        (Raw(Num(x)), Raw(Num(y))) => Some(Raw(Num(x.powf(y)))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::array::ParseArray;
@@ -664,6 +677,7 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.expm1()"), "NaN");
     }
 
+    // Min/max
     #[test]
     fn test_math_min() {
         assert_eq!(deobfuscate("Math.min(1, [2], 3)"), "1");
@@ -682,5 +696,19 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.max(1, 2)"), "2");
         assert_eq!(deobfuscate("Math.max(1)"), "1");
         assert_eq!(deobfuscate("Math.max()"), "-Infinity");
+    }
+
+    // Power
+    #[test]
+    fn test_math_pow() {
+        assert_eq!(deobfuscate("Math.pow(2, 3)"), "8");
+        assert_eq!(deobfuscate("Math.pow(5, 0)"), "1");
+        assert_eq!(deobfuscate("Math.pow(2, -1)"), "0.5");
+        assert_eq!(deobfuscate("Math.pow(-2, 3)"), "-8");
+        assert_eq!(deobfuscate("Math.pow(-2, 2)"), "4");
+        assert_eq!(deobfuscate("Math.pow(-2, 0.5)"), "NaN");
+        assert_eq!(deobfuscate("Math.pow(NaN, 2)"), "NaN");
+        assert_eq!(deobfuscate("Math.pow(2, NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.pow()"), "NaN");
     }
 }
