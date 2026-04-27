@@ -11,8 +11,24 @@ use log::trace;
 ///
 /// This includes:
 /// - `Math.abs(x)`
+/// - `Math.acos(x)`
+/// - `Math.asin(x)`
+/// - `Math.atan(x)`
+/// - `Math.atan2(x)`
+/// - `Math.cos(x)`
+/// - `Math.sin(x)`
+/// - `Math.tan(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
-const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[("abs", math_builtin_abs)];
+const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
+    ("abs", math_builtin_abs),
+    ("acos", math_builtin_acos),
+    ("asin", math_builtin_asin),
+    ("atan", math_builtin_atan),
+    ("atan2", math_builtin_atan2),
+    ("cos", math_builtin_cos),
+    ("sin", math_builtin_sin),
+    ("tan", math_builtin_tan),
+];
 
 #[derive(Default)]
 pub struct MathBuiltins;
@@ -67,6 +83,11 @@ impl<'a> RuleMut<'a> for MathBuiltins {
             return Ok(());
         };
 
+        let result = match result {
+            Raw(Num(n)) if n.is_nan() => NaN,
+            any => any,
+        };
+
         trace!("MathBuiltins: reducing Math.{}(...) to {}", method, result);
         node.reduce(result);
         Ok(())
@@ -90,12 +111,83 @@ fn math_builtin_abs(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+fn math_builtin_acos(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.acos()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_asin(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.asin()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_atan(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.atan()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_atan2(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.len() < 2 {
+        return Some(NaN);
+    }
+    match (args[0].as_js_num(), args[1].as_js_num()) {
+        (Raw(Num(y)), Raw(Num(x))) => Some(Raw(Num(y.atan2(x)))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_cos(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.cos()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_sin(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.sin()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_tan(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.tan()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::build_javascript_tree;
-    use crate::js::integer::{AddInt, ParseInt, PosNeg};
+    use crate::js::integer::{AddInt, MultInt, ParseInt, PosNeg};
     use crate::js::linter::Linter;
     use crate::js::math::MathBuiltins;
+    use crate::js::objects::object::ObjectField;
     use crate::js::specials::ParseSpecials;
     use crate::js::string::ParseString;
 
@@ -107,6 +199,8 @@ mod test_maths {
             ParseSpecials::default(),
             PosNeg::default(),
             AddInt::default(),
+            MultInt::default(),
+            ObjectField::default(),
             MathBuiltins::default(),
         ))
         .unwrap();
@@ -125,5 +219,75 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.abs(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.abs()"), "NaN");
         assert_eq!(deobfuscate("Math.abs(null)"), "0");
+    }
+
+    #[test]
+    fn test_math_acos() {
+        assert_eq!(deobfuscate("Math.acos(1)"), "0");
+        assert_eq!(deobfuscate("Math.acos(0)"), "1.5707963267948966");
+        assert_eq!(deobfuscate("Math.acos(-1)"), "3.141592653589793");
+        assert_eq!(deobfuscate("Math.acos(2)"), "NaN");
+        assert_eq!(deobfuscate("Math.acos(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.acos()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_asin() {
+        assert_eq!(deobfuscate("Math.asin(0)"), "0");
+        assert_eq!(deobfuscate("Math.asin(1)"), "1.5707963267948966");
+        assert_eq!(deobfuscate("Math.asin(-1)"), "-1.5707963267948966");
+        assert_eq!(deobfuscate("Math.asin(2)"), "NaN");
+        assert_eq!(deobfuscate("Math.asin(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.asin()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_atan() {
+        assert_eq!(deobfuscate("Math.atan(0)"), "0");
+        assert_eq!(deobfuscate("Math.atan(1)"), "0.7853981633974483");
+        assert_eq!(deobfuscate("Math.atan(-1)"), "-0.7853981633974483");
+        assert_eq!(deobfuscate("Math.atan(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.atan()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_atan2() {
+        assert_eq!(deobfuscate("Math.atan2(0, 0)"), "0");
+        assert_eq!(deobfuscate("Math.atan2(1, 0)"), "1.5707963267948966");
+        assert_eq!(deobfuscate("Math.atan2(0, 1)"), "0");
+        assert_eq!(deobfuscate("Math.atan2(-1, 0)"), "-1.5707963267948966");
+        assert_eq!(deobfuscate("Math.atan2(0, -1)"), "3.141592653589793");
+        assert_eq!(deobfuscate("Math.atan2(NaN, 1)"), "NaN");
+        assert_eq!(deobfuscate("Math.atan2(1, NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.atan2()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_cos() {
+        assert_eq!(deobfuscate("Math.cos(0)"), "1");
+        assert_eq!(deobfuscate("Math.cos(Math.PI)"), "-1");
+        assert_eq!(
+            deobfuscate("Math.cos(Math.PI / 2)"),
+            "0.00000000000000006123233995736766"
+        );
+        assert_eq!(
+            deobfuscate("Math.cos(-Math.PI / 2)"),
+            "0.00000000000000006123233995736766"
+        );
+        assert_eq!(deobfuscate("Math.cos(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.cos()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_sin() {
+        assert_eq!(deobfuscate("Math.sin(0)"), "0");
+        assert_eq!(deobfuscate("Math.sin(Math.PI / 2)"), "1");
+        assert_eq!(deobfuscate("Math.sin(-Math.PI / 2)"), "-1");
+        assert_eq!(
+            deobfuscate("Math.sin(Math.PI)"),
+            "0.00000000000000012246467991473532"
+        );
+        assert_eq!(deobfuscate("Math.sin(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.sin()"), "NaN");
     }
 }
