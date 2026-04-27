@@ -4,7 +4,6 @@ pub mod jsfuck_tests {
     use crate::js::b64::*;
     use crate::js::bool::ParseBool;
     use crate::js::bool::*;
-    use crate::js::build_javascript_tree;
     use crate::js::comparator::*;
     use crate::js::forward::*;
     use crate::js::functions::fncall::*;
@@ -12,14 +11,22 @@ pub mod jsfuck_tests {
     use crate::js::integer::*;
     use crate::js::linter::Linter;
     use crate::js::objects::object::*;
+    use crate::js::post_process::BracketCallToMember;
     use crate::js::specials::*;
     use crate::js::string::*;
     use crate::js::var::*;
+    use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
+    use crate::tree::EmptyStorage;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
     fn deobfuscate(input: &str) -> String {
-        let mut tree = build_javascript_tree(input).unwrap();
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut bracket_to_member = BracketCallToMember::default();
+        tree.apply(&mut bracket_to_member).unwrap();
+        let input = bracket_to_member.clear().unwrap();
+
+        let mut tree = build_javascript_tree(&input).unwrap();
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseBool::default(),
@@ -30,7 +37,7 @@ pub mod jsfuck_tests {
             ParseObject::default(),
             PosNeg::default(),
             AddInt::default(),
-            MultInt::default(),
+            MultDivMod::default(),
             PowInt::default(),
             ShiftInt::default(),
             BitwiseInt::default(),
