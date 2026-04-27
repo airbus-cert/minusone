@@ -1004,19 +1004,12 @@ impl<'a> RuleMut<'a> for FnCall {
                     let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
                     let has_args =
                         !get_positional_arguments(view.named_child("arguments")).is_empty();
-                    let tostring_on_buffer = if is_tostring_method {
-                        if let Some(obj) = func_node
+                    let tostring_on_buffer = is_tostring_method
+                        && func_node
                             .child(0)
                             .or_else(|| func_node.named_child("object"))
-                        {
-                            matches!(obj.data(), Some(JavaScript::Buffer(_)))
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-
+                            .map(|obj| matches!(obj.data(), Some(JavaScript::Buffer(_))))
+                            .unwrap_or(false);
                     // keep Buffer.toString and argument-aware toString in dedicated rules
                     if is_tostring_method && (tostring_on_buffer || has_args) {
                         return Ok(());
