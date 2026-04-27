@@ -160,6 +160,8 @@ impl_javascript_ruleset!(
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
+    StringRaw,      // Infer String.raw tagged template literals
+    TemplateString, // Infer template string literals with deterministic substitutions
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls

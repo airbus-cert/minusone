@@ -11,7 +11,8 @@ Reverse operation of script obfuscation
 MinusOne is a deobfuscation engine focused on scripting languages. MinusOne is based on [tree-sitter](https://tree-sitter.github.io/tree-sitter/) for parsing, and will apply a set of rules to infer node values and simplify expressions.
 
 MinusOne supports the following languages:
-* Powershell
+
+- Powershell
 
 By taking the following example from [`Invoke-Obfuscation`](https://github.com/gh0x0st/Invoke-PSObfuscation/blob/main/layer-0-obfuscation.md#final-payload):
 
@@ -27,17 +28,14 @@ Write-Host "MinusOne is the best script linter"
 
 ## Build
 
-`pyminusone` use `maturin`. To build `pyminusone` you need `maturin` first :
+`pyminusone` use `maturin`. To build `pyminusone` you need `maturin` first:
 
-```
+```shell
 pip install maturin
-```
-
-Then call `maturin`:
-
-```
 maturin build
 ```
+
+In the devenv shell, `maturin` is already installed and `pyminusone` is installed in `--editable` mode
 
 ## Use
 
