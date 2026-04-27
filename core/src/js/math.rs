@@ -15,8 +15,10 @@ use log::trace;
 /// - `Math.asin(x)`
 /// - `Math.atan(x)`
 /// - `Math.atan2(x)`
+/// - `Math.cbrt(x)`
 /// - `Math.cos(x)`
 /// - `Math.sin(x)`
+/// - `Math.sqrt(x)`
 /// - `Math.tan(x)`
 type MathBuiltinHandler = fn(&[JavaScript]) -> Option<JavaScript>;
 const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
@@ -25,8 +27,10 @@ const MATH_BUILTINS: &[(&str, MathBuiltinHandler)] = &[
     ("asin", math_builtin_asin),
     ("atan", math_builtin_atan),
     ("atan2", math_builtin_atan2),
+    ("cbrt", math_builtin_cbrt),
     ("cos", math_builtin_cos),
     ("sin", math_builtin_sin),
+    ("sqrt", math_builtin_sqrt),
     ("tan", math_builtin_tan),
 ];
 
@@ -101,6 +105,7 @@ fn dispatch_math_builtin(method: &str, args: &[JavaScript]) -> Option<JavaScript
         .flatten()
 }
 
+// Absolute value
 fn math_builtin_abs(args: &[JavaScript]) -> Option<JavaScript> {
     if args.is_empty() {
         return Some(NaN);
@@ -111,6 +116,7 @@ fn math_builtin_abs(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Angles
 fn math_builtin_acos(args: &[JavaScript]) -> Option<JavaScript> {
     if args.is_empty() {
         return Some(NaN);
@@ -181,6 +187,27 @@ fn math_builtin_tan(args: &[JavaScript]) -> Option<JavaScript> {
     }
 }
 
+// Roots
+fn math_builtin_cbrt(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.cbrt()))),
+        _ => Some(NaN),
+    }
+}
+
+fn math_builtin_sqrt(args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(NaN);
+    }
+    match args.first()?.as_js_num() {
+        Raw(Num(n)) => Some(Raw(Num(n.sqrt()))),
+        _ => Some(NaN),
+    }
+}
+
 #[cfg(test)]
 mod test_maths {
     use crate::js::build_javascript_tree;
@@ -210,6 +237,7 @@ mod test_maths {
         linter.output
     }
 
+    // Absolute value
     #[test]
     fn test_math_abs() {
         assert_eq!(deobfuscate("Math.abs(-5)"), "5");
@@ -221,6 +249,7 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.abs(null)"), "0");
     }
 
+    // Angles
     #[test]
     fn test_math_acos() {
         assert_eq!(deobfuscate("Math.acos(1)"), "0");
@@ -268,11 +297,11 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.cos(Math.PI)"), "-1");
         assert_eq!(
             deobfuscate("Math.cos(Math.PI / 2)"),
-            "0.00000000000000006123233995736766"
+            "0.00000000000000006123233995736766" // Will be wrong after fixing the scientific notation
         );
         assert_eq!(
             deobfuscate("Math.cos(-Math.PI / 2)"),
-            "0.00000000000000006123233995736766"
+            "0.00000000000000006123233995736766" // Will be wrong after fixing the scientific notation
         );
         assert_eq!(deobfuscate("Math.cos(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.cos()"), "NaN");
@@ -285,9 +314,41 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.sin(-Math.PI / 2)"), "-1");
         assert_eq!(
             deobfuscate("Math.sin(Math.PI)"),
-            "0.00000000000000012246467991473532"
+            "0.00000000000000012246467991473532" // Will be wrong after fixing the scientific notation
         );
         assert_eq!(deobfuscate("Math.sin(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.sin()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_tan() {
+        assert_eq!(deobfuscate("Math.tan(0)"), "0");
+        assert_eq!(deobfuscate("Math.tan(Math.PI / 4)"), "0.9999999999999999");
+        assert_eq!(deobfuscate("Math.tan(-Math.PI / 4)"), "-0.9999999999999999");
+        assert_eq!(
+            deobfuscate("Math.tan(Math.PI)"),
+            "-0.00000000000000012246467991473532" // Will be wrong after fixing the scientific notation
+        );
+        assert_eq!(deobfuscate("Math.tan(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.tan()"), "NaN");
+    }
+
+    // Roots
+    #[test]
+    fn test_math_cbrt() {
+        assert_eq!(deobfuscate("Math.cbrt(27)"), "3");
+        assert_eq!(deobfuscate("Math.cbrt(-8)"), "-2");
+        assert_eq!(deobfuscate("Math.cbrt(0)"), "0");
+        assert_eq!(deobfuscate("Math.cbrt(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.cbrt()"), "NaN");
+    }
+
+    #[test]
+    fn test_math_sqrt() {
+        assert_eq!(deobfuscate("Math.sqrt(16)"), "4");
+        assert_eq!(deobfuscate("Math.sqrt(0)"), "0");
+        assert_eq!(deobfuscate("Math.sqrt(-1)"), "NaN");
+        assert_eq!(deobfuscate("Math.sqrt(NaN)"), "NaN");
+        assert_eq!(deobfuscate("Math.sqrt()"), "NaN");
     }
 }
