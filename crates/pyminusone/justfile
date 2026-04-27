@@ -1,9 +1,9 @@
 root := justfile_dir()
 
 build:
-    uv run maturin build
+    maturin build
 
-test: build
+test:
     uv run test.py
 
 publish: build
