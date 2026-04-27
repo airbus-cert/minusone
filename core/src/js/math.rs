@@ -740,11 +740,11 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.cos(Math.PI)"), "-1");
         assert_eq!(
             deobfuscate("Math.cos(Math.PI / 2)"),
-            "0.00000000000000006123233995736766" // Will be wrong after fixing the scientific notation
+            "6.123233995736766e-17"
         );
         assert_eq!(
             deobfuscate("Math.cos(-Math.PI / 2)"),
-            "0.00000000000000006123233995736766" // Will be wrong after fixing the scientific notation
+            "6.123233995736766e-17"
         );
         assert_eq!(deobfuscate("Math.cos(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.cos()"), "NaN");
@@ -755,10 +755,7 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.sin(0)"), "0");
         assert_eq!(deobfuscate("Math.sin(Math.PI / 2)"), "1");
         assert_eq!(deobfuscate("Math.sin(-Math.PI / 2)"), "-1");
-        assert_eq!(
-            deobfuscate("Math.sin(Math.PI)"),
-            "0.00000000000000012246467991473532" // Will be wrong after fixing the scientific notation
-        );
+        assert_eq!(deobfuscate("Math.sin(Math.PI)"), "1.2246467991473532e-16");
         assert_eq!(deobfuscate("Math.sin(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.sin()"), "NaN");
     }
@@ -768,10 +765,7 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.tan(0)"), "0");
         assert_eq!(deobfuscate("Math.tan(Math.PI / 4)"), "0.9999999999999999");
         assert_eq!(deobfuscate("Math.tan(-Math.PI / 4)"), "-0.9999999999999999");
-        assert_eq!(
-            deobfuscate("Math.tan(Math.PI)"),
-            "-0.00000000000000012246467991473532" // Will be wrong after fixing the scientific notation
-        );
+        assert_eq!(deobfuscate("Math.tan(Math.PI)"), "-1.2246467991473532e-16");
         assert_eq!(deobfuscate("Math.tan(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.tan()"), "NaN");
     }
@@ -1064,7 +1058,8 @@ mod test_maths {
         assert_eq!(deobfuscate("Math.sign(3)"), "1");
         assert_eq!(deobfuscate("Math.sign(-3)"), "-1");
         assert_eq!(deobfuscate("Math.sign(0)"), "0");
-        assert_eq!(deobfuscate("Math.sign(-0)"), "-0");
+        // -0 in memory, but it will print 0 because in JS the string version of -0 is 0
+        assert_eq!(deobfuscate("Math.sign(-0)"), "0");
         assert_eq!(deobfuscate("Math.sign(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.sign()"), "NaN");
         assert_eq!(deobfuscate("Math.sign(Infinity)"), "1");
@@ -1074,8 +1069,10 @@ mod test_maths {
     // Sum
     #[test]
     fn test_math_sum_precise() {
-        assert_eq!(deobfuscate("Math.sumPrecise([])"), "-0");
-        assert_eq!(deobfuscate("Math.sumPrecise([-0, -0])"), "-0");
+        // -0 in memory, but it will print 0 because in JS the string version of -0 is 0
+        assert_eq!(deobfuscate("Math.sumPrecise([])"), "0");
+        // same here
+        assert_eq!(deobfuscate("Math.sumPrecise([-0, -0])"), "0");
         assert_eq!(deobfuscate("Math.sumPrecise([1, 2, 3])"), "6");
         assert_eq!(deobfuscate("Math.sumPrecise([1e20, 0.1, -1e20])"), "0.1");
         assert_eq!(

@@ -299,7 +299,7 @@ mod tests_js_bool {
     fn test_bool_plus_minus() {
         assert_eq!(
             deobfuscate("var x = +true; var y = -false;"),
-            "var x = 1; var y = -0;",
+            "var x = 1; var y = 0;",
         );
     }
 }
