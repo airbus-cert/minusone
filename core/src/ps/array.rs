@@ -131,24 +131,24 @@ impl<'a> RuleMut<'a> for ParseRange {
         let view = node.view();
         if view.kind() == "range_expression"
             && let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2))
-                && let (Some(Raw(left_value)), Some(Raw(right_value))) =
-                    (left_node.data(), right_node.data())
-                    && let (Some(from), Some(to)) =
-                        (left_value.clone().to_i64(), right_value.clone().to_i64())
-                    {
-                        let mut result = Vec::new();
+            && let (Some(Raw(left_value)), Some(Raw(right_value))) =
+                (left_node.data(), right_node.data())
+            && let (Some(from), Some(to)) =
+                (left_value.clone().to_i64(), right_value.clone().to_i64())
+        {
+            let mut result = Vec::new();
 
-                        let mut index = from;
-                        let end = if from <= to { to + 1 } else { to - 1 };
+            let mut index = from;
+            let end = if from <= to { to + 1 } else { to - 1 };
 
-                        while index != end {
-                            result.push(Num(index));
-                            if from <= to { index += 1 } else { index -= 1 }
-                        }
+            while index != end {
+                result.push(Num(index));
+                if from <= to { index += 1 } else { index -= 1 }
+            }
 
-                        trace!("ParseRange: Setting node with Array: {:?}", result);
-                        node.set(Array(result));
-                    }
+            trace!("ParseRange: Setting node with Array: {:?}", result);
+            node.set(Array(result));
+        }
         Ok(())
     }
 }
@@ -210,27 +210,28 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "array_expression"
-            && let Some(statement_list) = view.named_child("statements") {
-                let mut result = Vec::new();
-                for statement in statement_list.iter() {
-                    if statement.kind() == "empty_statement" {
-                        continue;
+            && let Some(statement_list) = view.named_child("statements")
+        {
+            let mut result = Vec::new();
+            for statement in statement_list.iter() {
+                if statement.kind() == "empty_statement" {
+                    continue;
+                }
+                match statement.data() {
+                    Some(Array(values)) => {
+                        result.extend(values.clone());
                     }
-                    match statement.data() {
-                        Some(Array(values)) => {
-                            result.extend(values.clone());
-                        }
-                        Some(Raw(value)) => {
-                            result.push(value.clone());
-                        }
-                        _ => {
-                            // stop inferring
-                            return Ok(());
-                        }
+                    Some(Raw(value)) => {
+                        result.push(value.clone());
+                    }
+                    _ => {
+                        // stop inferring
+                        return Ok(());
                     }
                 }
-                node.reduce(Array(result));
             }
+            node.reduce(Array(result));
+        }
         Ok(())
     }
 }
@@ -295,20 +296,20 @@ impl<'a> RuleMut<'a> for AddArray {
             || node_view.kind() == "additive_argument_expression")
             && let (Some(left_op), Some(operator), Some(right_op)) =
                 (node_view.child(0), node_view.child(1), node_view.child(2))
-            {
-                match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Array(array)), "+", Some(Raw(v))) => {
-                        let mut new_array = array.clone();
-                        new_array.push(v.clone());
-                        node.reduce(Array(new_array));
-                    }
-                    // add array between both
-                    (Some(Array(right_array)), "+", Some(Array(left_array))) => {
-                        node.reduce(Array([right_array.clone(), left_array.clone()].concat()));
-                    }
-                    _ => {}
+        {
+            match (left_op.data(), operator.text()?, right_op.data()) {
+                (Some(Array(array)), "+", Some(Raw(v))) => {
+                    let mut new_array = array.clone();
+                    new_array.push(v.clone());
+                    node.reduce(Array(new_array));
                 }
+                // add array between both
+                (Some(Array(right_array)), "+", Some(Array(left_array))) => {
+                    node.reduce(Array([right_array.clone(), left_array.clone()].concat()));
+                }
+                _ => {}
             }
+        }
         Ok(())
     }
 }

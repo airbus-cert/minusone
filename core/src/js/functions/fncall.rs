@@ -69,20 +69,20 @@ enum EvalStep {
     Assign { name: String, expr: ReturnExpr },
 }
 
-
 impl FnCall {
     fn reduce_array_subscript(node: &mut NodeMut<JavaScript>) {
         let view = node.view();
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
             if let (Some(JavaScript::Array(arr)), Some(JavaScript::Raw(Num(index)))) =
                 (array_node.data(), index_node.data())
-                && *index >= 0.0 {
-                    let idx = *index as usize;
-                    if idx < arr.len() {
-                        node.reduce(arr[idx].clone());
-                        return;
-                    }
+                && *index >= 0.0
+            {
+                let idx = *index as usize;
+                if idx < arr.len() {
+                    node.reduce(arr[idx].clone());
+                    return;
                 }
+            }
 
             if let (Some(JavaScript::Array(arr)), Some(JavaScript::Raw(Str(index_str)))) =
                 (array_node.data(), index_node.data())
@@ -116,12 +116,14 @@ impl FnCall {
                         // first named child after "return"
                         for i in 0..child.child_count() {
                             if let Some(c) = child.child(i)
-                                && c.kind() != "return" && c.kind() != ";" {
-                                    if let Some(data) = c.data() {
-                                        *return_value = Some(data.clone());
-                                    }
-                                    break;
+                                && c.kind() != "return"
+                                && c.kind() != ";"
+                            {
+                                if let Some(data) = c.data() {
+                                    *return_value = Some(data.clone());
                                 }
+                                break;
+                            }
                         }
                     }
                 }
@@ -229,10 +231,12 @@ impl FnCall {
             }
             "parenthesized_expression" => {
                 for child in node.iter() {
-                    if child.kind() != "(" && child.kind() != ")"
-                        && let Some(expr) = Self::parse_return_expr(&child) {
-                            return Some(expr);
-                        }
+                    if child.kind() != "("
+                        && child.kind() != ")"
+                        && let Some(expr) = Self::parse_return_expr(&child)
+                    {
+                        return Some(expr);
+                    }
                 }
                 None
             }
@@ -895,18 +899,20 @@ impl<'a> RuleMut<'a> for FnCall {
             }
             "function_declaration" => {
                 if let Some(name_node) = view.named_child("name")
-                    && name_node.kind() == "identifier" {
-                        let fn_name = name_node.text()?.to_string();
+                    && name_node.kind() == "identifier"
+                {
+                    let fn_name = name_node.text()?.to_string();
 
-                        if let Some(body) = view.named_child("body")
-                            && let Some(return_data) = Self::find_single_return_value(&body) {
-                                trace!(
-                                    "FnCall (L): Recorded function '{}' with return value: {:?}",
-                                    fn_name, return_data
-                                );
-                                self.functions.insert(fn_name, return_data);
-                            }
+                    if let Some(body) = view.named_child("body")
+                        && let Some(return_data) = Self::find_single_return_value(&body)
+                    {
+                        trace!(
+                            "FnCall (L): Recorded function '{}' with return value: {:?}",
+                            fn_name, return_data
+                        );
+                        self.functions.insert(fn_name, return_data);
                     }
+                }
             }
             "assignment_expression" => {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {

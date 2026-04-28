@@ -52,12 +52,14 @@ fn walk_for_returns(
                 if *found_count == 1 {
                     for i in 0..child.child_count() {
                         if let Some(c) = child.child(i)
-                            && c.kind() != "return" && c.kind() != ";" {
-                                if let Some(data) = c.data() {
-                                    *return_value = Some(data.clone());
-                                }
-                                break;
+                            && c.kind() != "return"
+                            && c.kind() != ";"
+                        {
+                            if let Some(data) = c.data() {
+                                *return_value = Some(data.clone());
                             }
+                            break;
+                        }
                     }
                 }
             }
@@ -180,45 +182,46 @@ impl<'a> RuleMut<'a> for ConcatFunction {
 
         if let (Some(left), Some(operator), Some(right)) =
             (view.child(0), view.child(1), view.child(2))
-            && operator.text()? == "+" {
-                match (left.data(), right.data()) {
-                    (Some(Function { source, .. }), Some(Raw(Str(s)))) => {
-                        trace!("Concat: reducing function + '{}' to '{}...'", s, source);
-                        node.reduce(Raw(Str(format!("{}{}", source, s))));
-                    }
-                    (Some(Raw(Str(s))), Some(Function { source, .. })) => {
-                        trace!("Concat: reducing '{}' + function to '{}...'", s, source);
-                        node.reduce(Raw(Str(format!("{}{}", s, source))));
-                    }
-                    (Some(Function { source, .. }), Some(Array(array))) => {
-                        let array_str = flatten_array(array, None);
-                        trace!("Concat: reducing function + array");
-                        node.reduce(Raw(Str(format!("{}{}", source, array_str))));
-                    }
-                    (Some(Array(array)), Some(Function { source, .. })) => {
-                        let array_str = flatten_array(array, None);
-                        trace!("Concat: reducing array + function");
-                        node.reduce(Raw(Str(format!("{}{}", array_str, source))));
-                    }
-                    (Some(Function { source, .. }), Some(Raw(Bool(b)))) => {
-                        trace!("Concat: reducing function + bool");
-                        node.reduce(Raw(Str(format!("{}{}", source, b))));
-                    }
-                    (Some(Raw(Bool(b))), Some(Function { source, .. })) => {
-                        trace!("Concat: reducing bool + function");
-                        node.reduce(Raw(Str(format!("{}{}", b, source))));
-                    }
-                    (Some(Function { source, .. }), Some(NaN)) => {
-                        trace!("Concat: reducing function + NaN");
-                        node.reduce(Raw(Str(format!("{}NaN", source))));
-                    }
-                    (Some(NaN), Some(Function { source, .. })) => {
-                        trace!("Concat: reducing NaN + function");
-                        node.reduce(Raw(Str(format!("NaN{}", source))));
-                    }
-                    _ => {}
+            && operator.text()? == "+"
+        {
+            match (left.data(), right.data()) {
+                (Some(Function { source, .. }), Some(Raw(Str(s)))) => {
+                    trace!("Concat: reducing function + '{}' to '{}...'", s, source);
+                    node.reduce(Raw(Str(format!("{}{}", source, s))));
                 }
+                (Some(Raw(Str(s))), Some(Function { source, .. })) => {
+                    trace!("Concat: reducing '{}' + function to '{}...'", s, source);
+                    node.reduce(Raw(Str(format!("{}{}", s, source))));
+                }
+                (Some(Function { source, .. }), Some(Array(array))) => {
+                    let array_str = flatten_array(array, None);
+                    trace!("Concat: reducing function + array");
+                    node.reduce(Raw(Str(format!("{}{}", source, array_str))));
+                }
+                (Some(Array(array)), Some(Function { source, .. })) => {
+                    let array_str = flatten_array(array, None);
+                    trace!("Concat: reducing array + function");
+                    node.reduce(Raw(Str(format!("{}{}", array_str, source))));
+                }
+                (Some(Function { source, .. }), Some(Raw(Bool(b)))) => {
+                    trace!("Concat: reducing function + bool");
+                    node.reduce(Raw(Str(format!("{}{}", source, b))));
+                }
+                (Some(Raw(Bool(b))), Some(Function { source, .. })) => {
+                    trace!("Concat: reducing bool + function");
+                    node.reduce(Raw(Str(format!("{}{}", b, source))));
+                }
+                (Some(Function { source, .. }), Some(NaN)) => {
+                    trace!("Concat: reducing function + NaN");
+                    node.reduce(Raw(Str(format!("{}NaN", source))));
+                }
+                (Some(NaN), Some(Function { source, .. })) => {
+                    trace!("Concat: reducing NaN + function");
+                    node.reduce(Raw(Str(format!("NaN{}", source))));
+                }
+                _ => {}
             }
+        }
 
         Ok(())
     }

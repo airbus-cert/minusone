@@ -54,33 +54,33 @@ impl<'a> RuleMut<'a> for Length {
         if view.kind() == "member_access"
             && let (Some(primary_expression), Some(operator), Some(member_name)) =
                 (view.child(0), view.child(1), view.child(2))
-            {
-                match (
-                    primary_expression.data(),
-                    operator.text()?,
-                    &member_name.text()?.to_string(),
-                    member_name.data(),
-                ) {
-                    (Some(Array(value)), ".", m, _)
-                    | (Some(Array(value)), ".", _, Some(Raw(Str(m))))
-                        if m.clone().normalize() == "length" =>
-                    {
-                        trace!(
-                            "Length (L): Setting node with array length: {}",
-                            value.len()
-                        );
-                        node.set(Raw(Num(value.len() as i64)))
-                    }
-                    (Some(Raw(Str(s))), ".", m, None)
-                    | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))
-                        if m.clone().normalize() == "length" =>
-                    {
-                        trace!("Length (L): Setting node with string length: {}", s.len());
-                        node.set(Raw(Num(s.len() as i64)))
-                    }
-                    _ => (),
+        {
+            match (
+                primary_expression.data(),
+                operator.text()?,
+                &member_name.text()?.to_string(),
+                member_name.data(),
+            ) {
+                (Some(Array(value)), ".", m, _)
+                | (Some(Array(value)), ".", _, Some(Raw(Str(m))))
+                    if m.clone().normalize() == "length" =>
+                {
+                    trace!(
+                        "Length (L): Setting node with array length: {}",
+                        value.len()
+                    );
+                    node.set(Raw(Num(value.len() as i64)))
                 }
+                (Some(Raw(Str(s))), ".", m, None)
+                | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))
+                    if m.clone().normalize() == "length" =>
+                {
+                    trace!("Length (L): Setting node with string length: {}", s.len());
+                    node.set(Raw(Num(s.len() as i64)))
+                }
+                _ => (),
             }
+        }
         Ok(())
     }
 }
@@ -165,48 +165,49 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
         } else if view.kind() == "invokation_expression"
             && let (Some(type_lit), Some(op), Some(member_name), Some(args_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
-            {
-                match (
-                    type_lit.data(),
-                    op.text()?,
-                    &member_name.text()?.to_string(),
-                    member_name.data(),
-                ) {
-                    (Some(Type(typename)), "::", m, _)
-                    | (Some(Type(typename)), ".", m, _)
-                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                    | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
-                        if ((typename == "system.convert" || typename == "convert")
-                            && m.clone().normalize() == "frombase64string")
-                            || (typename == "convert::frombase64string" && m == "invoke") =>
+        {
+            match (
+                type_lit.data(),
+                op.text()?,
+                &member_name.text()?.to_string(),
+                member_name.data(),
+            ) {
+                (Some(Type(typename)), "::", m, _)
+                | (Some(Type(typename)), ".", m, _)
+                | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
+                | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
+                    if ((typename == "system.convert" || typename == "convert")
+                        && m.clone().normalize() == "frombase64string")
+                        || (typename == "convert::frombase64string" && m == "invoke") =>
+                {
+                    // get the argument list if present
+                    if let Some(argument_expression_list) =
+                        args_list.named_child("argument_expression_list")
+                        && let Some(arg_1) = argument_expression_list.child(0)
+                        && let Some(Raw(Str(s))) = arg_1.data()
                     {
-                        // get the argument list if present
-                        if let Some(argument_expression_list) =
-                            args_list.named_child("argument_expression_list")
-                            && let Some(arg_1) = argument_expression_list.child(0)
-                                && let Some(Raw(Str(s))) = arg_1.data() {
-                                    match general_purpose::STANDARD.decode(s) {
-                                        Ok(bytes) => {
-                                            let decoded_array: Vec<_> =
-                                                bytes.iter().map(|b| Num(*b as i64)).collect();
-                                            trace!(
-                                                "DecodeBase64 (L): Setting node with decoded base64 array: {:?}",
-                                                decoded_array
-                                            );
-                                            node.set(Array(decoded_array));
-                                        }
-                                        Err(e) => {
-                                            warn!(
-                                                "DecodeBase64 (L): Failed to decode base64 string: {}. Error: {}",
-                                                s, e
-                                            );
-                                        }
-                                    }
-                                }
+                        match general_purpose::STANDARD.decode(s) {
+                            Ok(bytes) => {
+                                let decoded_array: Vec<_> =
+                                    bytes.iter().map(|b| Num(*b as i64)).collect();
+                                trace!(
+                                    "DecodeBase64 (L): Setting node with decoded base64 array: {:?}",
+                                    decoded_array
+                                );
+                                node.set(Array(decoded_array));
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "DecodeBase64 (L): Failed to decode base64 string: {}. Error: {}",
+                                    s, e
+                                );
+                            }
+                        }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
+        }
 
         Ok(())
     }
@@ -315,79 +316,81 @@ impl<'a> RuleMut<'a> for FromUTF {
         } else if view.kind() == "invokation_expression"
             && let (Some(type_node), Some(op), Some(member_name), Some(args_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
-            {
-                match (
-                    type_node.data(),
-                    op.text()?,
-                    &member_name.text()?.to_string(),
-                    member_name.data(),
-                ) {
-                    (Some(Type(typename)), ".", m, _)
-                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                        if ((typename == "text.encoding.utf8"
-                            || typename == "text.encoding.ascii")
-                            && m.clone().normalize() == "getstring")
-                            || ((typename == "text.encoding.utf8.getstring"
-                                || typename == "text.encoding.ascii.getstring")
-                                && m.clone().normalize() == "invoke") =>
+        {
+            match (
+                type_node.data(),
+                op.text()?,
+                &member_name.text()?.to_string(),
+                member_name.data(),
+            ) {
+                (Some(Type(typename)), ".", m, _)
+                | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
+                    if ((typename == "text.encoding.utf8"
+                        || typename == "text.encoding.ascii")
+                        && m.clone().normalize() == "getstring")
+                        || ((typename == "text.encoding.utf8.getstring"
+                            || typename == "text.encoding.ascii.getstring")
+                            && m.clone().normalize() == "invoke") =>
+                {
+                    if let Some(argument_expression_list) =
+                        args_list.named_child("argument_expression_list")
+                        && let Some(arg_1) = argument_expression_list.child(0)
+                        && let Some(Array(a)) = arg_1.data()
                     {
-                        if let Some(argument_expression_list) =
-                            args_list.named_child("argument_expression_list")
-                            && let Some(arg_1) = argument_expression_list.child(0)
-                                && let Some(Array(a)) = arg_1.data() {
-                                    let mut int_vec = Vec::new();
-                                    for value in a.iter() {
-                                        if let Num(n) = value {
-                                            int_vec.push(*n as u8);
-                                        }
-                                    }
-                                    if let Ok(s) = String::from_utf8(int_vec) {
-                                        trace!(
-                                            "FromUTF (L): Setting node with UTF-8 decoded string: {:?}",
-                                            s
-                                        );
-                                        node.set(Raw(Str(s)));
-                                    }
-                                }
+                        let mut int_vec = Vec::new();
+                        for value in a.iter() {
+                            if let Num(n) = value {
+                                int_vec.push(*n as u8);
+                            }
+                        }
+                        if let Ok(s) = String::from_utf8(int_vec) {
+                            trace!(
+                                "FromUTF (L): Setting node with UTF-8 decoded string: {:?}",
+                                s
+                            );
+                            node.set(Raw(Str(s)));
+                        }
                     }
-                    (Some(Type(typename)), ".", m, _)
-                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                        if ((typename == "text.encoding.utf16"
-                            || typename == "text.encoding.unicode")
-                            && m.clone().normalize() == "getstring")
-                            || ((typename == "text.encoding.utf16.getstring"
-                                || typename == "text.encoding.unicode.getstring")
-                                && m.clone().normalize() == "invoke") =>
-                    {
-                        if let Some(argument_expression_list) =
-                            args_list.named_child("argument_expression_list")
-                            && let Some(arg_1) = argument_expression_list.child(0)
-                                && let Some(Array(a)) = arg_1.data() {
-                                    let mut int_vec = Vec::new();
-                                    for value in a.iter() {
-                                        if let Num(n) = value {
-                                            int_vec.push(*n as u8);
-                                        }
-                                    }
-
-                                    let int_vec: Vec<u16> = int_vec
-                                        .chunks_exact(2)
-                                        .map(|a| u16::from_ne_bytes([a[0], a[1]]))
-                                        .collect();
-                                    let int_vec = int_vec.as_slice();
-
-                                    if let Ok(s) = String::from_utf16(int_vec) {
-                                        trace!(
-                                            "FromUTF (L): Setting node with UTF-16 decoded string: {:?}",
-                                            s
-                                        );
-                                        node.set(Raw(Str(s)));
-                                    }
-                                }
-                    }
-                    _ => (),
                 }
+                (Some(Type(typename)), ".", m, _)
+                | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
+                    if ((typename == "text.encoding.utf16"
+                        || typename == "text.encoding.unicode")
+                        && m.clone().normalize() == "getstring")
+                        || ((typename == "text.encoding.utf16.getstring"
+                            || typename == "text.encoding.unicode.getstring")
+                            && m.clone().normalize() == "invoke") =>
+                {
+                    if let Some(argument_expression_list) =
+                        args_list.named_child("argument_expression_list")
+                        && let Some(arg_1) = argument_expression_list.child(0)
+                        && let Some(Array(a)) = arg_1.data()
+                    {
+                        let mut int_vec = Vec::new();
+                        for value in a.iter() {
+                            if let Num(n) = value {
+                                int_vec.push(*n as u8);
+                            }
+                        }
+
+                        let int_vec: Vec<u16> = int_vec
+                            .chunks_exact(2)
+                            .map(|a| u16::from_ne_bytes([a[0], a[1]]))
+                            .collect();
+                        let int_vec = int_vec.as_slice();
+
+                        if let Ok(s) = String::from_utf16(int_vec) {
+                            trace!(
+                                "FromUTF (L): Setting node with UTF-16 decoded string: {:?}",
+                                s
+                            );
+                            node.set(Raw(Str(s)));
+                        }
+                    }
+                }
+                _ => (),
             }
+        }
         Ok(())
     }
 }

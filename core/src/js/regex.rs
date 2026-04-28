@@ -130,10 +130,11 @@ impl<'a> RuleMut<'a> for ParseRegex {
         match view.kind() {
             "regex" => {
                 if let Ok(text) = view.text()
-                    && let Some((pattern, flags)) = Self::parse_regex_literal(text) {
-                        trace!("ParseRegex (L): /{}/{}", pattern, flags);
-                        node.reduce(Regex { pattern, flags });
-                    }
+                    && let Some((pattern, flags)) = Self::parse_regex_literal(text)
+                {
+                    trace!("ParseRegex (L): /{}/{}", pattern, flags);
+                    node.reduce(Regex { pattern, flags });
+                }
             }
             "call_expression" => {
                 let callee = view.named_child("function").or_else(|| view.child(0));

@@ -213,12 +213,13 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                         == self.loop_id =>
             {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2))
-                    && let Some(Powershell::Raw(value)) = right.data() {
-                        self.iterators.push(IteratorVariable::new(
-                            left.text().unwrap().to_string(),
-                            value.clone(),
-                        ));
-                    }
+                    && let Some(Powershell::Raw(value)) = right.data()
+                {
+                    self.iterators.push(IteratorVariable::new(
+                        left.text().unwrap().to_string(),
+                        value.clone(),
+                    ));
+                }
             }
             "variable" => {
                 if let Some(iterator_variable) = self
@@ -254,37 +255,38 @@ impl<'a> RuleMut<'a> for ForStatementFlowControl {
                     && self.loop_id == Some(parent.id())
                     && parent.data().is_none()
                     && self.statment_count == 1
-                    && let Some(statement_list) = view.named_child("statement_list") {
-                        let mut iter = statement_list
-                            .iter()
-                            .skip_while(|n| n.kind() != "flow_control_statement");
+                    && let Some(statement_list) = view.named_child("statement_list")
+                {
+                    let mut iter = statement_list
+                        .iter()
+                        .skip_while(|n| n.kind() != "flow_control_statement");
 
-                        match iter.next().and_then(|n| n.child(0).map(|n| n.kind())) {
-                            Some("break" | "return" | "exit" | "throw") => {
-                                trace!(
-                                    "ForStatementFlowControl (L): Setting loop with id {} as one turn",
-                                    parent.id()
-                                );
-                                node.set_by_node_id(parent.id(), Loop(OneTurn));
+                    match iter.next().and_then(|n| n.child(0).map(|n| n.kind())) {
+                        Some("break" | "return" | "exit" | "throw") => {
+                            trace!(
+                                "ForStatementFlowControl (L): Setting loop with id {} as one turn",
+                                parent.id()
+                            );
+                            node.set_by_node_id(parent.id(), Loop(OneTurn));
 
-                                self.iterators.iter().for_each(|it| {
+                            self.iterators.iter().for_each(|it| {
                                     it.references.iter().for_each(|&id| {
                                         let value = it.value.clone();
                                         trace!("ForStatementFlowControl (L): Setting node with id {} as raw with value {}", id, value);
                                         node.set_by_node_id(id, Raw(value))
                                     })
                                 });
-                            }
-                            Some("continue") => {
-                                trace!(
-                                    "ForStatementFlowControl (L): Setting loop with id {} as infinite",
-                                    parent.id()
-                                );
-                                node.set(Loop(Inifite))
-                            }
-                            _ => {}
                         }
+                        Some("continue") => {
+                            trace!(
+                                "ForStatementFlowControl (L): Setting loop with id {} as infinite",
+                                parent.id()
+                            );
+                            node.set(Loop(Inifite))
+                        }
+                        _ => {}
                     }
+                }
             }
             _ => (),
         }

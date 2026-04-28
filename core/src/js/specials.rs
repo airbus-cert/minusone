@@ -115,117 +115,118 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
         }
 
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2))
-            && op.kind() == "+" {
-                match (left.data(), right.data()) {
-                    (Some(Array(array)), Some(Undefined)) => {
-                        if array.is_empty() {
-                            trace!("AddSubSpecials (L): [] + undefined => 'undefined'");
-                            node.reduce(Raw(Str("undefined".to_string())));
-                        } else {
-                            trace!(
-                                "AddSubSpecials (L): [{}] + undefined => '[..]undefined'",
-                                array
-                                    .iter()
-                                    .map(|v| v.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(",")
-                            );
-                            let array_str = flatten_array(array, None);
-                            node.reduce(Raw(Str(format!("{}undefined", array_str))));
-                        }
-                    }
-                    (Some(Undefined), Some(Array(array))) => {
-                        if array.is_empty() {
-                            trace!("AddSubSpecials (R): undefined + [] => 'undefined'");
-                            node.reduce(Raw(Str("undefined".to_string())));
-                        } else {
-                            trace!(
-                                "AddSubSpecials (R): undefined + [{}] => 'undefined[..]'",
-                                array
-                                    .iter()
-                                    .map(|v| v.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(",")
-                            );
-                            let array_str = flatten_array(array, None);
-                            node.reduce(Raw(Str(format!("undefined{}", array_str))));
-                        }
-                    }
-                    (Some(Array(array)), Some(NaN)) => {
-                        if array.is_empty() {
-                            trace!("AddSubSpecials (L): [] + NaN => 'NaN'");
-                            node.reduce(Raw(Str("NaN".to_string())));
-                        } else {
-                            trace!(
-                                "AddSubSpecials (L): [{}] + NaN => '[..]NaN'",
-                                array
-                                    .iter()
-                                    .map(|v| v.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(",")
-                            );
-                            let array_str = flatten_array(array, None);
-                            node.reduce(Raw(Str(format!("{}NaN", array_str))));
-                        }
-                    }
-                    (Some(NaN), Some(Array(array))) => {
-                        if array.is_empty() {
-                            trace!("AddSubSpecials (R): NaN + [] => 'NaN'");
-                            node.reduce(Raw(Str("NaN".to_string())));
-                        } else {
-                            trace!(
-                                "AddSubSpecials (R): NaN + [{}] => 'NaN[..]'",
-                                array
-                                    .iter()
-                                    .map(|v| v.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(",")
-                            );
-                            let array_str = flatten_array(array, None);
-                            node.reduce(Raw(Str(format!("NaN{}", array_str))));
-                        }
-                    }
-                    (Some(Undefined), Some(Raw(Num(n)))) => {
-                        trace!("AddSubSpecials (L): undefined + {} => NaN", n);
-                        node.reduce(NaN);
-                    }
-                    (Some(Raw(Num(n))), Some(Undefined)) => {
-                        trace!("AddSubSpecials (R): {} + undefined => NaN", n);
-                        node.reduce(NaN);
-                    }
-                    (Some(Undefined), Some(Raw(Bool(b)))) => {
-                        trace!("AddSubSpecials (R): undefined + {} => NaN", b);
-                        node.reduce(NaN);
-                    }
-                    (Some(Raw(Bool(b))), Some(Undefined)) => {
-                        trace!("AddSubSpecials (L): {} + undefined => NaN", b);
-                        node.reduce(NaN);
-                    }
-                    (Some(Undefined), Some(Raw(Str(s)))) => {
+            && op.kind() == "+"
+        {
+            match (left.data(), right.data()) {
+                (Some(Array(array)), Some(Undefined)) => {
+                    if array.is_empty() {
+                        trace!("AddSubSpecials (L): [] + undefined => 'undefined'");
+                        node.reduce(Raw(Str("undefined".to_string())));
+                    } else {
                         trace!(
-                            "AddSubSpecials (R): undefined + '{}' => 'undefined{}'",
-                            s, s
+                            "AddSubSpecials (L): [{}] + undefined => '[..]undefined'",
+                            array
+                                .iter()
+                                .map(|v| v.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",")
                         );
-                        node.reduce(Raw(Str(format!("undefined{}", s))));
+                        let array_str = flatten_array(array, None);
+                        node.reduce(Raw(Str(format!("{}undefined", array_str))));
                     }
-                    (Some(Raw(Str(s))), Some(Undefined)) => {
-                        trace!(
-                            "AddSubSpecials (L): '{}' + undefined => '{}undefined'",
-                            s, s
-                        );
-                        node.reduce(Raw(Str(format!("{}undefined", s))));
-                    }
-                    (Some(NaN), Some(Raw(Str(s)))) => {
-                        trace!("AddSubSpecials (R): NaN + '{}' => 'NaN{}'", s, s);
-                        node.reduce(Raw(Str(format!("NaN{}", s))));
-                    }
-                    (Some(Raw(Str(s))), Some(NaN)) => {
-                        trace!("AddSubSpecials (L): '{}' + NaN => '{}NaN'", s, s);
-                        node.reduce(Raw(Str(format!("{}NaN", s))));
-                    }
-                    _ => {}
                 }
+                (Some(Undefined), Some(Array(array))) => {
+                    if array.is_empty() {
+                        trace!("AddSubSpecials (R): undefined + [] => 'undefined'");
+                        node.reduce(Raw(Str("undefined".to_string())));
+                    } else {
+                        trace!(
+                            "AddSubSpecials (R): undefined + [{}] => 'undefined[..]'",
+                            array
+                                .iter()
+                                .map(|v| v.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                        let array_str = flatten_array(array, None);
+                        node.reduce(Raw(Str(format!("undefined{}", array_str))));
+                    }
+                }
+                (Some(Array(array)), Some(NaN)) => {
+                    if array.is_empty() {
+                        trace!("AddSubSpecials (L): [] + NaN => 'NaN'");
+                        node.reduce(Raw(Str("NaN".to_string())));
+                    } else {
+                        trace!(
+                            "AddSubSpecials (L): [{}] + NaN => '[..]NaN'",
+                            array
+                                .iter()
+                                .map(|v| v.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                        let array_str = flatten_array(array, None);
+                        node.reduce(Raw(Str(format!("{}NaN", array_str))));
+                    }
+                }
+                (Some(NaN), Some(Array(array))) => {
+                    if array.is_empty() {
+                        trace!("AddSubSpecials (R): NaN + [] => 'NaN'");
+                        node.reduce(Raw(Str("NaN".to_string())));
+                    } else {
+                        trace!(
+                            "AddSubSpecials (R): NaN + [{}] => 'NaN[..]'",
+                            array
+                                .iter()
+                                .map(|v| v.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                        let array_str = flatten_array(array, None);
+                        node.reduce(Raw(Str(format!("NaN{}", array_str))));
+                    }
+                }
+                (Some(Undefined), Some(Raw(Num(n)))) => {
+                    trace!("AddSubSpecials (L): undefined + {} => NaN", n);
+                    node.reduce(NaN);
+                }
+                (Some(Raw(Num(n))), Some(Undefined)) => {
+                    trace!("AddSubSpecials (R): {} + undefined => NaN", n);
+                    node.reduce(NaN);
+                }
+                (Some(Undefined), Some(Raw(Bool(b)))) => {
+                    trace!("AddSubSpecials (R): undefined + {} => NaN", b);
+                    node.reduce(NaN);
+                }
+                (Some(Raw(Bool(b))), Some(Undefined)) => {
+                    trace!("AddSubSpecials (L): {} + undefined => NaN", b);
+                    node.reduce(NaN);
+                }
+                (Some(Undefined), Some(Raw(Str(s)))) => {
+                    trace!(
+                        "AddSubSpecials (R): undefined + '{}' => 'undefined{}'",
+                        s, s
+                    );
+                    node.reduce(Raw(Str(format!("undefined{}", s))));
+                }
+                (Some(Raw(Str(s))), Some(Undefined)) => {
+                    trace!(
+                        "AddSubSpecials (L): '{}' + undefined => '{}undefined'",
+                        s, s
+                    );
+                    node.reduce(Raw(Str(format!("{}undefined", s))));
+                }
+                (Some(NaN), Some(Raw(Str(s)))) => {
+                    trace!("AddSubSpecials (R): NaN + '{}' => 'NaN{}'", s, s);
+                    node.reduce(Raw(Str(format!("NaN{}", s))));
+                }
+                (Some(Raw(Str(s))), Some(NaN)) => {
+                    trace!("AddSubSpecials (L): '{}' + NaN => '{}NaN'", s, s);
+                    node.reduce(Raw(Str(format!("{}NaN", s))));
+                }
+                _ => {}
             }
+        }
 
         Ok(())
     }

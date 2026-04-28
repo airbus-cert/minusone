@@ -131,11 +131,11 @@ impl<'a> RuleMut<'a> for ConcatString {
         if (view.kind() == "additive_expression" || view.kind() == "additive_argument_expression")
             && let (Some(left_op), Some(operator), Some(right_op)) =
                 (view.child(0), view.child(1), view.child(2))
-                && let (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) =
-                    (left_op.data(), operator.text()?, right_op.data())
-                {
-                    node.reduce(Raw(Str(String::from(string_left) + string_right)))
-                }
+            && let (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) =
+                (left_op.data(), operator.text()?, right_op.data())
+        {
+            node.reduce(Raw(Str(String::from(string_left) + string_right)))
+        }
         Ok(())
     }
 }
@@ -163,32 +163,31 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
         if view.kind() == "invokation_expression"
             && let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
-            {
-                match (
-                    expression.data(),
-                    operator.text()?,
-                    &member_name.text()?.to_string(),
-                    member_name.data(),
-                ) {
-                    (Some(Raw(Str(src))), ".", m, _)
-                    | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
-                        if m.clone().to_lowercase().remove_tilt().remove_quote() == "replace" =>
+        {
+            match (
+                expression.data(),
+                operator.text()?,
+                &member_name.text()?.to_string(),
+                member_name.data(),
+            ) {
+                (Some(Raw(Str(src))), ".", m, _)
+                | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
+                    if m.clone().to_lowercase().remove_tilt().remove_quote() == "replace" =>
+                {
+                    if let Some(argument_expression_list) =
+                        arguments_list.named_child("argument_expression_list")
+                        && let (Some(arg_1), Some(arg_2)) = (
+                            argument_expression_list.child(0),
+                            argument_expression_list.child(2),
+                        )
+                        && let (Some(Raw(Str(from))), Some(Raw(to))) = (arg_1.data(), arg_2.data())
                     {
-                        if let Some(argument_expression_list) =
-                            arguments_list.named_child("argument_expression_list")
-                            && let (Some(arg_1), Some(arg_2)) = (
-                                argument_expression_list.child(0),
-                                argument_expression_list.child(2),
-                            )
-                                && let (Some(Raw(Str(from))), Some(Raw(to))) =
-                                    (arg_1.data(), arg_2.data())
-                                {
-                                    node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
-                                }
+                        node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
                     }
-                    _ => {}
                 }
+                _ => {}
             }
+        }
         Ok(())
     }
 }
@@ -216,22 +215,22 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
         if view.kind() == "comparison_expression"
             && let (Some(left_expression), Some(operator), Some(right_expression)) =
                 (view.child(0), view.child(1), view.child(2))
-            {
-                match (
-                    left_expression.data(),
-                    operator.text()?.to_lowercase().as_str(),
-                    right_expression.data(),
-                ) {
-                    (Some(Raw(Str(src))), "-replace", Some(Array(params)))
-                    | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) => {
-                        // -replace operator need two params
-                        if let (Some(Str(old)), Some(Str(new))) = (params.first(), params.get(1)) {
-                            node.reduce(Raw(Str(src.replace(old, new))));
-                        }
+        {
+            match (
+                left_expression.data(),
+                operator.text()?.to_lowercase().as_str(),
+                right_expression.data(),
+            ) {
+                (Some(Raw(Str(src))), "-replace", Some(Array(params)))
+                | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) => {
+                    // -replace operator need two params
+                    if let (Some(Str(old)), Some(Str(new))) = (params.first(), params.get(1)) {
+                        node.reduce(Raw(Str(src.replace(old, new))));
                     }
-                    _ => (),
                 }
+                _ => (),
             }
+        }
         Ok(())
     }
 }
@@ -282,24 +281,24 @@ impl<'a> RuleMut<'a> for FormatString {
         let view = node.view();
         if view.kind() == "format_expression"
             && let (Some(format_str_node), Some(format_args_node)) = (view.child(0), view.child(2))
-            {
-                match (format_str_node.data(), format_args_node.data()) {
-                    (Some(Raw(Str(format_str))), Some(Array(format_args))) => {
-                        let mut result = format_str.clone();
-                        for (index, new) in format_args.iter().enumerate() {
-                            result = result
-                                .replace(format!("{{{index}}}").as_str(), new.to_string().as_str());
-                        }
-                        node.reduce(Raw(Str(result)));
+        {
+            match (format_str_node.data(), format_args_node.data()) {
+                (Some(Raw(Str(format_str))), Some(Array(format_args))) => {
+                    let mut result = format_str.clone();
+                    for (index, new) in format_args.iter().enumerate() {
+                        result = result
+                            .replace(format!("{{{index}}}").as_str(), new.to_string().as_str());
                     }
-                    (Some(Raw(Str(format_str))), Some(Raw(format_arg))) => {
-                        node.reduce(Raw(Str(
-                            format_str.replace("{0}", format_arg.to_string().as_str())
-                        )));
-                    }
-                    _ => (),
+                    node.reduce(Raw(Str(result)));
                 }
+                (Some(Raw(Str(format_str))), Some(Raw(format_arg))) => {
+                    node.reduce(Raw(Str(
+                        format_str.replace("{0}", format_arg.to_string().as_str())
+                    )));
+                }
+                _ => (),
             }
+        }
         Ok(())
     }
 }
@@ -327,39 +326,40 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
         if view.kind() == "invokation_expression"
             && let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
-            {
-                match (
-                    expression.data(),
-                    operator.text()?,
-                    &member_name.text()?.to_string(),
-                    member_name.data(),
-                ) {
-                    (Some(Raw(Str(src))), ".", m, _)
-                    | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
-                        if m.clone().to_lowercase().remove_tilt().remove_quote() == "split" =>
+        {
+            match (
+                expression.data(),
+                operator.text()?,
+                &member_name.text()?.to_string(),
+                member_name.data(),
+            ) {
+                (Some(Raw(Str(src))), ".", m, _)
+                | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
+                    if m.clone().to_lowercase().remove_tilt().remove_quote() == "split" =>
+                {
+                    if let Some(argument_expression_list) =
+                        arguments_list.named_child("argument_expression_list")
+                        && let Some(arg_1) = argument_expression_list.child(0)
+                        && let Some(Raw(Str(separator))) = arg_1.data()
                     {
-                        if let Some(argument_expression_list) =
-                            arguments_list.named_child("argument_expression_list")
-                            && let Some(arg_1) = argument_expression_list.child(0)
-                                && let Some(Raw(Str(separator))) = arg_1.data() {
-                                    // not reduce to have a better deobfuscation
-                                    // if we reduce this step we will maybe lost the string
-                                    let array = src
-                                        .split(separator)
-                                        .collect::<Vec<&str>>()
-                                        .iter()
-                                        .map(|e| Str(e.to_string()))
-                                        .collect();
-                                    trace!(
-                                        "StringSplitMethod (L): Setting node with split string: {:?} with separator: {:?}",
-                                        array, separator
-                                    );
-                                    node.set(Array(array));
-                                }
+                        // not reduce to have a better deobfuscation
+                        // if we reduce this step we will maybe lost the string
+                        let array = src
+                            .split(separator)
+                            .collect::<Vec<&str>>()
+                            .iter()
+                            .map(|e| Str(e.to_string()))
+                            .collect();
+                        trace!(
+                            "StringSplitMethod (L): Setting node with split string: {:?} with separator: {:?}",
+                            array, separator
+                        );
+                        node.set(Array(array));
                     }
-                    _ => {}
                 }
+                _ => {}
             }
+        }
         Ok(())
     }
 }

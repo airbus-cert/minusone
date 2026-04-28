@@ -124,25 +124,25 @@ impl<'a> RuleMut<'a> for AddInt {
             || node_view.kind() == "additive_argument_expression")
             && let (Some(left_op), Some(operator), Some(right_op)) =
                 (node_view.child(0), node_view.child(1), node_view.child(2))
-            {
-                match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => {
-                        if let Some(result) = number_left.checked_add(*number_right) {
-                            node.reduce(Raw(Num(result)))
-                        } else {
-                            warn!("Addition overflow: {} + {}", number_left, number_right);
-                        }
+        {
+            match (left_op.data(), operator.text()?, right_op.data()) {
+                (Some(Raw(Num(number_left))), "+", Some(Raw(Num(number_right)))) => {
+                    if let Some(result) = number_left.checked_add(*number_right) {
+                        node.reduce(Raw(Num(result)))
+                    } else {
+                        warn!("Addition overflow: {} + {}", number_left, number_right);
                     }
-                    (Some(Raw(Num(number_left))), "-", Some(Raw(Num(number_right)))) => {
-                        if let Some(result) = number_left.checked_sub(*number_right) {
-                            node.reduce(Raw(Num(result)))
-                        } else {
-                            warn!("Subtraction overflow: {} - {}", number_left, number_right);
-                        }
-                    }
-                    _ => {}
                 }
+                (Some(Raw(Num(number_left))), "-", Some(Raw(Num(number_right)))) => {
+                    if let Some(result) = number_left.checked_sub(*number_right) {
+                        node.reduce(Raw(Num(result)))
+                    } else {
+                        warn!("Subtraction overflow: {} - {}", number_left, number_right);
+                    }
+                }
+                _ => {}
             }
+        }
         Ok(())
     }
 }
@@ -192,28 +192,28 @@ impl<'a> RuleMut<'a> for MultInt {
             || node_view.kind() == "multiplicative_argument_expression")
             && let (Some(left_op), Some(operator), Some(right_op)) =
                 (node_view.child(0), node_view.child(1), node_view.child(2))
-            {
-                match (left_op.data(), operator.text()?, right_op.data()) {
-                    (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => {
-                        if let Some(result) = number_left.checked_mul(*number_right) {
-                            node.reduce(Raw(Num(result)))
-                        } else {
-                            warn!(
-                                "Multiplication overflow: {} * {}",
-                                number_left, number_right
-                            );
-                        }
+        {
+            match (left_op.data(), operator.text()?, right_op.data()) {
+                (Some(Raw(Num(number_left))), "*", Some(Raw(Num(number_right)))) => {
+                    if let Some(result) = number_left.checked_mul(*number_right) {
+                        node.reduce(Raw(Num(result)))
+                    } else {
+                        warn!(
+                            "Multiplication overflow: {} * {}",
+                            number_left, number_right
+                        );
                     }
-                    (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {
-                        if let Some(result) = number_left.checked_div(*number_right) {
-                            node.reduce(Raw(Num(result)))
-                        } else {
-                            warn!("Division by zero: {} / {}", number_left, number_right);
-                        }
-                    }
-                    _ => {}
                 }
+                (Some(Raw(Num(number_left))), "/", Some(Raw(Num(number_right)))) => {
+                    if let Some(result) = number_left.checked_div(*number_right) {
+                        node.reduce(Raw(Num(result)))
+                    } else {
+                        warn!("Division by zero: {} / {}", number_left, number_right);
+                    }
+                }
+                _ => {}
             }
+        }
         Ok(())
     }
 }

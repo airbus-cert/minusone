@@ -46,10 +46,10 @@ pub(crate) fn run_deobf<B: DeobfuscationBackend>(
 where
     <B as DeobfuscationBackend>::Language: Debug,
 {
-    let cleaned = DeobfuscateEngine::<B>::remove_extra(source)
-        .map_err(MinusonejsError::MinusoneError)?;
-    let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)
-        .map_err(MinusonejsError::MinusoneError)?;
+    let cleaned =
+        DeobfuscateEngine::<B>::remove_extra(source).map_err(MinusonejsError::MinusoneError)?;
+    let mut engine =
+        DeobfuscateEngine::<B>::from_source(&cleaned).map_err(MinusonejsError::MinusoneError)?;
 
     if let Some(rules) = rule_set {
         engine
@@ -65,9 +65,7 @@ where
             .map_err(MinusonejsError::MinusoneError)?;
     }
 
-    engine
-        .lint()
-        .map_err(MinusonejsError::MinusoneError)
+    engine.lint().map_err(MinusonejsError::MinusoneError)
 }
 
 struct Minusone;

@@ -46,67 +46,67 @@ impl<'a> RuleMut<'a> for B64 {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "call_expression"
-            && let (Some(identifier), Some(arguments)) = (view.child(0), view.child(1)) {
-                if identifier.text()? == "atob" {
-                    if arguments.child_count() == 3 {
-                        if let Some(encoded_string) = arguments.child(1)
-                            && let Some(Raw(Str(encoded))) = encoded_string.data() {
-                                let config = GeneralPurposeConfig::new()
-                                    .with_decode_padding_mode(DecodePaddingMode::Indifferent)
-                                    .with_decode_allow_trailing_bits(true);
+            && let (Some(identifier), Some(arguments)) = (view.child(0), view.child(1))
+        {
+            if identifier.text()? == "atob" {
+                if arguments.child_count() == 3 {
+                    if let Some(encoded_string) = arguments.child(1)
+                        && let Some(Raw(Str(encoded))) = encoded_string.data()
+                    {
+                        let config = GeneralPurposeConfig::new()
+                            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+                            .with_decode_allow_trailing_bits(true);
 
-                                let engine = GeneralPurpose::new(&alphabet::STANDARD, config);
+                        let engine = GeneralPurpose::new(&alphabet::STANDARD, config);
 
-                                let decoded_bytes = match engine.decode(encoded) {
-                                    Ok(bytes) => bytes,
-                                    Err(e) => {
-                                        warn!(
-                                            "ParseB64: failed to decode base64 string '{}': {}",
-                                            encoded, e
-                                        );
-                                        return Ok(());
-                                    }
-                                };
-
-                                let decoded_string =
-                                    String::from_utf8_lossy(&decoded_bytes).to_string();
-
-                                trace!(
-                                    "ParseB64: decoded base64 string '{}' to '{}'",
-                                    encoded, decoded_string
+                        let decoded_bytes = match engine.decode(encoded) {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                warn!(
+                                    "ParseB64: failed to decode base64 string '{}': {}",
+                                    encoded, e
                                 );
-                                node.reduce(Raw(Str(decoded_string)));
+                                return Ok(());
                             }
-                    } else {
-                        warn!(
-                            "ParseB64: atob called with unexpected number of arguments: {}",
-                            arguments.child_count() - 2
+                        };
+
+                        let decoded_string = String::from_utf8_lossy(&decoded_bytes).to_string();
+
+                        trace!(
+                            "ParseB64: decoded base64 string '{}' to '{}'",
+                            encoded, decoded_string
                         );
+                        node.reduce(Raw(Str(decoded_string)));
                     }
-                } else if identifier.text()? == "btoa" {
-                    if arguments.child_count() == 3 {
-                        if let Some(decoded_string) = arguments.child(1)
-                            && let Some(Raw(Str(decoded))) = decoded_string.data() {
-                                let encoded_string = GeneralPurpose::new(
-                                    &alphabet::STANDARD,
-                                    GeneralPurposeConfig::new(),
-                                )
+                } else {
+                    warn!(
+                        "ParseB64: atob called with unexpected number of arguments: {}",
+                        arguments.child_count() - 2
+                    );
+                }
+            } else if identifier.text()? == "btoa" {
+                if arguments.child_count() == 3 {
+                    if let Some(decoded_string) = arguments.child(1)
+                        && let Some(Raw(Str(decoded))) = decoded_string.data()
+                    {
+                        let encoded_string =
+                            GeneralPurpose::new(&alphabet::STANDARD, GeneralPurposeConfig::new())
                                 .encode(decoded.as_bytes());
 
-                                trace!(
-                                    "ParseB64: encoded string '{}' to base64 '{}'",
-                                    decoded, encoded_string
-                                );
-                                node.reduce(Raw(Str(encoded_string)));
-                            }
-                    } else {
-                        warn!(
-                            "ParseB64: btoa called with unexpected number of arguments: {}",
-                            arguments.child_count() - 2
+                        trace!(
+                            "ParseB64: encoded string '{}' to base64 '{}'",
+                            decoded, encoded_string
                         );
+                        node.reduce(Raw(Str(encoded_string)));
                     }
+                } else {
+                    warn!(
+                        "ParseB64: btoa called with unexpected number of arguments: {}",
+                        arguments.child_count() - 2
+                    );
                 }
             }
+        }
 
         Ok(())
     }

@@ -46,26 +46,7 @@ pub struct Var {
     scope_manager: ScopeManager<JavaScript>,
 }
 
-
 impl Var {
-    fn is_subscript_index_read(node: &Node<JavaScript>) -> bool {
-        let mut current = node.parent();
-        while let Some(parent) = current {
-            if parent.kind() == "subscript_expression"
-                && parent
-                    .named_child("index")
-                    .map(|idx| {
-                        node.start_abs() >= idx.start_abs() && node.end_abs() <= idx.end_abs()
-                    })
-                    .unwrap_or(false)
-            {
-                return true;
-            }
-            current = parent.parent();
-        }
-        false
-    }
-
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             match child.kind() {
@@ -88,12 +69,13 @@ impl Var {
                 "variable_declarator" => {
                     // declaration in an unpredictable branch: forget the name
                     if let Some(name_node) = child.named_child("name")
-                        && name_node.kind() == "identifier" {
-                            let var_name = name_node.text()?.to_string();
-                            self.scope_manager
-                                .current_mut()
-                                .forget(&var_name, node.is_ongoing_transaction());
-                        }
+                        && name_node.kind() == "identifier"
+                    {
+                        let var_name = name_node.text()?.to_string();
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, node.is_ongoing_transaction());
+                    }
                 }
                 _ => {
                     self.forget_assigned_var(&child)?;
@@ -101,39 +83,6 @@ impl Var {
             }
         }
         Ok(())
-    }
-
-    fn is_write_target(node: &Node<JavaScript>) -> bool {
-        let mut current = node.parent();
-        while let Some(parent) = current {
-            match parent.kind() {
-                "variable_declarator" => {
-                    if let Some(name_child) = parent.child(0) {
-                        return node.start_abs() >= name_child.start_abs()
-                            && node.end_abs() <= name_child.end_abs();
-                    }
-                }
-                "assignment_expression" | "augmented_assignment_expression" => {
-                    if let Some(left) = parent.child(0)
-                        && node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
-                        {
-                            // In `obj[expr] = ...`, identifiers inside `expr` are reads, not writes.
-                            if Self::is_subscript_index_read(node) {
-                                return false;
-                            }
-                            return true;
-                        }
-                }
-                "update_expression" => {
-                    return true;
-                }
-                _ => {}
-            }
-
-            current = parent.parent();
-        }
-
-        false
     }
 }
 
@@ -191,25 +140,26 @@ impl<'a> RuleMut<'a> for Var {
             }
             "}" => {
                 if let Some(parent) = view.parent()
-                    && parent.kind() == "statement_block" {
-                        if let Some(grandparent) = parent.parent() {
-                            match grandparent.kind() {
-                                "function_declaration"
-                                | "function"
-                                | "arrow_function"
-                                | "method_definition"
-                                | "generator_function_declaration"
-                                | "generator_function" => {
-                                    self.scope_manager.leave_function();
-                                }
-                                _ => {
-                                    self.scope_manager.leave();
-                                }
+                    && parent.kind() == "statement_block"
+                {
+                    if let Some(grandparent) = parent.parent() {
+                        match grandparent.kind() {
+                            "function_declaration"
+                            | "function"
+                            | "arrow_function"
+                            | "method_definition"
+                            | "generator_function_declaration"
+                            | "generator_function" => {
+                                self.scope_manager.leave_function();
                             }
-                        } else {
-                            self.scope_manager.leave();
+                            _ => {
+                                self.scope_manager.leave();
+                            }
                         }
+                    } else {
+                        self.scope_manager.leave();
                     }
+                }
             }
             _ => {}
         }
@@ -227,73 +177,79 @@ impl<'a> RuleMut<'a> for Var {
             "variable_declarator" => {
                 // child(0) = name (identifier), child(1) = "=", child(2) = value
                 if let Some(name_node) = view.named_child("name")
-                    && name_node.kind() == "identifier" {
-                        let var_name = name_node.text()?.to_string();
-                        if let Some(value_node) = view.named_child("value")
-                            && let Some(data) = value_node.data() {
-                                trace!("Var (L): Assigning variable '{}' = {:?}", var_name, data);
-                                self.scope_manager.current_mut().assign(
-                                    &var_name,
-                                    data.clone(),
-                                    node.is_ongoing_transaction(),
-                                );
-                            }
-                        // variable_declaration = var, lexical_declaration = let/const
-                        if let Some(parent) = view.parent()
-                            && parent.kind() == "variable_declaration" {
-                                self.scope_manager.current_mut().set_non_local(&var_name);
-                            }
+                    && name_node.kind() == "identifier"
+                {
+                    let var_name = name_node.text()?.to_string();
+                    if let Some(value_node) = view.named_child("value")
+                        && let Some(data) = value_node.data()
+                    {
+                        trace!("Var (L): Assigning variable '{}' = {:?}", var_name, data);
+                        self.scope_manager.current_mut().assign(
+                            &var_name,
+                            data.clone(),
+                            node.is_ongoing_transaction(),
+                        );
                     }
+                    // variable_declaration = var, lexical_declaration = let/const
+                    if let Some(parent) = view.parent()
+                        && parent.kind() == "variable_declaration"
+                    {
+                        self.scope_manager.current_mut().set_non_local(&var_name);
+                    }
+                }
             }
             // reassignment
             "assignment_expression" => {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2))
-                    && left.kind() == "identifier" {
-                        let var_name = left.text()?.to_string();
-                        if let Some(data) = right.data() {
-                            trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
-                            self.scope_manager.current_mut().assign(
-                                &var_name,
-                                data.clone(),
-                                node.is_ongoing_transaction(),
-                            );
-                        } else {
-                            // unknown, forget the variable
-                            self.scope_manager
-                                .current_mut()
-                                .forget(&var_name, node.is_ongoing_transaction());
-                        }
+                    && left.kind() == "identifier"
+                {
+                    let var_name = left.text()?.to_string();
+                    if let Some(data) = right.data() {
+                        trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
+                        self.scope_manager.current_mut().assign(
+                            &var_name,
+                            data.clone(),
+                            node.is_ongoing_transaction(),
+                        );
+                    } else {
+                        // unknown, forget the variable
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, node.is_ongoing_transaction());
                     }
+                }
             }
             // function test() {} / function* test() {}
             "function_declaration" | "generator_function_declaration" => {
                 if let Some(name_node) = view.named_child("name")
-                    && name_node.kind() == "identifier" {
-                        let var_name = name_node.text()?.to_string();
-                        let value = view
-                            .data()
-                            .cloned()
-                            .or_else(|| function_value_from_node(&view));
+                    && name_node.kind() == "identifier"
+                {
+                    let var_name = name_node.text()?.to_string();
+                    let value = view
+                        .data()
+                        .cloned()
+                        .or_else(|| function_value_from_node(&view));
 
-                        let Some(value) = value else {
-                            return Ok(());
-                        };
+                    let Some(value) = value else {
+                        return Ok(());
+                    };
 
-                        trace!(
-                            "Var (L): Assigning function declaration '{}' = {:?}",
-                            var_name, value
-                        );
-                        self.scope_manager.current_mut().assign(
-                            &var_name,
-                            value,
-                            node.is_ongoing_transaction(),
-                        );
+                    trace!(
+                        "Var (L): Assigning function declaration '{}' = {:?}",
+                        var_name, value
+                    );
+                    self.scope_manager.current_mut().assign(
+                        &var_name,
+                        value,
+                        node.is_ongoing_transaction(),
+                    );
 
-                        if let Some(parent) = view.parent()
-                            && parent.kind() == "program" {
-                                self.scope_manager.current_mut().set_non_local(&var_name);
-                            }
+                    if let Some(parent) = view.parent()
+                        && parent.kind() == "program"
+                    {
+                        self.scope_manager.current_mut().set_non_local(&var_name);
                     }
+                }
             }
             // x++, x--, ++x, --x
             "update_expression" => {

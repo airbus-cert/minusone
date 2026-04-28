@@ -27,13 +27,14 @@ impl<'a> RuleMut<'a> for Forward {
         let view = node.view();
         if view.kind() == "parenthesized_expression"
             && let Some(expression) = view.child(1)
-                && let Some(expression_data) = expression.data() {
-                    trace!(
-                        "Forward (L): Forwarding data from child to parent: {:?}",
-                        expression_data
-                    );
-                    node.reduce(expression_data.clone())
-                }
+            && let Some(expression_data) = expression.data()
+        {
+            trace!(
+                "Forward (L): Forwarding data from child to parent: {:?}",
+                expression_data
+            );
+            node.reduce(expression_data.clone())
+        }
 
         Ok(())
     }
