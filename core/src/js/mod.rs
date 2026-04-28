@@ -4,7 +4,6 @@ pub mod backend;
 pub mod bool;
 pub mod comparator;
 mod converter;
-pub mod deadcode;
 pub mod encode_decode;
 pub mod forward;
 pub mod functions;
