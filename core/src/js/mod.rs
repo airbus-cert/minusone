@@ -5,6 +5,7 @@ pub mod bool;
 pub mod comparator;
 mod converter;
 pub mod deadcode;
+mod encode_decode;
 pub mod forward;
 pub mod functions;
 pub mod globals;
@@ -24,6 +25,7 @@ use self::array::*;
 use self::b64::*;
 use self::bool::*;
 use self::comparator::*;
+use self::encode_decode::EncodeDecodeBuiltins;
 use self::forward::*;
 use self::functions::fncall::*;
 use self::functions::function::*;
@@ -161,6 +163,7 @@ impl_javascript_ruleset!(
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
     Split,          // Infer string split calls on literal strings
     Replace,        // Infer string replace calls on literal strings
+    EncodeDecodeBuiltins, // infer encode/decode built-ins functions
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
