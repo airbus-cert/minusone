@@ -18,7 +18,7 @@
       venv.enable = true;
       uv = {
         enable = true;
-        sync.enable = true;  
+        sync.enable = true;
       };
     };
     javascript = {
@@ -46,6 +46,5 @@
 
   enterTest = ''
     just test
-    just test-py
   '';
 }

@@ -55,7 +55,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 
         match view.kind() {
             "number" => {
-                node.reduce(Self::from_str(token));
+                node.reduce(Self::from_string(token));
             }
             "identifier" => {
                 if view.text()? == "Infinity" {
@@ -66,47 +66,46 @@ impl<'a> RuleMut<'a> for ParseInt {
             "call_expression" => {
                 if let Some(func) = view.child(0) {
                     if func.text()? == "BigInt" {
-                        if let Some(args) = view.child(1) {
-                            if let Some(arg) = args.child(1) {
-                                if let Some(Raw(Str(s))) = arg.data() {
-                                    let negate;
-                                    let s = if s.starts_with("-") {
-                                        negate = true;
-                                        &s[1..]
-                                    } else {
-                                        negate = false;
-                                        s
-                                    };
-                                    let bigint = Self::bigint_from_str(s, negate);
-                                    trace!("ParseInt (L): BigInt {:?}", bigint);
-                                    node.reduce(bigint);
-                                } else if let Some(Raw(Num(n))) = arg.data() {
-                                    let bigint = num_bigint::BigInt::from(*n as u64);
-                                    trace!("ParseInt (L): BigInt from number {} => {}n", n, bigint);
-                                    node.reduce(Raw(BigInt(bigint)));
-                                }
+                        if let Some(args) = view.child(1)
+                            && let Some(arg) = args.child(1)
+                        {
+                            if let Some(Raw(Str(s))) = arg.data() {
+                                let negate;
+                                let s = if s.starts_with("-") {
+                                    negate = true;
+                                    &s[1..]
+                                } else {
+                                    negate = false;
+                                    s
+                                };
+                                let bigint = Self::bigint_from_str(s, negate);
+                                trace!("ParseInt (L): BigInt {:?}", bigint);
+                                node.reduce(bigint);
+                            } else if let Some(Raw(Num(n))) = arg.data() {
+                                let bigint = num_bigint::BigInt::from(*n as u64);
+                                trace!("ParseInt (L): BigInt from number {} => {}n", n, bigint);
+                                node.reduce(Raw(BigInt(bigint)));
                             }
                         }
-                    } else if func.text()? == "parseInt" || func.text()? == "Number" {
-                        if let Some(args) = view.child(1) {
-                            if let Some(value) = args.child(1) {
-                                let radix = args.child(2);
-                                let radix = radix.and_then(|r| r.data().cloned());
-                                let result = Self::js_parse_int(
-                                    value.data().cloned().unwrap_or(Undefined),
-                                    radix.clone(),
-                                    func.text()? == "parseInt",
-                                );
+                    } else if (func.text()? == "parseInt" || func.text()? == "Number")
+                        && let Some(args) = view.child(1)
+                        && let Some(value) = args.child(1)
+                    {
+                        let radix = args.child(2);
+                        let radix = radix.and_then(|r| r.data().cloned());
+                        let result = Self::js_parse_int(
+                            value.data().cloned().unwrap_or(Undefined),
+                            radix.clone(),
+                            func.text()? == "parseInt",
+                        );
 
-                                trace!(
-                                    "ParseInt (L): parseInt({:?}, {:?}) = {:?}",
-                                    value.data(),
-                                    radix,
-                                    result
-                                );
-                                node.reduce(result);
-                            }
-                        }
+                        trace!(
+                            "ParseInt (L): parseInt({:?}, {:?}) = {:?}",
+                            value.data(),
+                            radix,
+                            result
+                        );
+                        node.reduce(result);
                     }
                 }
             }
@@ -118,7 +117,7 @@ impl<'a> RuleMut<'a> for ParseInt {
 }
 
 impl ParseInt {
-    pub fn from_str(input: &str) -> JavaScript {
+    pub fn from_string(input: &str) -> JavaScript {
         let negate = input.starts_with("-");
         let bigint = input.ends_with("n");
         let input = if negate { &input[1..] } else { input };
@@ -154,15 +153,15 @@ impl ParseInt {
                 return if negate { NaN } else { Raw(Num(n as f64)) };
             }
         } else {
-            if input.starts_with("0") {
-                if let Ok(n) = u64::from_str_radix(&input[1..], 8) {
-                    trace!("ParseInt (L): octal {} => {}", input, n);
-                    return if negate {
-                        Raw(Num(-(n as f64)))
-                    } else {
-                        Raw(Num(n as f64))
-                    };
-                }
+            if input.starts_with("0")
+                && let Ok(n) = u64::from_str_radix(&input[1..], 8)
+            {
+                trace!("ParseInt (L): octal {} => {}", input, n);
+                return if negate {
+                    Raw(Num(-(n as f64)))
+                } else {
+                    Raw(Num(n as f64))
+                };
             }
 
             // JS fallback to decimal parsing on fail
@@ -181,17 +180,17 @@ impl ParseInt {
 
     pub fn bigint_from_str(input: &str, negate: bool) -> JavaScript {
         if input.len() > 2 && (input.starts_with("0x") || input.starts_with("0X")) {
-            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 16) {
+            if let Some(n) = num::BigInt::parse_bytes(&input.as_bytes()[2..], 16) {
                 trace!("ParseInt (L): hex BigInt {} => {}", input, n);
                 return Raw(BigInt(if negate { -n } else { n }));
             }
         } else if input.len() > 2 && (input.starts_with("0o") || input.starts_with("0O")) {
-            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 8) {
+            if let Some(n) = num::BigInt::parse_bytes(&input.as_bytes()[2..], 8) {
                 trace!("ParseInt (L): octal BigInt {} => {}", input, n);
                 return Raw(BigInt(if negate { -n } else { n }));
             }
         } else if input.len() > 2 && (input.starts_with("0b") || input.starts_with("0B")) {
-            if let Some(n) = num::BigInt::parse_bytes(input[2..].as_bytes(), 2) {
+            if let Some(n) = num::BigInt::parse_bytes(&input.as_bytes()[2..], 2) {
                 trace!("ParseInt (L): binary BigInt {} => {}", input, n);
                 return Raw(BigInt(if negate { -n } else { n }));
             }
@@ -200,11 +199,9 @@ impl ParseInt {
                 "ParseInt (L): BigInt literals cannot start with 0, this will crash the JS engine but found {}n",
                 input
             );
-        } else {
-            if let Some(n) = num::BigInt::parse_bytes(input.as_bytes(), 10) {
-                trace!("ParseInt (L): decimal BigInt {} => {}", input, n);
-                return Raw(BigInt(if negate { -n } else { n }));
-            }
+        } else if let Some(n) = num::BigInt::parse_bytes(input.as_bytes(), 10) {
+            trace!("ParseInt (L): decimal BigInt {} => {}", input, n);
+            return Raw(BigInt(if negate { -n } else { n }));
         }
         warn!(
             "ParseInt (L): Unable to parse BigInt {}, falling back to NaN",
@@ -238,7 +235,7 @@ impl ParseInt {
         let (sign, s): (f64, &str) = match s.chars().next() {
             Some('-') => (-1.0, &s[1..]),
             Some('+') => (1.0, &s[1..]),
-            _ => (1.0, &*s),
+            _ => (1.0, s),
         };
 
         let r_raw = radix.as_ref().map(to_int32).unwrap_or(0);
@@ -364,6 +361,98 @@ impl<'a> RuleMut<'a> for PosNeg {
                 }
             }
         }
+        Ok(())
+    }
+}
+
+/// Infers `++` and `--` (update expressions) applied to known numeric values, excluding occurrences
+/// that appear directly as the update clause of a `for` loop.
+///
+/// *For var increments, see the `Var` rule on the `update_expression` part*
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::integer::{ParseInt, IncrDecr};
+/// use minusone::js::linter::Linter;
+/// use minusone::js::var::Var;
+///
+/// let mut tree = build_javascript_tree("var x = ++5;").unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), IncrDecr::default())).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "var x = 6;");
+/// ```
+#[derive(Default)]
+pub struct IncrDecr;
+
+impl<'a> RuleMut<'a> for IncrDecr {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "update_expression" {
+            return Ok(());
+        }
+
+        // skip for header
+        if let Some(parent) = view.parent()
+            && parent.kind() == "for_statement"
+        {
+            return Ok(());
+        }
+
+        let (is_increment, operand_index): (bool, usize) = {
+            let (Some(first), Some(_second)) = (view.child(0), view.child(1)) else {
+                return Ok(());
+            };
+            let first_text = first.text()?;
+            if first_text == "++" || first_text == "--" {
+                (first_text == "++", 1)
+            } else {
+                let second = view.child(1).unwrap();
+                (second.text()? == "++", 0)
+            }
+        };
+
+        let Some(operand) = view.child(operand_index) else {
+            return Ok(());
+        };
+
+        if let Some(value) = operand.data() {
+            match value.as_js_num() {
+                Raw(Num(n)) => {
+                    let result = if is_increment { n + 1.0 } else { n - 1.0 };
+                    trace!(
+                        "IncrDecr (L): {}({}) = {}",
+                        if is_increment { "++" } else { "--" },
+                        n,
+                        result
+                    );
+                    node.reduce(Raw(Num(result)));
+                }
+                NaN => {
+                    trace!("IncrDecr (L): operand is NaN, result is NaN");
+                    node.reduce(NaN);
+                }
+                _ => {}
+            }
+        }
+
         Ok(())
     }
 }
@@ -569,11 +658,11 @@ impl<'a> RuleMut<'a> for Substract {
 /// # Example
 /// ```
 /// use minusone::js::build_javascript_tree;
-/// use minusone::js::integer::{ParseInt, MultInt};
+/// use minusone::js::integer::{ParseInt, MultDivMod};
 /// use minusone::js::linter::Linter;
 ///
 /// let mut tree = build_javascript_tree("var x = 3 * 4;").unwrap();
-/// tree.apply_mut(&mut (ParseInt::default(), MultInt::default())).unwrap();
+/// tree.apply_mut(&mut (ParseInt::default(), MultDivMod::default())).unwrap();
 ///
 /// let mut linter = Linter::default();
 /// tree.apply(&mut linter).unwrap();
@@ -581,9 +670,9 @@ impl<'a> RuleMut<'a> for Substract {
 /// assert_eq!(linter.output, "var x = 12;");
 /// ```
 #[derive(Default)]
-pub struct MultInt;
+pub struct MultDivMod;
 
-impl<'a> RuleMut<'a> for MultInt {
+impl<'a> RuleMut<'a> for MultDivMod {
     type Language = JavaScript;
 
     fn enter(
@@ -605,93 +694,73 @@ impl<'a> RuleMut<'a> for MultInt {
         }
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
-                (Some(Raw(Num(l))), "*", Some(Raw(Num(r)))) => {
+                (Some(Raw(BigInt(l))), "*", Some(Raw(BigInt(r)))) => {
                     let result = l * r;
-                    trace!("MultInt (L): {} * {} = {}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    trace!("MultDivMod (L): {}n * {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(BigInt(l))), "*", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
+                (Some(l), "*", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("MultDivMod (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
+                    }
+
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l * r;
-                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultDivMod (L): {} * {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to multiply BigInt and non-BigInt: {}n * {}. This should crash the Js engine",
-                            l, r
+                            "MultDivMod (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
-                (Some(l), "*", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
-                        let result = l * r;
-                        trace!("MultInt (L): {}n * {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to multiply non-BigInt and BigInt: {} * {}n. This should crash the Js engine",
-                            l, r
-                        );
-                    }
-                }
-                (Some(Raw(Num(l))), "/", Some(Raw(Num(r)))) => {
+                (Some(Raw(BigInt(l))), "/", Some(Raw(BigInt(r)))) => {
                     let result = l / r;
-                    trace!("MultInt (L): {} / {} = {}", l, r, result);
-                    node.reduce(Raw(Num(result)));
+                    trace!("MultDivMod (L): {}n / {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(BigInt(l))), "/", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
+                (Some(l), "/", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("MultDivMod (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
+                    }
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l / r;
-                        trace!("MultInt (L): {}n / {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultDivMod (L): {} / {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to divide BigInt and non-BigInt: {}n / {}. This should crash the Js engine",
-                            l, r
+                            "MultDivMod (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
-                (Some(l), "/", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
-                        let result = l / r;
-                        trace!("MultInt (L): {}n / {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to divide non-BigInt and BigInt: {} / {}n. This should crash the Js engine",
-                            l, r
-                        );
-                    }
+                (Some(Raw(BigInt(l))), "%", Some(Raw(BigInt(r)))) => {
+                    let result = l % r;
+                    trace!("MultDivMod (L): {}n % {}n = {}n", l, r, result);
+                    node.reduce(Raw(BigInt(result)));
                 }
-                (Some(Raw(Num(l))), "%", Some(Raw(Num(r)))) => {
-                    if *r != 0.0 {
-                        trace!("MultInt (L): {} % {} = {}", l, r, l % r);
-                        node.reduce(Raw(Num(l % r)));
-                    } else {
-                        warn!("MultInt (L): modulo by zero {} % {}", l, r);
+                (Some(l), "%", Some(r)) => {
+                    let left = l.as_js_num();
+                    let right = r.as_js_num();
+                    if left == NaN || right == NaN {
+                        trace!("MultDivMod (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
                     }
-                }
-                (Some(Raw(BigInt(l))), "%", Some(r)) => {
-                    if let Raw(BigInt(r)) = r {
+                    if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
                         let result = l % r;
-                        trace!("MultInt (L): {}n % {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
+                        trace!("MultDivMod (L): {} % {} = {}", l, r, result);
+                        node.reduce(Raw(Num(result)));
                     } else {
                         error!(
-                            "MultInt (L): tried to apply mod on BigInt and non-BigInt: {}n % {}. This should crash the Js engine",
-                            l, r
-                        );
-                    }
-                }
-                (Some(l), "%", Some(Raw(BigInt(r)))) => {
-                    if let Raw(BigInt(l)) = l {
-                        let result = l % r;
-                        trace!("MultInt (L): {}n % {}n = {}n", l, r, result);
-                        node.reduce(Raw(BigInt(result)));
-                    } else {
-                        error!(
-                            "MultInt (L): tried to apply mod on non-BigInt and BigInt: {} % {}n. This should crash the Js engine",
-                            l, r
+                            "MultDivMod (L): Something went wrong, as_js_num() result should always be Raw(Num(n)) or NaN."
                         );
                     }
                 }
@@ -1065,17 +1134,17 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                 }
             }
             "unary_expression" => {
-                if let (Some(op), Some(operand)) = (view.child(0), view.child(1)) {
-                    if op.text()? == "~" {
-                        if let Some(Raw(Num(n))) = operand.data() {
-                            let n = *n as i64;
-                            trace!("BitwiseInt (L): ~{} = {}", n, !n);
-                            node.reduce(Raw(Num((!n) as f64)));
-                        } else if let Some(Raw(BigInt(n))) = operand.data() {
-                            let result = !n;
-                            trace!("BitwiseInt (L): ~{}n = {}n", n, result);
-                            node.reduce(Raw(BigInt(result)));
-                        }
+                if let (Some(op), Some(operand)) = (view.child(0), view.child(1))
+                    && op.text()? == "~"
+                {
+                    if let Some(Raw(Num(n))) = operand.data() {
+                        let n = *n as i64;
+                        trace!("BitwiseInt (L): ~{} = {}", n, !n);
+                        node.reduce(Raw(Num((!n) as f64)));
+                    } else if let Some(Raw(BigInt(n))) = operand.data() {
+                        let result = !n;
+                        trace!("BitwiseInt (L): ~{}n = {}n", n, result);
+                        node.reduce(Raw(BigInt(result)));
                     }
                 }
             }
@@ -1088,6 +1157,7 @@ impl<'a> RuleMut<'a> for BitwiseInt {
 #[cfg(test)]
 mod tests_js_integer {
     use super::*;
+    use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
@@ -1097,10 +1167,12 @@ mod tests_js_integer {
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
+            ParseArray::default(),
             PosNeg::default(),
             AddInt::default(),
             Substract::default(),
-            MultInt::default(),
+            IncrDecr::default(),
+            MultDivMod::default(),
             PowInt::default(),
             ShiftInt::default(),
             BitwiseInt::default(),
@@ -1174,8 +1246,18 @@ mod tests_js_integer {
     fn test_mult_div_mod_int() {
         assert_eq!(deobfuscate("var x = 3 * 4;"), "var x = 12;");
         assert_eq!(deobfuscate("var x = 10 / 2;"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = 10 / 0;"), "var x = Infinity;");
+        assert_eq!(deobfuscate("var x = 0 / 0;"), "var x = NaN;");
         assert_eq!(deobfuscate("var x = 10 % 3;"), "var x = 1;");
         assert_eq!(deobfuscate("var x = 10 * 2 / 5 % 2;"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_wierd_mult_div_mod_int() {
+        assert_eq!(deobfuscate("var x = '3' * [4];"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = '10' / [2];"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = '10' % [3];"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = '10' * [2] / 5 % 2;"), "var x = 0;");
     }
 
     #[test]
@@ -1252,6 +1334,23 @@ mod tests_js_integer {
         assert_eq!(
             deobfuscate("var x = 0x15487596n ^ 0x5216598n | 0x36598745n & ~0x21215487n;"),
             "var x = 377066318n;",
+        );
+    }
+
+    #[test]
+    fn test_incr_decr() {
+        assert_eq!(deobfuscate("var y = ++5;"), "var y = 6;");
+        assert_eq!(deobfuscate("var y = --5;"), "var y = 4;");
+        assert_eq!(deobfuscate("var y = 5++;"), "var y = 6;");
+        assert_eq!(deobfuscate("var y = 5--;"), "var y = 4;");
+        assert_eq!(deobfuscate("var y = ++5 + 1;"), "var y = 7;");
+        assert_eq!(
+            deobfuscate("for (var i = 0; i < 10; i++) {}"),
+            "for (var i = 0; i < 10; i++) {}"
+        );
+        assert_eq!(
+            deobfuscate("for (var i = 0; i < 10; --i) {}"),
+            "for (var i = 0; i < 10; --i) {}"
         );
     }
 }

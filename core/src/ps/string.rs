@@ -128,17 +128,14 @@ impl<'a> RuleMut<'a> for ConcatString {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "additive_expression" || view.kind() == "additive_argument_expression" {
-            if let (Some(left_op), Some(operator), Some(right_op)) =
+        if (view.kind() == "additive_expression" || view.kind() == "additive_argument_expression")
+            && let (Some(left_op), Some(operator), Some(right_op)) =
                 (view.child(0), view.child(1), view.child(2))
-            {
-                if let (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) =
+                && let (Some(Raw(Str(string_left))), "+", Some(Raw(Str(string_right)))) =
                     (left_op.data(), operator.text()?, right_op.data())
                 {
                     node.reduce(Raw(Str(String::from(string_left) + string_right)))
                 }
-            }
-        }
         Ok(())
     }
 }
@@ -163,8 +160,8 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "invokation_expression" {
-            if let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
+        if view.kind() == "invokation_expression"
+            && let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 match (
@@ -179,23 +176,19 @@ impl<'a> RuleMut<'a> for StringReplaceMethod {
                     {
                         if let Some(argument_expression_list) =
                             arguments_list.named_child("argument_expression_list")
-                        {
-                            if let (Some(arg_1), Some(arg_2)) = (
+                            && let (Some(arg_1), Some(arg_2)) = (
                                 argument_expression_list.child(0),
                                 argument_expression_list.child(2),
-                            ) {
-                                if let (Some(Raw(Str(from))), Some(Raw(to))) =
+                            )
+                                && let (Some(Raw(Str(from))), Some(Raw(to))) =
                                     (arg_1.data(), arg_2.data())
                                 {
                                     node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
                                 }
-                            }
-                        }
                     }
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }
@@ -220,8 +213,8 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "comparison_expression" {
-            if let (Some(left_expression), Some(operator), Some(right_expression)) =
+        if view.kind() == "comparison_expression"
+            && let (Some(left_expression), Some(operator), Some(right_expression)) =
                 (view.child(0), view.child(1), view.child(2))
             {
                 match (
@@ -239,7 +232,6 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
                     _ => (),
                 }
             }
-        }
         Ok(())
     }
 }
@@ -288,8 +280,8 @@ impl<'a> RuleMut<'a> for FormatString {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "format_expression" {
-            if let (Some(format_str_node), Some(format_args_node)) = (view.child(0), view.child(2))
+        if view.kind() == "format_expression"
+            && let (Some(format_str_node), Some(format_args_node)) = (view.child(0), view.child(2))
             {
                 match (format_str_node.data(), format_args_node.data()) {
                     (Some(Raw(Str(format_str))), Some(Array(format_args))) => {
@@ -308,7 +300,6 @@ impl<'a> RuleMut<'a> for FormatString {
                     _ => (),
                 }
             }
-        }
         Ok(())
     }
 }
@@ -333,8 +324,8 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "invokation_expression" {
-            if let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
+        if view.kind() == "invokation_expression"
+            && let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
                 (view.child(0), view.child(1), view.child(2), view.child(3))
             {
                 match (
@@ -349,9 +340,8 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
                     {
                         if let Some(argument_expression_list) =
                             arguments_list.named_child("argument_expression_list")
-                        {
-                            if let Some(arg_1) = argument_expression_list.child(0) {
-                                if let Some(Raw(Str(separator))) = arg_1.data() {
+                            && let Some(arg_1) = argument_expression_list.child(0)
+                                && let Some(Raw(Str(separator))) = arg_1.data() {
                                     // not reduce to have a better deobfuscation
                                     // if we reduce this step we will maybe lost the string
                                     let array = src
@@ -366,13 +356,10 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
                                     );
                                     node.set(Array(array));
                                 }
-                            }
-                        }
                     }
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }

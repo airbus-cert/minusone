@@ -163,6 +163,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                         flatten_array(left_values, None),
                         match javascript {
                             Raw(Str(s)) => s.clone(),
+                            Array(a) => flatten_array(a, None),
                             any => any.to_string(),
                         }
                     );
@@ -177,6 +178,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                         "{}{}",
                         match javascript {
                             Raw(Str(s)) => s.clone(),
+                            Array(a) => flatten_array(a, None),
                             any => any.to_string(),
                         },
                         flatten_array(right_values, None)
@@ -267,27 +269,23 @@ impl<'a> RuleMut<'a> for GetArrayElement {
         }
 
         // bypass empty arrays rules
-        if let (Some(n), Some(index_node)) = (view.child(0), view.child(2)) {
-            if let (Some(_), Some(index)) = (n.data(), index_node.data()) {
-                if index == NaN || index == Undefined {
+        if let (Some(n), Some(index_node)) = (view.child(0), view.child(2))
+            && let (Some(_), Some(index)) = (n.data(), index_node.data())
+                && (index == NaN || index == Undefined) {
                     trace!("GetArrayElement: accessing {} index => undefined", index);
                     node.reduce(Undefined);
                     return Ok(());
                 }
-            }
-        }
 
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
             if let (Some(Array(_)), Some(Array(index_arr))) = (array_node.data(), index_node.data())
-            {
-                if index_arr.is_empty() {
+                && index_arr.is_empty() {
                     trace!(
                         "GetArrayElement: array indexed by [] coerces to empty-string key => undefined"
                     );
                     node.reduce(Undefined);
                     return Ok(());
                 }
-            }
 
             if let (Some(Array(arr)), Some(Raw(Num(index)))) =
                 (array_node.data(), index_node.data())
@@ -344,12 +342,11 @@ impl<'a> RuleMut<'a> for GetArrayElement {
             }
         }
 
-        if let (Some(nan_node), Some(index_node)) = (view.child(0), view.child(2)) {
-            if let (Some(NaN), Some(Raw(_))) = (nan_node.data(), index_node.data()) {
+        if let (Some(nan_node), Some(index_node)) = (view.child(0), view.child(2))
+            && let (Some(NaN), Some(Raw(_))) = (nan_node.data(), index_node.data()) {
                 trace!("GetArrayElement: accessing index of non-array, setting to undefined");
                 node.reduce(Undefined);
             }
-        }
 
         Ok(())
     }
@@ -432,33 +429,28 @@ impl<'a> RuleMut<'a> for ArrayPlusMinus {
             return Ok(());
         }
 
-        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1)) {
-            match (operator.text()?, operand.data()) {
-                ("+", Some(Array(arr))) => {
-                    if arr.is_empty() {
-                        node.reduce(Raw(Num(0.0)));
-                    } else if arr.len() == 1 {
-                        if let Some(num) = recursive_array_number_extraction(arr) {
-                            trace!("ArrayPlusMinus: reducing + {:?} to {}", arr, num);
-                            node.reduce(Raw(Num(num)));
-                        } else {
-                            trace!(
-                                "ArrayPlusMinus: Cannot extract number from array {:?}, setting to NaN",
-                                arr
-                            );
-                            node.reduce(NaN);
-                        }
+        if let (Some(operator), Some(operand)) = (view.child(0), view.child(1))
+            && let ("+", Some(Array(arr))) = (operator.text()?, operand.data()) {
+                if arr.is_empty() {
+                    node.reduce(Raw(Num(0.0)));
+                } else if arr.len() == 1 {
+                    if let Some(num) = recursive_array_number_extraction(arr) {
+                        trace!("ArrayPlusMinus: reducing + {:?} to {}", arr, num);
+                        node.reduce(Raw(Num(num)));
                     } else {
                         trace!(
-                            "ArrayPlusMinus: Cannot apply unary plus to array with multiple elements, setting to NaN"
+                            "ArrayPlusMinus: Cannot extract number from array {:?}, setting to NaN",
+                            arr
                         );
                         node.reduce(NaN);
                     }
+                } else {
+                    trace!(
+                        "ArrayPlusMinus: Cannot apply unary plus to array with multiple elements, setting to NaN"
+                    );
+                    node.reduce(NaN);
                 }
-
-                _ => {}
             }
-        }
 
         Ok(())
     }
@@ -564,7 +556,7 @@ mod tests_js_array {
     use crate::js::integer::{ParseInt, Substract};
     use crate::js::linter::Linter;
     use crate::js::specials::AddSubSpecials;
-    use crate::js::string::CharAt;
+    use crate::js::string::BracketCharAt;
     use crate::js::string::ParseString;
 
     fn deobfuscate(input: &str) -> String {
@@ -579,7 +571,7 @@ mod tests_js_array {
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),
-            CharAt::default(),
+            BracketCharAt::default(),
         ))
         .unwrap();
 

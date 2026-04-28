@@ -159,8 +159,8 @@ impl<'a> Rule<'a> for Linter {
                     }
                 }
                 "statement_block" => {
-                    if let Some(grand_parent) = parent.parent() {
-                        if grand_parent.kind() == "for_statement"
+                    if let Some(grand_parent) = parent.parent()
+                        && grand_parent.kind() == "for_statement"
                             && grand_parent.data() == Some(&Powershell::Loop(LoopStatus::OneTurn))
                         {
                             if node.kind() == "statement_list" {
@@ -170,7 +170,6 @@ impl<'a> Rule<'a> for Linter {
                                 return Ok(false);
                             }
                         }
-                    }
 
                     // tab for new block
                     if node.kind() == "statement_list" {
@@ -221,8 +220,8 @@ impl<'a> Rule<'a> for Linter {
                     }
                 }
                 "else_clause" => {
-                    if let Some(if_statement) = parent.parent() {
-                        if let Some(condition) = if_statement.named_child("condition") {
+                    if let Some(if_statement) = parent.parent()
+                        && let Some(condition) = if_statement.named_child("condition") {
                             // dead code elysium
                             // this branch is the only one
                             if let Some(&Raw(Bool(bool_condition))) = condition.data() {
@@ -241,7 +240,6 @@ impl<'a> Rule<'a> for Linter {
                                 }
                             }
                         }
-                    }
                 }
                 "for_statement" => match parent.data() {
                     Some(&Powershell::Loop(LoopStatus::Dead)) => {
@@ -549,13 +547,11 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
                 self.manager.start_program(node)?;
             }
             "assignment_expression" => {
-                if let Some(var) = find_variable_node(node) {
-                    if let Some(var_name) = Var::extract(var.text()?) {
-                        if self.rule.is_unused(&var_name) {
+                if let Some(var) = find_variable_node(node)
+                    && let Some(var_name) = Var::extract(var.text()?)
+                        && self.rule.is_unused(&var_name) {
                             self.manager.remove_node(node)?;
                         }
-                    }
-                }
             }
             _ => (),
         }

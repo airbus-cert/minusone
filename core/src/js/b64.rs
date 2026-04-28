@@ -45,12 +45,12 @@ impl<'a> RuleMut<'a> for B64 {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "call_expression" {
-            if let (Some(identifier), Some(arguments)) = (view.child(0), view.child(1)) {
+        if view.kind() == "call_expression"
+            && let (Some(identifier), Some(arguments)) = (view.child(0), view.child(1)) {
                 if identifier.text()? == "atob" {
                     if arguments.child_count() == 3 {
-                        if let Some(encoded_string) = arguments.child(1) {
-                            if let Some(Raw(Str(encoded))) = encoded_string.data() {
+                        if let Some(encoded_string) = arguments.child(1)
+                            && let Some(Raw(Str(encoded))) = encoded_string.data() {
                                 let config = GeneralPurposeConfig::new()
                                     .with_decode_padding_mode(DecodePaddingMode::Indifferent)
                                     .with_decode_allow_trailing_bits(true);
@@ -69,7 +69,7 @@ impl<'a> RuleMut<'a> for B64 {
                                 };
 
                                 let decoded_string =
-                                    String::from_utf8_lossy(&*decoded_bytes).to_string();
+                                    String::from_utf8_lossy(&decoded_bytes).to_string();
 
                                 trace!(
                                     "ParseB64: decoded base64 string '{}' to '{}'",
@@ -77,7 +77,6 @@ impl<'a> RuleMut<'a> for B64 {
                                 );
                                 node.reduce(Raw(Str(decoded_string)));
                             }
-                        }
                     } else {
                         warn!(
                             "ParseB64: atob called with unexpected number of arguments: {}",
@@ -86,8 +85,8 @@ impl<'a> RuleMut<'a> for B64 {
                     }
                 } else if identifier.text()? == "btoa" {
                     if arguments.child_count() == 3 {
-                        if let Some(decoded_string) = arguments.child(1) {
-                            if let Some(Raw(Str(decoded))) = decoded_string.data() {
+                        if let Some(decoded_string) = arguments.child(1)
+                            && let Some(Raw(Str(decoded))) = decoded_string.data() {
                                 let encoded_string = GeneralPurpose::new(
                                     &alphabet::STANDARD,
                                     GeneralPurposeConfig::new(),
@@ -100,7 +99,6 @@ impl<'a> RuleMut<'a> for B64 {
                                 );
                                 node.reduce(Raw(Str(encoded_string)));
                             }
-                        }
                     } else {
                         warn!(
                             "ParseB64: btoa called with unexpected number of arguments: {}",
@@ -109,7 +107,6 @@ impl<'a> RuleMut<'a> for B64 {
                     }
                 }
             }
-        }
 
         Ok(())
     }

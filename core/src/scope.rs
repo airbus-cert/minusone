@@ -171,7 +171,7 @@ impl<T: Clone> ScopeManager<T> {
 
         // we will merge the pending scope of transcation
         for (name, value) in last.pending.iter() {
-            if self.current().get_var(&name).is_some() || self.current().is_local(&name).is_some() {
+            if self.current().get_var(name).is_some() || self.current().is_local(name).is_some() {
                 if let Some(inferred_type) = &value.inferred_type {
                     self.current_mut().assign(name, inferred_type.clone(), true);
                 } else {
@@ -182,7 +182,7 @@ impl<T: Clone> ScopeManager<T> {
 
         // we will merge the vars scope
         for (name, value) in last.vars.iter() {
-            if self.current().get_var(&name).is_some() || self.current().is_local(&name).is_some() {
+            if self.current().get_var(name).is_some() || self.current().is_local(name).is_some() {
                 if let Some(inferred_type) = &value.inferred_type {
                     self.current_mut()
                         .assign(name, inferred_type.clone(), false);

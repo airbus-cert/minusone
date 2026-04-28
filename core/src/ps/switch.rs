@@ -84,7 +84,7 @@ impl<'a> RuleMut<'a> for Switch {
                     .child(1)
                     .filter(|n| n.kind() == "pipeline")
                     .and_then(|n| n.data().cloned());
-                _ = self.ctx.push(SwitchCtx {
+                self.ctx.push(SwitchCtx {
                     predictable: condition.is_some(),
                     condition,
                     matching: None,

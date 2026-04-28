@@ -27,15 +27,14 @@ impl Strategy<JavaScript> for JavaScriptStrategy {
                         }
                         "else_clause" => {
                             // predictable if the if condition is known
-                            if let Some(if_statement) = parent.parent() {
-                                if let Some(condition) = if_statement.named_child("condition") {
+                            if let Some(if_statement) = parent.parent()
+                                && let Some(condition) = if_statement.named_child("condition") {
                                     return match condition.data() {
                                         Some(Raw(Bool(false))) => Ok(Continue(Predictable)),
                                         Some(Raw(Bool(true))) => Ok(Break),
                                         _ => Ok(Continue(Unpredictable)),
                                     };
                                 }
-                            }
                             Ok(Continue(Unpredictable))
                         }
                         "while_statement" | "do_statement" | "for_statement"
@@ -59,15 +58,14 @@ impl Strategy<JavaScript> for JavaScriptStrategy {
             }
             // else_clause itself: decide whether to visit based on if condition
             "else_clause" => {
-                if let Some(if_statement) = node.parent() {
-                    if let Some(condition) = if_statement.named_child("condition") {
+                if let Some(if_statement) = node.parent()
+                    && let Some(condition) = if_statement.named_child("condition") {
                         return match condition.data() {
                             Some(Raw(Bool(true))) => Ok(Break),
                             Some(Raw(Bool(false))) => Ok(Continue(Predictable)),
                             _ => Ok(Continue(Unpredictable)),
                         };
                     }
-                }
                 Ok(Continue(Unpredictable))
             }
             _ => Ok(Continue(Predictable)),

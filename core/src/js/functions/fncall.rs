@@ -32,6 +32,7 @@ use std::collections::HashMap;
 ///
 /// assert_eq!(linter.output, "function test() { return 'hello'; } console.log('hello');");
 /// ```
+#[derive(Default)]
 pub struct FnCall {
     functions: HashMap<String, JavaScript>,
     vars: HashMap<String, JavaScript>,
@@ -68,18 +69,6 @@ enum EvalStep {
     Assign { name: String, expr: ReturnExpr },
 }
 
-impl Default for FnCall {
-    fn default() -> Self {
-        FnCall {
-            functions: HashMap::new(),
-            vars: HashMap::new(),
-            object_fields: HashMap::new(),
-            var_shapes: HashMap::new(),
-            object_field_shapes: HashMap::new(),
-            shapes_by_source: HashMap::new(),
-        }
-    }
-}
 
 impl FnCall {
     fn reduce_array_subscript(node: &mut NodeMut<JavaScript>) {
@@ -87,15 +76,13 @@ impl FnCall {
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
             if let (Some(JavaScript::Array(arr)), Some(JavaScript::Raw(Num(index)))) =
                 (array_node.data(), index_node.data())
-            {
-                if *index >= 0.0 {
+                && *index >= 0.0 {
                     let idx = *index as usize;
                     if idx < arr.len() {
                         node.reduce(arr[idx].clone());
                         return;
                     }
                 }
-            }
 
             if let (Some(JavaScript::Array(arr)), Some(JavaScript::Raw(Str(index_str)))) =
                 (array_node.data(), index_node.data())
@@ -128,14 +115,13 @@ impl FnCall {
                     if *found_count == 1 {
                         // first named child after "return"
                         for i in 0..child.child_count() {
-                            if let Some(c) = child.child(i) {
-                                if c.kind() != "return" && c.kind() != ";" {
+                            if let Some(c) = child.child(i)
+                                && c.kind() != "return" && c.kind() != ";" {
                                     if let Some(data) = c.data() {
                                         *return_value = Some(data.clone());
                                     }
                                     break;
                                 }
-                            }
                         }
                     }
                 }
@@ -243,11 +229,10 @@ impl FnCall {
             }
             "parenthesized_expression" => {
                 for child in node.iter() {
-                    if child.kind() != "(" && child.kind() != ")" {
-                        if let Some(expr) = Self::parse_return_expr(&child) {
+                    if child.kind() != "(" && child.kind() != ")"
+                        && let Some(expr) = Self::parse_return_expr(&child) {
                             return Some(expr);
                         }
-                    }
                 }
                 None
             }
@@ -909,21 +894,19 @@ impl<'a> RuleMut<'a> for FnCall {
                 }
             }
             "function_declaration" => {
-                if let Some(name_node) = view.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = view.named_child("name")
+                    && name_node.kind() == "identifier" {
                         let fn_name = name_node.text()?.to_string();
 
-                        if let Some(body) = view.named_child("body") {
-                            if let Some(return_data) = Self::find_single_return_value(&body) {
+                        if let Some(body) = view.named_child("body")
+                            && let Some(return_data) = Self::find_single_return_value(&body) {
                                 trace!(
                                     "FnCall (L): Recorded function '{}' with return value: {:?}",
                                     fn_name, return_data
                                 );
                                 self.functions.insert(fn_name, return_data);
                             }
-                        }
                     }
-                }
             }
             "assignment_expression" => {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
@@ -1001,15 +984,17 @@ impl<'a> RuleMut<'a> for FnCall {
             "call_expression" => {
                 // check known fn
                 if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
+                    let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
                     let has_args =
                         !get_positional_arguments(view.named_child("arguments")).is_empty();
-                    let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
-                    let is_tostring_function_value = matches!(
-                        func_node.data(),
-                        Some(JavaScript::Function { source, .. }) if source.starts_with("function toString(")
-                    );
-                    // keep radix-aware toString handling in the dedicated ToString rule for integers
-                    if has_args && (is_tostring_method || is_tostring_function_value) {
+                    let tostring_on_buffer = is_tostring_method
+                        && func_node
+                            .child(0)
+                            .or_else(|| func_node.named_child("object"))
+                            .map(|obj| matches!(obj.data(), Some(JavaScript::Buffer(_))))
+                            .unwrap_or(false);
+                    // keep Buffer.toString and argument-aware toString in dedicated rules
+                    if is_tostring_method && (tostring_on_buffer || has_args) {
                         return Ok(());
                     }
 

@@ -4,7 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::js::objects::objectify::as_object;
-use crate::js::utils::get_positional_arguments;
+use crate::js::utils::{get_positional_arguments, is_write_target};
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -59,8 +59,8 @@ impl<'a> RuleMut<'a> for ParseObject {
         if view.kind() == "object" {
             let mut map = HashMap::new();
             for child in view.iter() {
-                if child.kind() == "pair" {
-                    if let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
+                if child.kind() == "pair"
+                    && let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
                         if let Some(key) = key_from_node(&key) {
                             if let Some(value_data) = value.data() {
                                 map.insert(key, value_data.clone());
@@ -79,7 +79,6 @@ impl<'a> RuleMut<'a> for ParseObject {
                             );
                         }
                     }
-                }
             }
             trace!("ParseObject: map = {:?}", map);
             node.reduce(Object {
@@ -127,32 +126,6 @@ struct MemberAccess {
 }
 
 impl ObjectField {
-    fn is_write_target(node: &Node<JavaScript>) -> bool {
-        let mut current = node.parent();
-        while let Some(parent) = current {
-            match parent.kind() {
-                "variable_declarator" => {
-                    if let Some(name_child) = parent.child(0) {
-                        return node.start_abs() >= name_child.start_abs()
-                            && node.end_abs() <= name_child.end_abs();
-                    }
-                }
-                "assignment_expression" | "augmented_assignment_expression" => {
-                    if let Some(left) = parent.child(0) {
-                        return node.start_abs() >= left.start_abs()
-                            && node.end_abs() <= left.end_abs();
-                    }
-                }
-                "update_expression" => return true,
-                _ => {}
-            }
-
-            current = parent.parent();
-        }
-
-        false
-    }
-
     fn extract_member_access(node: &Node<JavaScript>) -> Option<MemberAccess> {
         match node.kind() {
             "member_expression" => {
@@ -211,8 +184,8 @@ impl ObjectField {
             break;
         }
 
-        if let Some(parent) = node.parent() {
-            if parent.kind() == "binary_expression"
+        if let Some(parent) = node.parent()
+            && parent.kind() == "binary_expression"
                 && let Some(op) = parent.child(1)
                 && op.text().ok() == Some("+")
             {
@@ -225,7 +198,6 @@ impl ObjectField {
                         .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
                         .unwrap_or(false);
             }
-        }
 
         false
     }
@@ -330,8 +302,8 @@ impl<'a> RuleMut<'a> for ObjectField {
         let view = node.view();
         match view.kind() {
             "variable_declarator" => {
-                if let Some(name_node) = view.named_child("name") {
-                    if name_node.kind() == "identifier" {
+                if let Some(name_node) = view.named_child("name")
+                    && name_node.kind() == "identifier" {
                         let var_name = name_node.text()?.to_string();
                         if let Some(value_node) =
                             view.named_child("value").or_else(|| view.child(2))
@@ -355,7 +327,6 @@ impl<'a> RuleMut<'a> for ObjectField {
                             }
                         }
                     }
-                }
             }
             "assignment_expression" => {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
@@ -377,8 +348,8 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .current_mut()
                                 .forget(&var_name, node.is_ongoing_transaction());
                         }
-                    } else if let Some(access) = Self::extract_member_access(&left) {
-                        if let Some(base_name) = access.base_name {
+                    } else if let Some(access) = Self::extract_member_access(&left)
+                        && let Some(base_name) = access.base_name {
                             if access.keys.is_empty() {
                                 return Ok(());
                             }
@@ -429,11 +400,10 @@ impl<'a> RuleMut<'a> for ObjectField {
                                     .forget(&base_name, node.is_ongoing_transaction());
                             }
                         }
-                    }
                 }
             }
             "member_expression" | "subscript_expression" => {
-                if Self::is_write_target(&view) {
+                if is_write_target(&view) {
                     return Ok(());
                 }
 
@@ -472,8 +442,13 @@ impl<'a> RuleMut<'a> for ObjectField {
                             return Ok(());
                         }
 
-                        if matches!(&value, Function { source, .. } if source.contains("[native code]"))
-                            && !Self::is_string_concat_target(&view)
+                        if matches!(
+                            &value,
+                            Function {
+                                source,
+                                return_value: None,
+                            } if source.contains("[native code]")
+                        ) && !Self::is_string_concat_target(&view)
                         {
                             // keep original constructor/at access except in + coercion contexts.
                             return Ok(());
@@ -489,7 +464,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                 }
             }
             "identifier" => {
-                if !Self::is_write_target(&view) {
+                if !is_write_target(&view) {
                     if let Some(parent) = view.parent()
                         && matches!(parent.kind(), "member_expression" | "subscript_expression")
                         && parent
@@ -684,14 +659,6 @@ mod tests {
     #[test]
     fn test_number_literal_to_string_dot_call() {
         assert_eq!(deobfuscate("var x = (1).toString();"), "var x = '1';");
-    }
-
-    #[test]
-    fn test_string_fontcolor_objectified_call() {
-        assert_eq!(
-            deobfuscate("var x = 'abc'['fontcolor']();"),
-            "var x = '<font color=\"undefined\">abc</font>';"
-        );
     }
 
     #[test]

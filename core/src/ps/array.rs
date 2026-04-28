@@ -129,12 +129,11 @@ impl<'a> RuleMut<'a> for ParseRange {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "range_expression" {
-            if let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2)) {
-                if let (Some(Raw(left_value)), Some(Raw(right_value))) =
+        if view.kind() == "range_expression"
+            && let (Some(left_node), Some(right_node)) = (view.child(0), view.child(2))
+                && let (Some(Raw(left_value)), Some(Raw(right_value))) =
                     (left_node.data(), right_node.data())
-                {
-                    if let (Some(from), Some(to)) =
+                    && let (Some(from), Some(to)) =
                         (left_value.clone().to_i64(), right_value.clone().to_i64())
                     {
                         let mut result = Vec::new();
@@ -150,9 +149,6 @@ impl<'a> RuleMut<'a> for ParseRange {
                         trace!("ParseRange: Setting node with Array: {:?}", result);
                         node.set(Array(result));
                     }
-                }
-            }
-        }
         Ok(())
     }
 }
@@ -213,8 +209,8 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() == "array_expression" {
-            if let Some(statement_list) = view.named_child("statements") {
+        if view.kind() == "array_expression"
+            && let Some(statement_list) = view.named_child("statements") {
                 let mut result = Vec::new();
                 for statement in statement_list.iter() {
                     if statement.kind() == "empty_statement" {
@@ -235,7 +231,6 @@ impl<'a> RuleMut<'a> for ComputeArrayExpr {
                 }
                 node.reduce(Array(result));
             }
-        }
         Ok(())
     }
 }
@@ -296,10 +291,9 @@ impl<'a> RuleMut<'a> for AddArray {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let node_view = node.view();
-        if node_view.kind() == "additive_expression"
-            || node_view.kind() == "additive_argument_expression"
-        {
-            if let (Some(left_op), Some(operator), Some(right_op)) =
+        if (node_view.kind() == "additive_expression"
+            || node_view.kind() == "additive_argument_expression")
+            && let (Some(left_op), Some(operator), Some(right_op)) =
                 (node_view.child(0), node_view.child(1), node_view.child(2))
             {
                 match (left_op.data(), operator.text()?, right_op.data()) {
@@ -315,7 +309,6 @@ impl<'a> RuleMut<'a> for AddArray {
                     _ => {}
                 }
             }
-        }
         Ok(())
     }
 }
@@ -399,8 +392,8 @@ impl<'a> RuleMut<'a> for NewObjectArray {
         if let (Some(command_name), Some(command_elements)) = (
             view.named_child("command_name"),
             view.named_child("command_elements"),
-        ) {
-            if command_name
+        )
+            && command_name
                 .text()
                 .is_ok_and(|name| name.to_lowercase() == "new-object")
                 && command_elements.child_count() == 4
@@ -418,8 +411,7 @@ impl<'a> RuleMut<'a> for NewObjectArray {
                     .child(3)
                     .filter(|c| c.data().is_some())
                     .is_some()
-            {
-                if let Some(Raw(Num(size))) =
+                && let Some(Raw(Num(size))) =
                     command_elements.child(3).as_ref().and_then(|c| c.data())
                 {
                     if matches!(self.max_size, Some(max_size) if (*size) as usize > max_size) {
@@ -443,8 +435,6 @@ impl<'a> RuleMut<'a> for NewObjectArray {
                         value
                     ]));
                 }
-            }
-        }
         Ok(())
     }
 }

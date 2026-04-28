@@ -5,17 +5,21 @@ pub mod bool;
 pub mod comparator;
 mod converter;
 pub mod deadcode;
-mod encode_decode;
+pub mod encode_decode;
 pub mod forward;
 pub mod functions;
 pub mod globals;
 pub mod integer;
 pub mod linter;
+pub mod math;
+pub mod node;
 pub mod objects;
+pub mod post_process;
 pub mod regex;
 pub mod specials;
 pub mod strategy;
 pub mod string;
+pub mod r#switch;
 mod tests;
 pub mod r#typeof;
 mod utils;
@@ -31,6 +35,8 @@ use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
 use self::linter::RemoveComment;
+use self::math::*;
+use self::node::buffer::*;
 use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
@@ -72,8 +78,9 @@ pub enum JavaScript {
     Null,
     // Byte is a special type that does not live long, it's used to store the result of `atob` and
     // `btoa` calls, and it's converted to string when it's used in a string context, but it gets
-    // most of the type converted into a string
+    // most of the time converted into a string
     Bytes(Vec<u8>),
+    Buffer(Vec<u8>),
     Object {
         map: HashMap<String, JavaScript>,
         to_string_override: Option<String>,
@@ -142,16 +149,18 @@ impl_javascript_ruleset!(
     PosNeg,            // Infer unary - operations on integers
     AddInt,            // Infer addition operations on integers
     Substract,         // Infer subtraction operations on any JavaScript value
-    MultInt,           // Infer *, / and % operations on integers
+    MultDivMod,        // Infer *, / and % operations on integers
     PowInt,            // Infer ** operations on integers
     ShiftInt,          // Infer <<, >> and >>> operations on integers
     BitwiseInt,        // Infer &, |, ^ and ~ operations on integers
+    MathBuiltins,      // Infer static Math.x(...) builtins
     ObjectField,       // Track objects field assignments and access
     NotBool,           // Infer unary ! operations on booleans
     BoolAlgebra,       // Infer boolean algebra operations (&&, ||)
     AddBool,           // Infer boolean addition operations
     CombineArrays,     // Infer + operations on two arrays
-    CharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
+    StringBuiltins,    // Shared dispatcher for string literal builtins (.at, etc.)
+    BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
     StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
@@ -164,11 +173,17 @@ impl_javascript_ruleset!(
     Split,          // Infer string split calls on literal strings
     Replace,        // Infer string replace calls on literal strings
     EncodeDecodeBuiltins, // infer encode/decode built-ins functions
+    StringRaw,      // Infer String.raw tagged template literals
+    TemplateString, // Infer template string literals with deterministic substitutions
     GetArrayElement, // Get element at array index
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
+    BufferFrom,     // Infer deterministic Buffer.from(...) calls
+    BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites
+    BufferIndex,    // Infer deterministic Buffer[index] reads/writes
+    BufferToString, // Infer Buffer.toString(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
     StrictEq,       // Infer strict equality === and !==
