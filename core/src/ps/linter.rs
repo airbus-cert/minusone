@@ -161,15 +161,15 @@ impl<'a> Rule<'a> for Linter {
                 "statement_block" => {
                     if let Some(grand_parent) = parent.parent()
                         && grand_parent.kind() == "for_statement"
-                            && grand_parent.data() == Some(&Powershell::Loop(LoopStatus::OneTurn))
-                        {
-                            if node.kind() == "statement_list" {
-                                self.statement_block_tab.pop();
-                                return Ok(true);
-                            } else {
-                                return Ok(false);
-                            }
+                        && grand_parent.data() == Some(&Powershell::Loop(LoopStatus::OneTurn))
+                    {
+                        if node.kind() == "statement_list" {
+                            self.statement_block_tab.pop();
+                            return Ok(true);
+                        } else {
+                            return Ok(false);
                         }
+                    }
 
                     // tab for new block
                     if node.kind() == "statement_list" {
@@ -221,25 +221,24 @@ impl<'a> Rule<'a> for Linter {
                 }
                 "else_clause" => {
                     if let Some(if_statement) = parent.parent()
-                        && let Some(condition) = if_statement.named_child("condition") {
-                            // dead code elysium
-                            // this branch is the only one
-                            if let Some(&Raw(Bool(bool_condition))) = condition.data() {
-                                match node.kind() {
-                                    "statement_block" => {
-                                        if bool_condition {
-                                            self.statement_block_tab.pop();
-                                            return Ok(false);
-                                        } else if let Some(last) =
-                                            self.statement_block_tab.last_mut()
-                                        {
-                                            *last = false;
-                                        }
+                        && let Some(condition) = if_statement.named_child("condition")
+                    {
+                        // dead code elysium
+                        // this branch is the only one
+                        if let Some(&Raw(Bool(bool_condition))) = condition.data() {
+                            match node.kind() {
+                                "statement_block" => {
+                                    if bool_condition {
+                                        self.statement_block_tab.pop();
+                                        return Ok(false);
+                                    } else if let Some(last) = self.statement_block_tab.last_mut() {
+                                        *last = false;
                                     }
-                                    _ => return Ok(false),
                                 }
+                                _ => return Ok(false),
                             }
                         }
+                    }
                 }
                 "for_statement" => match parent.data() {
                     Some(&Powershell::Loop(LoopStatus::Dead)) => {
@@ -549,9 +548,10 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
             "assignment_expression" => {
                 if let Some(var) = find_variable_node(node)
                     && let Some(var_name) = Var::extract(var.text()?)
-                        && self.rule.is_unused(&var_name) {
-                            self.manager.remove_node(node)?;
-                        }
+                    && self.rule.is_unused(&var_name)
+                {
+                    self.manager.remove_node(node)?;
+                }
             }
             _ => (),
         }

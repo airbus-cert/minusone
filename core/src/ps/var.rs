@@ -114,11 +114,12 @@ impl Var {
                         "post_decrement_expression",
                     ])
                     .is_some()
-                    && let Some(var_name) = Var::extract(child.text()?) {
-                        self.scope_manager
-                            .current_mut()
-                            .forget(&var_name, is_ongoing_transaction);
-                    }
+                    && let Some(var_name) = Var::extract(child.text()?)
+                {
+                    self.scope_manager
+                        .current_mut()
+                        .forget(&var_name, is_ongoing_transaction);
+                }
             } else {
                 self.forget_assigned_var(&child, is_ongoing_transaction)?;
             }
@@ -143,13 +144,15 @@ impl Var {
             Regex::new(r"\$\{(?<provider>([a-zA-Z]+):)?(?<name>([^`\}]|`.)+)\}").unwrap();
 
         if let Some(cap) = re_simple.captures(&var).or(re_braced.captures(&var))
-            && let Some(name) = cap.name("name") {
-                if let Some(provider) = cap.name("provider")
-                    && provider.as_str() != "variable" {
-                        return None;
-                    }
-                return Some(name.as_str().to_string());
+            && let Some(name) = cap.name("name")
+        {
+            if let Some(provider) = cap.name("provider")
+                && provider.as_str() != "variable"
+            {
+                return None;
             }
+            return Some(name.as_str().to_string());
+        }
 
         None
     }
@@ -199,9 +202,10 @@ pub fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     for child in node.iter() {
         if child.kind() == "variable" {
             if let Some(parent) = child.parent()
-                && parent.kind() == "unary_expression" {
-                    return Some(child);
-                }
+                && parent.kind() == "unary_expression"
+            {
+                return Some(child);
+            }
         } else if let Some(new_node) = find_variable_node(&child) {
             return Some(new_node);
         }
@@ -227,9 +231,10 @@ impl<'a> RuleMut<'a> for Var {
             "function_statement" => self.scope_manager.enter(),
             "}" => {
                 if let Some(parent) = view.parent()
-                    && (parent.kind() == "statement_block" || parent.kind() == "function_statement") {
-                        self.scope_manager.leave();
-                    }
+                    && (parent.kind() == "statement_block" || parent.kind() == "function_statement")
+                {
+                    self.scope_manager.leave();
+                }
             }
 
             // Each time I start an unpredictable branch I forget all assigned var in this block
@@ -244,21 +249,22 @@ impl<'a> RuleMut<'a> for Var {
             // in the enter function because pre increment before assigned
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(variable) = view.child(1).ok_or(Error::invalid_child())?.child(0)
-                    && let Some(var_name) = Var::extract(variable.text()?) {
-                        if let Some(Raw(Num(v))) =
-                            self.scope_manager.current_mut().get_var_mut(&var_name)
-                        {
-                            if view.kind() == "pre_increment_expression" {
-                                *v += 1;
-                            } else {
-                                *v -= 1;
-                            }
+                    && let Some(var_name) = Var::extract(variable.text()?)
+                {
+                    if let Some(Raw(Num(v))) =
+                        self.scope_manager.current_mut().get_var_mut(&var_name)
+                    {
+                        if view.kind() == "pre_increment_expression" {
+                            *v += 1;
                         } else {
-                            self.scope_manager
-                                .current_mut()
-                                .forget(&var_name, node.is_ongoing_transaction())
+                            *v -= 1;
                         }
+                    } else {
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, node.is_ongoing_transaction())
                     }
+                }
             }
             _ => (),
         }
@@ -281,38 +287,38 @@ impl<'a> RuleMut<'a> for Var {
                 if let (Some(left), Some(operator), Some(right)) =
                     (view.child(0), view.child(1), view.child(2))
                     && let Some(var) = find_variable_node(&left)
-                        && let Some(var_name) = Var::extract(var.text()?) {
-                            let scope = self.scope_manager.current_mut();
-                            if let (current_value, Some(new_value)) =
-                                (scope.get_var(&var_name), right.data())
-                            {
-                                // only predictable assignment is handled of local var
-                                let is_local = scope.is_local(&var_name).unwrap_or(true);
-                                if flow == ControlFlow::Continue(BranchFlow::Predictable)
-                                    || is_local
-                                {
-                                    match assign_handler(current_value, operator, new_value) {
-                                        Some(assign_value) => scope.assign(
-                                            &var_name,
-                                            assign_value,
-                                            node.is_ongoing_transaction(),
-                                        ),
-                                        _ => scope.forget(&var_name, node.is_ongoing_transaction()),
-                                    }
-                                }
+                    && let Some(var_name) = Var::extract(var.text()?)
+                {
+                    let scope = self.scope_manager.current_mut();
+                    if let (current_value, Some(new_value)) =
+                        (scope.get_var(&var_name), right.data())
+                    {
+                        // only predictable assignment is handled of local var
+                        let is_local = scope.is_local(&var_name).unwrap_or(true);
+                        if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
+                            match assign_handler(current_value, operator, new_value) {
+                                Some(assign_value) => scope.assign(
+                                    &var_name,
+                                    assign_value,
+                                    node.is_ongoing_transaction(),
+                                ),
+                                _ => scope.forget(&var_name, node.is_ongoing_transaction()),
                             }
                         }
+                    }
+                }
             }
             "variable" => {
                 if let Some(var_name) = Var::extract(view.text()?) {
                     // forget variable with [ref] operator
                     if let Some(cast_expression) = view.get_parent_of_types(vec!["cast_expression"])
                         && let Some(Type(typename)) = cast_expression.child(0).unwrap().data()
-                            && typename.to_lowercase() == "ref" {
-                                self.scope_manager
-                                    .current_mut()
-                                    .forget(&var_name, node.is_ongoing_transaction())
-                            }
+                        && typename.to_lowercase() == "ref"
+                    {
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, node.is_ongoing_transaction())
+                    }
 
                     // check if we are not on the left part of an assignment expression
                     // already handle by the previous case
@@ -335,43 +341,45 @@ impl<'a> RuleMut<'a> for Var {
             // pre_increment_expression is safe to forward due to the enter function handler
             "pre_increment_expression" | "pre_decrement_expression" => {
                 if let Some(expression) = view.child(1)
-                    && let Some(expression_data) = expression.data() {
-                        trace!(
-                            "Var (L): Setting node with pre-increment/decrement value: {:?}",
-                            expression_data
-                        );
-                        node.set(expression_data.clone())
-                    }
+                    && let Some(expression_data) = expression.data()
+                {
+                    trace!(
+                        "Var (L): Setting node with pre-increment/decrement value: {:?}",
+                        expression_data
+                    );
+                    node.set(expression_data.clone())
+                }
             }
             // in the enter function because pre increment before assigned
             "post_increment_expression" | "post_decrement_expression" => {
                 if let Some(variable) = view.child(0)
-                    && let Some(var_name) = Var::extract(variable.text()?) {
-                        let kind = view.kind();
+                    && let Some(var_name) = Var::extract(variable.text()?)
+                {
+                    let kind = view.kind();
 
-                        if let Some(Raw(Num(v))) =
-                            self.scope_manager.current_mut().get_var_mut(&var_name)
-                        {
-                            // we set the variable before ...
-                            if let Some(variable_data) = variable.data() {
-                                trace!(
-                                    "Var (L): Setting node with post-increment/decrement value: {:?}",
-                                    variable_data
-                                );
-                                node.set(variable_data.clone())
-                            }
-                            // ... assign it
-                            if kind == "post_increment_expression" {
-                                *v += 1;
-                            } else {
-                                *v -= 1;
-                            }
-                        } else {
-                            self.scope_manager
-                                .current_mut()
-                                .forget(&var_name, node.is_ongoing_transaction())
+                    if let Some(Raw(Num(v))) =
+                        self.scope_manager.current_mut().get_var_mut(&var_name)
+                    {
+                        // we set the variable before ...
+                        if let Some(variable_data) = variable.data() {
+                            trace!(
+                                "Var (L): Setting node with post-increment/decrement value: {:?}",
+                                variable_data
+                            );
+                            node.set(variable_data.clone())
                         }
+                        // ... assign it
+                        if kind == "post_increment_expression" {
+                            *v += 1;
+                        } else {
+                            *v -= 1;
+                        }
+                    } else {
+                        self.scope_manager
+                            .current_mut()
+                            .forget(&var_name, node.is_ongoing_transaction())
                     }
+                }
             }
             // Some function change the value of variables
             // [array]::reverse is handled
@@ -391,12 +399,12 @@ impl<'a> RuleMut<'a> for Var {
                             if let Some(argument_expression_list) =
                                 args_list.named_child("argument_expression_list")
                                 && let Some(arg_1) = argument_expression_list.child(0)
-                                    && let Some(var_name) = Var::extract(arg_1.text()?)
-                                        && let Some(Array(data)) =
-                                            self.scope_manager.current_mut().get_var_mut(&var_name)
-                                        {
-                                            data.reverse();
-                                        }
+                                && let Some(var_name) = Var::extract(arg_1.text()?)
+                                && let Some(Array(data)) =
+                                    self.scope_manager.current_mut().get_var_mut(&var_name)
+                            {
+                                data.reverse();
+                            }
                         }
                         _ => {
                             // Any array passed as param is forgotten
@@ -407,11 +415,11 @@ impl<'a> RuleMut<'a> for Var {
                                     if let Some(var_name) = Var::extract(arg.text()?)
                                         && let Some(Array(_)) =
                                             self.scope_manager.current_mut().get_var(&var_name)
-                                        {
-                                            self.scope_manager
-                                                .current_mut()
-                                                .forget(&var_name, node.is_ongoing_transaction());
-                                        }
+                                    {
+                                        self.scope_manager
+                                            .current_mut()
+                                            .forget(&var_name, node.is_ongoing_transaction());
+                                    }
                                 }
                             }
                         }
@@ -424,125 +432,118 @@ impl<'a> RuleMut<'a> for Var {
                         "variable" => {
                             if let Some(command_elements) = view.child(1)
                                 && let Some(variable_name) = command_elements.child(1)
-                                    && let Some(variable_name) = self
-                                        .resolve_wildcarded(variable_name.text()?.to_lowercase())
-                                    {
-                                        if let Some(Raw(data)) =
-                                            self.scope_manager.current().get_var(&variable_name)
-                                        {
-                                            trace!(
-                                                "Var (L): Setting node with variable hashmap: {:?}",
-                                                Var::hashmap(variable_name.clone(), data)
-                                            );
-                                            node.set(Var::hashmap(variable_name, data));
-                                        } else {
-                                            self.scope_manager.current_mut().in_use(
-                                                &variable_name,
-                                                node.is_ongoing_transaction(),
-                                            );
-                                        }
-                                    }
+                                && let Some(variable_name) =
+                                    self.resolve_wildcarded(variable_name.text()?.to_lowercase())
+                            {
+                                if let Some(Raw(data)) =
+                                    self.scope_manager.current().get_var(&variable_name)
+                                {
+                                    trace!(
+                                        "Var (L): Setting node with variable hashmap: {:?}",
+                                        Var::hashmap(variable_name.clone(), data)
+                                    );
+                                    node.set(Var::hashmap(variable_name, data));
+                                } else {
+                                    self.scope_manager
+                                        .current_mut()
+                                        .in_use(&variable_name, node.is_ongoing_transaction());
+                                }
+                            }
                         }
                         "get-variable" | "gv" => {
                             if let Some(command_elements) = view.child(1)
                                 && let Some(variable) = command_elements.child(1)
-                                    && let Some(variable_name) =
-                                        self.resolve_wildcarded(variable.text()?.to_lowercase())
-                                        && let Some(Raw(data)) =
-                                            self.scope_manager.current().get_var(&variable_name)
-                                        {
-                                            let value_param = command_elements
-                                                .child(3)
-                                                .is_some_and(|command_parameter| {
-                                                    command_parameter.kind() == "command_parameter"
-                                                        && command_parameter.text().is_ok_and(
-                                                            |text| {
-                                                                "-valueonly".starts_with(
-                                                                    &text.to_lowercase(),
-                                                                )
-                                                            },
-                                                        )
-                                                });
+                                && let Some(variable_name) =
+                                    self.resolve_wildcarded(variable.text()?.to_lowercase())
+                                && let Some(Raw(data)) =
+                                    self.scope_manager.current().get_var(&variable_name)
+                            {
+                                let value_param =
+                                    command_elements.child(3).is_some_and(|command_parameter| {
+                                        command_parameter.kind() == "command_parameter"
+                                            && command_parameter.text().is_ok_and(|text| {
+                                                "-valueonly".starts_with(&text.to_lowercase())
+                                            })
+                                    });
 
-                                            if value_param {
-                                                trace!(
-                                                    "Var (L): Setting node with raw variable value: {:?}",
-                                                    data
-                                                );
-                                                node.set(Raw(data.clone()));
-                                            } else {
-                                                trace!(
-                                                    "Var (L): Setting node with variable hashmap: {:?}",
-                                                    Var::hashmap(variable_name.clone(), data)
-                                                );
-                                                node.set(Var::hashmap(variable_name, data));
-                                            }
-                                        }
+                                if value_param {
+                                    trace!(
+                                        "Var (L): Setting node with raw variable value: {:?}",
+                                        data
+                                    );
+                                    node.set(Raw(data.clone()));
+                                } else {
+                                    trace!(
+                                        "Var (L): Setting node with variable hashmap: {:?}",
+                                        Var::hashmap(variable_name.clone(), data)
+                                    );
+                                    node.set(Var::hashmap(variable_name, data));
+                                }
+                            }
                         }
                         "set-variable" | "sv" => {
                             if let Some(command_elements) = view.child(1)
                                 && let (Some(variable_name_node), Some(variable_value_node)) =
                                     (command_elements.child(1), command_elements.child(3))
-                                    && let Some(Raw(variable_value)) = variable_value_node.data()
-                                        && let Some(variable_name) =
-                                            if let Some(Raw(variable_name)) =
-                                                variable_name_node.data()
-                                            {
-                                                Some(variable_name.to_string())
-                                            } else if variable_name_node.kind() == "generic_token" {
-                                                Some(variable_name_node.text()?.to_lowercase())
-                                            } else {
-                                                None
-                                            }
-                                            && let Some(variable_name) =
-                                                self.resolve_wildcarded(variable_name)
-                                            {
-                                                self.scope_manager.current_mut().assign(
-                                                    &variable_name,
-                                                    Powershell::Raw(variable_value.clone()),
-                                                    node.is_ongoing_transaction(),
-                                                );
-                                            }
+                                && let Some(Raw(variable_value)) = variable_value_node.data()
+                                && let Some(variable_name) =
+                                    if let Some(Raw(variable_name)) = variable_name_node.data() {
+                                        Some(variable_name.to_string())
+                                    } else if variable_name_node.kind() == "generic_token" {
+                                        Some(variable_name_node.text()?.to_lowercase())
+                                    } else {
+                                        None
+                                    }
+                                && let Some(variable_name) = self.resolve_wildcarded(variable_name)
+                            {
+                                self.scope_manager.current_mut().assign(
+                                    &variable_name,
+                                    Powershell::Raw(variable_value.clone()),
+                                    node.is_ongoing_transaction(),
+                                );
+                            }
                         }
                         "get-childitem" | "gci" | "ls" => {
                             if let Some(command_elements) = view.child(1)
-                                && let Some(item_name_node) = command_elements.child(1) {
-                                    let item_name = item_name_node.text()?.to_lowercase();
-                                    let re = Regex::new(r"^variable:\/?(.*)$").unwrap();
-                                    if let Some(variable_name) =
-                                        re.captures(&item_name).and_then(|cap| cap.get(1))
-                                        && let Some(variable_name) = self
-                                            .resolve_wildcarded(variable_name.as_str().to_string())
-                                            && let Some(Raw(data)) =
-                                                self.scope_manager.current().get_var(&variable_name)
-                                            {
-                                                trace!(
-                                                    "Var (L): Setting node with variable hashmap from get-childitem: {:?}",
-                                                    Var::hashmap(variable_name.clone(), data)
-                                                );
-                                                node.set(Var::hashmap(variable_name, data));
-                                            }
+                                && let Some(item_name_node) = command_elements.child(1)
+                            {
+                                let item_name = item_name_node.text()?.to_lowercase();
+                                let re = Regex::new(r"^variable:\/?(.*)$").unwrap();
+                                if let Some(variable_name) =
+                                    re.captures(&item_name).and_then(|cap| cap.get(1))
+                                    && let Some(variable_name) =
+                                        self.resolve_wildcarded(variable_name.as_str().to_string())
+                                    && let Some(Raw(data)) =
+                                        self.scope_manager.current().get_var(&variable_name)
+                                {
+                                    trace!(
+                                        "Var (L): Setting node with variable hashmap from get-childitem: {:?}",
+                                        Var::hashmap(variable_name.clone(), data)
+                                    );
+                                    node.set(Var::hashmap(variable_name, data));
                                 }
+                            }
                         }
                         "set-item" | "si" => {
                             if let Some(command_elements) = view.child(1)
                                 && let (Some(item_name_node), Some(item_value_node)) =
                                     (command_elements.child(1), command_elements.child(3))
-                                    && let Some(Raw(item_value)) = item_value_node.data() {
-                                        let item_name = item_name_node.text()?.to_lowercase();
-                                        let re = Regex::new(r"^variable:\/?(.*)$").unwrap();
-                                        if let Some(variable_name) =
-                                            re.captures(&item_name).and_then(|cap| cap.get(1))
-                                            && let Some(variable_name) = self.resolve_wildcarded(
-                                                variable_name.as_str().to_string(),
-                                            ) {
-                                                self.scope_manager.current_mut().assign(
-                                                    &variable_name,
-                                                    Powershell::Raw(item_value.clone()),
-                                                    node.is_ongoing_transaction(),
-                                                );
-                                            }
-                                    }
+                                && let Some(Raw(item_value)) = item_value_node.data()
+                            {
+                                let item_name = item_name_node.text()?.to_lowercase();
+                                let re = Regex::new(r"^variable:\/?(.*)$").unwrap();
+                                if let Some(variable_name) =
+                                    re.captures(&item_name).and_then(|cap| cap.get(1))
+                                    && let Some(variable_name) =
+                                        self.resolve_wildcarded(variable_name.as_str().to_string())
+                                {
+                                    self.scope_manager.current_mut().assign(
+                                        &variable_name,
+                                        Powershell::Raw(item_value.clone()),
+                                        node.is_ongoing_transaction(),
+                                    );
+                                }
+                            }
                         }
                         _ => (),
                     }
@@ -721,12 +722,12 @@ impl<'a> Rule<'a> for UnusedVar {
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         if node.kind() == "variable"
             && let Some(var_name) = Var::extract(node.text()?)
-                && node
-                    .get_parent_of_types(vec!["left_assignment_expression"])
-                    .is_none()
-                {
-                    self.vars.insert(var_name, true);
-                }
+            && node
+                .get_parent_of_types(vec!["left_assignment_expression"])
+                .is_none()
+        {
+            self.vars.insert(var_name, true);
+        }
         Ok(())
     }
 }

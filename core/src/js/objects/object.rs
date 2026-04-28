@@ -60,25 +60,26 @@ impl<'a> RuleMut<'a> for ParseObject {
             let mut map = HashMap::new();
             for child in view.iter() {
                 if child.kind() == "pair"
-                    && let (Some(key), Some(value)) = (child.child(0), child.child(2)) {
-                        if let Some(key) = key_from_node(&key) {
-                            if let Some(value_data) = value.data() {
-                                map.insert(key, value_data.clone());
-                            } else if let Some(function_value) = function_value_from_node(&value) {
-                                map.insert(key, function_value);
-                            } else {
-                                warn!(
-                                    "ParseObject: failed to parse value for pair: {:?}",
-                                    child.text()
-                                );
-                            }
+                    && let (Some(key), Some(value)) = (child.child(0), child.child(2))
+                {
+                    if let Some(key) = key_from_node(&key) {
+                        if let Some(value_data) = value.data() {
+                            map.insert(key, value_data.clone());
+                        } else if let Some(function_value) = function_value_from_node(&value) {
+                            map.insert(key, function_value);
                         } else {
                             warn!(
-                                "ParseObject: failed to parse key or value for pair: {:?}",
+                                "ParseObject: failed to parse value for pair: {:?}",
                                 child.text()
                             );
                         }
+                    } else {
+                        warn!(
+                            "ParseObject: failed to parse key or value for pair: {:?}",
+                            child.text()
+                        );
                     }
+                }
             }
             trace!("ParseObject: map = {:?}", map);
             node.reduce(Object {
@@ -186,18 +187,18 @@ impl ObjectField {
 
         if let Some(parent) = node.parent()
             && parent.kind() == "binary_expression"
-                && let Some(op) = parent.child(1)
-                && op.text().ok() == Some("+")
-            {
-                return parent
-                    .child(0)
+            && let Some(op) = parent.child(1)
+            && op.text().ok() == Some("+")
+        {
+            return parent
+                .child(0)
+                .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
+                .unwrap_or(false)
+                || parent
+                    .child(2)
                     .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
-                    .unwrap_or(false)
-                    || parent
-                        .child(2)
-                        .map(|c| c.start_abs() == node.start_abs() && c.end_abs() == node.end_abs())
-                        .unwrap_or(false);
-            }
+                    .unwrap_or(false);
+        }
 
         false
     }
@@ -303,30 +304,28 @@ impl<'a> RuleMut<'a> for ObjectField {
         match view.kind() {
             "variable_declarator" => {
                 if let Some(name_node) = view.named_child("name")
-                    && name_node.kind() == "identifier" {
-                        let var_name = name_node.text()?.to_string();
-                        if let Some(value_node) =
-                            view.named_child("value").or_else(|| view.child(2))
-                        {
-                            let value_data = value_node
-                                .data()
-                                .cloned()
-                                .or_else(|| function_value_from_node(&value_node));
+                    && name_node.kind() == "identifier"
+                {
+                    let var_name = name_node.text()?.to_string();
+                    if let Some(value_node) = view.named_child("value").or_else(|| view.child(2)) {
+                        let value_data = value_node
+                            .data()
+                            .cloned()
+                            .or_else(|| function_value_from_node(&value_node));
 
-                            if let Some(value_data @ (Object { .. } | Function { .. })) = value_data
-                            {
-                                self.scope_manager.current_mut().assign(
-                                    &var_name,
-                                    value_data,
-                                    node.is_ongoing_transaction(),
-                                );
-                            } else {
-                                self.scope_manager
-                                    .current_mut()
-                                    .forget(&var_name, node.is_ongoing_transaction());
-                            }
+                        if let Some(value_data @ (Object { .. } | Function { .. })) = value_data {
+                            self.scope_manager.current_mut().assign(
+                                &var_name,
+                                value_data,
+                                node.is_ongoing_transaction(),
+                            );
+                        } else {
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
                         }
                     }
+                }
             }
             "assignment_expression" => {
                 if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
@@ -349,57 +348,58 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .forget(&var_name, node.is_ongoing_transaction());
                         }
                     } else if let Some(access) = Self::extract_member_access(&left)
-                        && let Some(base_name) = access.base_name {
-                            if access.keys.is_empty() {
-                                return Ok(());
-                            }
-
-                            let rhs_data = right
-                                .data()
-                                .cloned()
-                                .or_else(|| {
-                                    if right.kind() == "identifier" {
-                                        right.text().ok().and_then(|name| {
-                                            self.scope_manager.current().get_var(name).cloned()
-                                        })
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .or_else(|| function_value_from_node(&right));
-                            if let Some(data) = rhs_data {
-                                if self.scope_manager.current().get_var(&base_name).is_none()
-                                    && matches!(access.base_value, Some(Object { .. }))
-                                {
-                                    self.scope_manager.current_mut().assign(
-                                        &base_name,
-                                        access.base_value.clone().unwrap(),
-                                        node.is_ongoing_transaction(),
-                                    );
-                                }
-
-                                let mut root_value = self
-                                    .scope_manager
-                                    .current()
-                                    .get_var(&base_name)
-                                    .cloned()
-                                    .or(access.base_value.clone());
-
-                                if let Some(mut root) = root_value.take()
-                                    && Self::set_by_path(&mut root, &access.keys, data)
-                                {
-                                    self.scope_manager.current_mut().assign(
-                                        &base_name,
-                                        root,
-                                        node.is_ongoing_transaction(),
-                                    );
-                                }
-                            } else {
-                                self.scope_manager
-                                    .current_mut()
-                                    .forget(&base_name, node.is_ongoing_transaction());
-                            }
+                        && let Some(base_name) = access.base_name
+                    {
+                        if access.keys.is_empty() {
+                            return Ok(());
                         }
+
+                        let rhs_data = right
+                            .data()
+                            .cloned()
+                            .or_else(|| {
+                                if right.kind() == "identifier" {
+                                    right.text().ok().and_then(|name| {
+                                        self.scope_manager.current().get_var(name).cloned()
+                                    })
+                                } else {
+                                    None
+                                }
+                            })
+                            .or_else(|| function_value_from_node(&right));
+                        if let Some(data) = rhs_data {
+                            if self.scope_manager.current().get_var(&base_name).is_none()
+                                && matches!(access.base_value, Some(Object { .. }))
+                            {
+                                self.scope_manager.current_mut().assign(
+                                    &base_name,
+                                    access.base_value.clone().unwrap(),
+                                    node.is_ongoing_transaction(),
+                                );
+                            }
+
+                            let mut root_value = self
+                                .scope_manager
+                                .current()
+                                .get_var(&base_name)
+                                .cloned()
+                                .or(access.base_value.clone());
+
+                            if let Some(mut root) = root_value.take()
+                                && Self::set_by_path(&mut root, &access.keys, data)
+                            {
+                                self.scope_manager.current_mut().assign(
+                                    &base_name,
+                                    root,
+                                    node.is_ongoing_transaction(),
+                                );
+                            }
+                        } else {
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&base_name, node.is_ongoing_transaction());
+                        }
+                    }
                 }
             }
             "member_expression" | "subscript_expression" => {

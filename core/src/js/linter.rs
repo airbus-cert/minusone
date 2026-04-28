@@ -131,17 +131,18 @@ impl<'a> Rule<'a> for Linter {
             self.copy_until(node.start_abs());
             // Preserve parentheses for conditions in control-flow statements to keep the output as valid JavaScript
             if node.kind() == "parenthesized_expression"
-                && let Some(parent) = node.parent() {
-                    match parent.kind() {
-                        "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                        | "switch_statement" => {
-                            self.output += &format!("({})", data);
-                            self.skip_until(node.end_abs());
-                            return Ok(false);
-                        }
-                        _ => {}
+                && let Some(parent) = node.parent()
+            {
+                match parent.kind() {
+                    "if_statement" | "while_statement" | "do_statement" | "for_statement"
+                    | "switch_statement" => {
+                        self.output += &format!("({})", data);
+                        self.skip_until(node.end_abs());
+                        return Ok(false);
                     }
+                    _ => {}
                 }
+            }
             self.output += &data.to_string();
             self.skip_until(node.end_abs());
             return Ok(false);

@@ -76,8 +76,14 @@ impl<'a> RuleMut<'a> for StrictEq {
                     Some(l == r)
                 }
                 (Some(Undefined), Some(Undefined)) => {
-                    trace!("StrictEq (L): undefined {} undefined = true", op_str);
-                    Some(true)
+                    let res = op_str == "===";
+                    trace!("StrictEq (L): undefined {} undefined = {}", op_str, res);
+                    Some(res)
+                }
+                (Some(Null), Some(Null)) => {
+                    let res = op_str == "===";
+                    trace!("StrictEq (L): null {} null = {}", op_str, res);
+                    Some(res)
                 }
                 // NaN is never strictly equal to anything, including itself ??
                 (Some(NaN), _) | (_, Some(NaN)) => {
@@ -197,6 +203,9 @@ fn loose_eq(left: &JavaScript, right: &JavaScript) -> Option<bool> {
         (Raw(BigInt(l)), Raw(BigInt(r))) => Some(l == r),
 
         (Undefined, Undefined) => Some(true),
+        (Null, Null) => Some(true),
+        (Null, Undefined) => Some(true),
+        (Undefined, Null) => Some(true),
 
         // NaN
         (NaN, _) | (_, NaN) => Some(false),

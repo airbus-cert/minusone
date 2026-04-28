@@ -117,31 +117,31 @@ impl<'a> RuleMut<'a> for BoolAlgebra {
         if view.kind() == "logical_expression"
             && let (Some(left_node), Some(operator), Some(right_node)) =
                 (view.child(0), view.child(1), view.child(2))
-            {
-                match (
-                    left_node.data(),
-                    operator.text()?.to_lowercase().as_str(),
-                    right_node.data(),
-                ) {
-                    (Some(Raw(Bool(left_value))), "-or", Some(Raw(Bool(right_value)))) => {
-                        let value = *left_value || *right_value;
-                        trace!(
-                            "Boolean algebra (L): Setting node with inferred value: {}",
-                            value
-                        );
-                        node.set(Raw(Bool(value)))
-                    }
-                    (Some(Raw(Bool(left_value))), "-and", Some(Raw(Bool(right_value)))) => {
-                        let value = *left_value && *right_value;
-                        trace!(
-                            "Boolean algebra (L): Setting node with inferred value: {}",
-                            value
-                        );
-                        node.set(Raw(Bool(value)))
-                    }
-                    _ => (),
+        {
+            match (
+                left_node.data(),
+                operator.text()?.to_lowercase().as_str(),
+                right_node.data(),
+            ) {
+                (Some(Raw(Bool(left_value))), "-or", Some(Raw(Bool(right_value)))) => {
+                    let value = *left_value || *right_value;
+                    trace!(
+                        "Boolean algebra (L): Setting node with inferred value: {}",
+                        value
+                    );
+                    node.set(Raw(Bool(value)))
                 }
+                (Some(Raw(Bool(left_value))), "-and", Some(Raw(Bool(right_value)))) => {
+                    let value = *left_value && *right_value;
+                    trace!(
+                        "Boolean algebra (L): Setting node with inferred value: {}",
+                        value
+                    );
+                    node.set(Raw(Bool(value)))
+                }
+                _ => (),
             }
+        }
         Ok(())
     }
 }
@@ -198,13 +198,14 @@ impl<'a> RuleMut<'a> for Comparison {
         if view.kind() == "comparison_expression"
             && let (Some(left_node), Some(operator), Some(right_node)) =
                 (view.child(0), view.child(1), view.child(2))
-                && let Some(infered_bool) = infer_comparison(&left_node, &operator, &right_node) {
-                    trace!(
-                        "Comparison (L): Setting node with inferred value: {}",
-                        infered_bool
-                    );
-                    node.set(Raw(Bool(infered_bool)));
-                }
+            && let Some(infered_bool) = infer_comparison(&left_node, &operator, &right_node)
+        {
+            trace!(
+                "Comparison (L): Setting node with inferred value: {}",
+                infered_bool
+            );
+            node.set(Raw(Bool(infered_bool)));
+        }
         Ok(())
     }
 }
@@ -231,10 +232,11 @@ impl<'a> RuleMut<'a> for Not {
         let node_view = node.view();
         if node_view.kind() == "expression_with_unary_operator"
             && let (Some(operator), Some(expression)) = (node_view.child(0), node_view.child(1))
-                && let ("!", Some(Raw(Bool(b)))) = (operator.text()?, expression.data()) {
-                    trace!("Not (L): Setting node with inferred value: {}", !(*b));
-                    node.set(Raw(Bool(!(*b))));
-                }
+            && let ("!", Some(Raw(Bool(b)))) = (operator.text()?, expression.data())
+        {
+            trace!("Not (L): Setting node with inferred value: {}", !(*b));
+            node.set(Raw(Bool(!(*b))));
+        }
         Ok(())
     }
 }

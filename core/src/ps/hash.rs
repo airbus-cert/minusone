@@ -30,26 +30,28 @@ impl<'a> RuleMut<'a> for ParseHash {
 
         if view.kind() == "hash_entry" {
             if let (Some(key_expression), Some(pipeline)) = (view.child(0), view.child(2))
-                && let Some(Raw(value)) = pipeline.data() {
-                    if let Some(Raw(key)) = key_expression.data() {
-                        trace!(
-                            "ParseHash: Setting node with key: {:?} and value: {:?}",
-                            key, value
-                        );
-                        node.set(HashEntry(key.normalize(), value.clone()));
-                    } else if let Some(key_child) = key_expression.child(0)
-                        && key_child.kind() == "simple_name" {
-                            trace!(
-                                "ParseHash: Setting node with key: {:?} and value: {:?}",
-                                key_child.text(),
-                                value
-                            );
-                            node.set(HashEntry(
-                                Str(key_child.text()?.to_lowercase()),
-                                value.clone(),
-                            ));
-                        }
+                && let Some(Raw(value)) = pipeline.data()
+            {
+                if let Some(Raw(key)) = key_expression.data() {
+                    trace!(
+                        "ParseHash: Setting node with key: {:?} and value: {:?}",
+                        key, value
+                    );
+                    node.set(HashEntry(key.normalize(), value.clone()));
+                } else if let Some(key_child) = key_expression.child(0)
+                    && key_child.kind() == "simple_name"
+                {
+                    trace!(
+                        "ParseHash: Setting node with key: {:?} and value: {:?}",
+                        key_child.text(),
+                        value
+                    );
+                    node.set(HashEntry(
+                        Str(key_child.text()?.to_lowercase()),
+                        value.clone(),
+                    ));
                 }
+            }
         } else if view.kind() == "hash_literal_body" {
             let mut result = BTreeMap::new();
             //manage the map itself

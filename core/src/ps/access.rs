@@ -85,42 +85,43 @@ impl<'a> RuleMut<'a> for AccessString {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "element_access"
-            && let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
-                match (element.data(), expression.data()) {
-                    // We will handle the case of indexing string by an array
-                    // ex: "foo"[1,2] => ["o", "o"]
-                    (Some(Raw(Str(string_element))), Some(Array(index))) => {
-                        let mut result = vec![];
-                        for index_value in index {
-                            if let Some(parsed_index_value) = index_value.clone().to_i64()
-                                && let Some(string_result) =
-                                    get_at_index(string_element, parsed_index_value)
-                                {
-                                    result.push(Str(string_result));
-                                }
-                        }
-                        trace!(
-                            "AccessString (L): Setting node with string array result: {:?}",
-                            result
-                        );
-                        node.set(Array(result));
-                    }
-                    // "foo"[0]
-                    (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
+            && let (Some(element), Some(expression)) = (view.child(0), view.child(2))
+        {
+            match (element.data(), expression.data()) {
+                // We will handle the case of indexing string by an array
+                // ex: "foo"[1,2] => ["o", "o"]
+                (Some(Raw(Str(string_element))), Some(Array(index))) => {
+                    let mut result = vec![];
+                    for index_value in index {
                         if let Some(parsed_index_value) = index_value.clone().to_i64()
                             && let Some(string_result) =
                                 get_at_index(string_element, parsed_index_value)
-                            {
-                                trace!(
-                                    "AccessString (L): Setting node with string result: {:?}",
-                                    string_result
-                                );
-                                node.set(Raw(Str(string_result)));
-                            }
+                        {
+                            result.push(Str(string_result));
+                        }
                     }
-                    _ => {}
+                    trace!(
+                        "AccessString (L): Setting node with string array result: {:?}",
+                        result
+                    );
+                    node.set(Array(result));
                 }
+                // "foo"[0]
+                (Some(Raw(Str(string_element))), Some(Raw(index_value))) => {
+                    if let Some(parsed_index_value) = index_value.clone().to_i64()
+                        && let Some(string_result) =
+                            get_at_index(string_element, parsed_index_value)
+                    {
+                        trace!(
+                            "AccessString (L): Setting node with string result: {:?}",
+                            string_result
+                        );
+                        node.set(Raw(Str(string_result)));
+                    }
+                }
+                _ => {}
             }
+        }
         Ok(())
     }
 }
@@ -146,37 +147,37 @@ impl<'a> RuleMut<'a> for AccessArray {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "element_access"
-            && let (Some(element), Some(expression)) = (view.child(0), view.child(2)) {
-                match (element.data(), expression.data()) {
-                    (Some(Array(array_element)), Some(Array(index))) => {
-                        let mut result = vec![];
-                        for index_value in index {
-                            if let Some(parsed_index_value) = index_value.clone().to_i64()
-                                && let Some(value) =
-                                    get_array_at_index(array_element, parsed_index_value)
-                                {
-                                    result.push(value.clone());
-                                }
-                        }
-                        trace!(
-                            "AccessArray (L): Setting node with array result: {:?}",
-                            result
-                        );
-                        node.set(Array(result));
-                    }
-                    // "foo"[0]
-                    (Some(Array(array_element)), Some(Raw(index_value))) => {
+            && let (Some(element), Some(expression)) = (view.child(0), view.child(2))
+        {
+            match (element.data(), expression.data()) {
+                (Some(Array(array_element)), Some(Array(index))) => {
+                    let mut result = vec![];
+                    for index_value in index {
                         if let Some(parsed_index_value) = index_value.clone().to_i64()
                             && let Some(value) =
                                 get_array_at_index(array_element, parsed_index_value)
-                            {
-                                trace!("AccessArray (L): Setting node with value: {:?}", value);
-                                node.set(Raw(value.clone()));
-                            }
+                        {
+                            result.push(value.clone());
+                        }
                     }
-                    _ => {}
+                    trace!(
+                        "AccessArray (L): Setting node with array result: {:?}",
+                        result
+                    );
+                    node.set(Array(result));
                 }
+                // "foo"[0]
+                (Some(Array(array_element)), Some(Raw(index_value))) => {
+                    if let Some(parsed_index_value) = index_value.clone().to_i64()
+                        && let Some(value) = get_array_at_index(array_element, parsed_index_value)
+                    {
+                        trace!("AccessArray (L): Setting node with value: {:?}", value);
+                        node.set(Raw(value.clone()));
+                    }
+                }
+                _ => {}
             }
+        }
         Ok(())
     }
 }
@@ -245,41 +246,43 @@ impl<'a> RuleMut<'a> for AccessHashMap {
                 if let (Some(element), Some(expression)) = (view.child(0), view.child(2))
                     && let (Some(Powershell::HashMap(map)), Some(Raw(value))) =
                         (element.data(), expression.data())
-                    {
+                {
+                    let value_n = &value.normalize();
+                    if map.contains_key(value_n) {
+                        trace!(
+                            "AccessHashMap (L): Setting node with value from element_access: {:?}",
+                            map[value_n]
+                        );
+                        node.set(Raw(map[value_n].clone()))
+                    }
+                }
+            }
+            "member_access" => {
+                if let (Some(element), Some(expression)) = (view.child(0), view.child(2))
+                    && let Some(Powershell::HashMap(map)) = element.data()
+                {
+                    if let Some(Raw(value)) = expression.data() {
                         let value_n = &value.normalize();
                         if map.contains_key(value_n) {
                             trace!(
-                                "AccessHashMap (L): Setting node with value from element_access: {:?}",
+                                "AccessHashMap (L): Setting node with value from member_access (raw): {:?}",
                                 map[value_n]
                             );
                             node.set(Raw(map[value_n].clone()))
                         }
+                    } else if let Some(child) = expression.child(0)
+                        && child.kind() == "simple_name"
+                    {
+                        let value = Str(expression.text()?.to_lowercase());
+                        if map.contains_key(&value) {
+                            trace!(
+                                "AccessHashMap (L): Setting node with value from member_access (simple_name): {:?}",
+                                map[&value]
+                            );
+                            node.set(Raw(map[&value].clone()))
+                        }
                     }
-            }
-            "member_access" => {
-                if let (Some(element), Some(expression)) = (view.child(0), view.child(2))
-                    && let Some(Powershell::HashMap(map)) = element.data() {
-                        if let Some(Raw(value)) = expression.data() {
-                            let value_n = &value.normalize();
-                            if map.contains_key(value_n) {
-                                trace!(
-                                    "AccessHashMap (L): Setting node with value from member_access (raw): {:?}",
-                                    map[value_n]
-                                );
-                                node.set(Raw(map[value_n].clone()))
-                            }
-                        } else if let Some(child) = expression.child(0)
-                            && child.kind() == "simple_name" {
-                                let value = Str(expression.text()?.to_lowercase());
-                                if map.contains_key(&value) {
-                                    trace!(
-                                        "AccessHashMap (L): Setting node with value from member_access (simple_name): {:?}",
-                                        map[&value]
-                                    );
-                                    node.set(Raw(map[&value].clone()))
-                                }
-                            }
-                    }
+                }
             }
             _ => (),
         }

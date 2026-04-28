@@ -214,10 +214,11 @@ impl<'a> RuleMut<'a> for Cast {
             "expression_with_unary_operator" => {
                 if let Some(child) = view.child(0)
                     && child.kind() == "cast_expression"
-                        && let Some(data) = child.data() {
-                            trace!("cast (L): Forwarding casted value: {:?}", data);
-                            node.set(data.clone());
-                        }
+                    && let Some(data) = child.data()
+                {
+                    trace!("cast (L): Forwarding casted value: {:?}", data);
+                    node.set(data.clone());
+                }
             }
             _ => (),
         }
@@ -246,19 +247,20 @@ impl<'a> RuleMut<'a> for CastNull {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "expression_with_unary_operator"
-            && let (Some(operator), Some(expression)) = (view.child(0), view.child(1)) {
-                match (operator.text()?.to_lowercase().as_str(), expression.data()) {
-                    ("+", Some(Powershell::Null)) => {
-                        trace!("cast null (L): Setting node with casted null value: 0");
-                        node.set(Raw(Num(0)))
-                    }
-                    ("-", Some(Powershell::Null)) => {
-                        trace!("cast null (L): Setting node with casted null value: 0");
-                        node.set(Raw(Num(0)))
-                    }
-                    _ => (),
+            && let (Some(operator), Some(expression)) = (view.child(0), view.child(1))
+        {
+            match (operator.text()?.to_lowercase().as_str(), expression.data()) {
+                ("+", Some(Powershell::Null)) => {
+                    trace!("cast null (L): Setting node with casted null value: 0");
+                    node.set(Raw(Num(0)))
                 }
+                ("-", Some(Powershell::Null)) => {
+                    trace!("cast null (L): Setting node with casted null value: 0");
+                    node.set(Raw(Num(0)))
+                }
+                _ => (),
             }
+        }
         Ok(())
     }
 }

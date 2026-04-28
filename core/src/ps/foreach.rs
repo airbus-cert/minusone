@@ -92,32 +92,34 @@ impl<'a> RuleMut<'a> for PSItemInferrator {
     ) -> MinusOneResult<()> {
         let view = node.view();
         // find usage of magic variable
-        if view.kind() == "variable" && view.text()? == "$_"
+        if view.kind() == "variable"
+            && view.text()? == "$_"
             && let Some(script_block_expression) =
                 view.get_parent_of_types(vec!["script_block_expression"])
-                && let Some(foreach_command) =
-                    script_block_expression.get_parent_of_types(vec!["command"])
-                    && is_foreach_command(&foreach_command)
-                        && let Some(previous) = find_previous_expr(&foreach_command)? {
-                            // the previous in the pipeline
-                            match previous.data() {
-                                Some(Array(values)) => {
-                                    trace!(
-                                        "PSItemInferrator (L): Setting node with PSItem of values: {:?}",
-                                        values
-                                    );
-                                    node.set(PSItem(values.clone()));
-                                }
-                                Some(Raw(value)) => {
-                                    trace!(
-                                        "PSItemInferrator (L): Setting node with PSItem of value: {:?}",
-                                        value
-                                    );
-                                    node.set(PSItem(vec![value.clone()]));
-                                }
-                                _ => (),
-                            }
-                        }
+            && let Some(foreach_command) =
+                script_block_expression.get_parent_of_types(vec!["command"])
+            && is_foreach_command(&foreach_command)
+            && let Some(previous) = find_previous_expr(&foreach_command)?
+        {
+            // the previous in the pipeline
+            match previous.data() {
+                Some(Array(values)) => {
+                    trace!(
+                        "PSItemInferrator (L): Setting node with PSItem of values: {:?}",
+                        values
+                    );
+                    node.set(PSItem(values.clone()));
+                }
+                Some(Raw(value)) => {
+                    trace!(
+                        "PSItemInferrator (L): Setting node with PSItem of value: {:?}",
+                        value
+                    );
+                    node.set(PSItem(vec![value.clone()]));
+                }
+                _ => (),
+            }
+        }
 
         Ok(())
     }
@@ -183,60 +185,60 @@ impl<'a> RuleMut<'a> for ForEach {
                 .named_child("command_elements")
                 .and_then(|n| n.child(1))
                 .map(|n| n.smallest_child())
-                && script_block_expression.kind() == "script_block_expression"
-                    && let Some(previous_command) = find_previous_expr(&view)? {
-                        // if the previous pipeline was inferred as an array
-                        let mut previous_values = Vec::new();
-                        match previous_command.data() {
-                            Some(Array(values)) => previous_values.extend(values.clone()),
-                            // array of size 1
-                            Some(Raw(value)) => previous_values.push(value.clone()),
-                            _ => (),
+            && script_block_expression.kind() == "script_block_expression"
+            && let Some(previous_command) = find_previous_expr(&view)?
+        {
+            // if the previous pipeline was inferred as an array
+            let mut previous_values = Vec::new();
+            match previous_command.data() {
+                Some(Array(values)) => previous_values.extend(values.clone()),
+                // array of size 1
+                Some(Raw(value)) => previous_values.push(value.clone()),
+                _ => (),
+            }
+            let script_block_body = script_block_expression
+                .child(1)
+                .ok_or(Error::invalid_child())? // script_block node
+                .named_child("script_block_body");
+
+            if let Some(script_block_body_node) = script_block_body
+                && let Some(statement_list) = script_block_body_node.named_child("statement_list")
+            {
+                // determine the number of loop
+                // by looping over the size of the array
+
+                let mut result = Vec::new();
+                for i in 0..previous_values.len() {
+                    for child_statement in statement_list.iter() {
+                        if child_statement.kind() == "empty_statement" {
+                            continue;
                         }
-                        let script_block_body = script_block_expression
-                            .child(1)
-                            .ok_or(Error::invalid_child())? // script_block node
-                            .named_child("script_block_body");
 
-                        if let Some(script_block_body_node) = script_block_body
-                            && let Some(statement_list) =
-                                script_block_body_node.named_child("statement_list")
-                            {
-                                // determine the number of loop
-                                // by looping over the size of the array
-
-                                let mut result = Vec::new();
-                                for i in 0..previous_values.len() {
-                                    for child_statement in statement_list.iter() {
-                                        if child_statement.kind() == "empty_statement" {
-                                            continue;
-                                        }
-
-                                        match child_statement.data() {
-                                            Some(PSItem(values)) => {
-                                                result.push(values[i].clone());
-                                            }
-                                            Some(Raw(r)) => {
-                                                result.push(r.clone());
-                                            }
-                                            Some(Array(array_value)) => {
-                                                for v in array_value {
-                                                    result.push(v.clone());
-                                                }
-                                            }
-                                            _ => {
-                                                // stop inferring we have not enough infos
-                                                return Ok(());
-                                            }
-                                        }
-                                    }
-                                }
-                                if !result.is_empty() {
-                                    trace!("ForEach (L): Setting node with result: {:?}", result);
-                                    node.set(Array(result));
+                        match child_statement.data() {
+                            Some(PSItem(values)) => {
+                                result.push(values[i].clone());
+                            }
+                            Some(Raw(r)) => {
+                                result.push(r.clone());
+                            }
+                            Some(Array(array_value)) => {
+                                for v in array_value {
+                                    result.push(v.clone());
                                 }
                             }
+                            _ => {
+                                // stop inferring we have not enough infos
+                                return Ok(());
+                            }
+                        }
                     }
+                }
+                if !result.is_empty() {
+                    trace!("ForEach (L): Setting node with result: {:?}", result);
+                    node.set(Array(result));
+                }
+            }
+        }
 
         Ok(())
     }

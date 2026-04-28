@@ -83,11 +83,12 @@ impl<'a> RuleMut<'a> for NotBool {
 
         if let (Some(op), Some(value)) = (view.child(0), view.child(1))
             && op.text()? == "!"
-                && let Some(javascript) = value.data() {
-                    let result = !javascript.as_bool();
-                    trace!("NotBool (L): !{} => {}", javascript, result);
-                    node.reduce(Raw(Bool(result)));
-                }
+            && let Some(javascript) = value.data()
+        {
+            let result = !javascript.as_bool();
+            trace!("NotBool (L): !{} => {}", javascript, result);
+            node.reduce(Raw(Bool(result)));
+        }
 
         Ok(())
     }

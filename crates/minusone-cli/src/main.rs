@@ -117,12 +117,8 @@ fn main() {
         })
     } else if let Some(input) = cli.input {
         let use_utf_8 = match lang {
-            Language::Powershell => {
-                cli.utf
-            }
-            _ => {
-                !cli.utf
-            }
+            Language::Powershell => cli.utf,
+            _ => !cli.utf,
         };
 
         info!(
