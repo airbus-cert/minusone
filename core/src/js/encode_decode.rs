@@ -20,10 +20,10 @@ type EncodeDecode = fn(&[JavaScript]) -> Option<JavaScript>;
 const ENCODE_BUILTINS: &[(&str, EncodeDecode)] = &[
     ("escape", encode_builtin_escape),
     ("unescape", encode_builtin_unescape),
-    /*("encodeURI", encode_builtin_encode_uri),
+    ("encodeURI", encode_builtin_encode_uri),
     ("decodeURI", encode_builtin_decode_uri),
     ("encodeURIComponent", encode_builtin_encode_uri_component),
-    ("decodeURIComponent", encode_builtin_decode_uri_component),*/
+    ("decodeURIComponent", encode_builtin_decode_uri_component),
 ];
 
 #[derive(Default)]
@@ -160,6 +160,126 @@ fn encode_builtin_unescape(args: &[JavaScript]) -> Option<JavaScript> {
     Some(Raw(Str(decoded)))
 }
 
+// URIs
+const URI_ALLOWED_CHARS: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*+,-./:;=?@_~";
+const URI_COMPONENT_ALLOWED_CHARS: &[u8] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!'()*-._~";
+const DECODE_URI_RESERVED: &[u8] = b";,/?:@&=+$#"; // URI_ALLOWED_CHARS - URI_COMPONENT_ALLOWED_CHARS
+
+fn encode_builtin_encode_uri(args: &[JavaScript]) -> Option<JavaScript> {
+    encode_uri(args, false)
+}
+
+fn encode_builtin_encode_uri_component(args: &[JavaScript]) -> Option<JavaScript> {
+    encode_uri(args, true)
+}
+
+fn encode_uri(args: &[JavaScript], component: bool) -> Option<JavaScript> {
+    if args.len() < 1 {
+        return Some(Raw(Str("undefined".to_string())));
+    }
+    let s = match &args[0] {
+        Raw(Str(s)) => s.clone(),
+        any => any.to_string(),
+    };
+
+    let allowed_chars = if component {
+        URI_COMPONENT_ALLOWED_CHARS
+    } else {
+        URI_ALLOWED_CHARS
+    };
+    let mut encoded = String::new();
+    for char in s.chars() {
+        // ASCII
+        if char.is_ascii() && allowed_chars.contains(&(char as u8)) {
+            encoded.push(char);
+        } else {
+            // UTF-8
+            let mut buf = [0u8; 4];
+            let utf8_bytes = char.encode_utf8(&mut buf);
+            for byte in utf8_bytes.as_bytes() {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    Some(Raw(Str(encoded)))
+}
+
+fn utf8_char_width(first_byte: u8) -> usize {
+    match first_byte {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1, // invalid UTF-8
+    }
+}
+
+fn encode_builtin_decode_uri(args: &[JavaScript]) -> Option<JavaScript> {
+    decode_uri(args, false)
+}
+
+fn encode_builtin_decode_uri_component(args: &[JavaScript]) -> Option<JavaScript> {
+    decode_uri(args, true)
+}
+
+fn decode_uri(args: &[JavaScript], component: bool) -> Option<JavaScript> {
+    if args.len() < 1 {
+        return Some(Raw(Str("undefined".to_string())));
+    }
+    let s = match &args[0] {
+        Raw(Str(s)) => s.clone(),
+        any => any.to_string(),
+    };
+
+    let bytes = s.as_bytes();
+    let mut decoded = String::new();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 3 <= bytes.len() {
+            let mut buf: Vec<u8> = Vec::new();
+            let mut j = i;
+            while j + 3 <= bytes.len() && bytes[j] == b'%' {
+                let hex = match std::str::from_utf8(&bytes[j + 1..j + 3]) {
+                    Ok(h) => h,
+                    Err(_) => break,
+                };
+                match u8::from_str_radix(hex, 16) {
+                    Ok(byte) => {
+                        buf.push(byte);
+                        j += 3;
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !buf.is_empty() {
+                let mut k = 0;
+                while k < buf.len() {
+                    let width = utf8_char_width(buf[k]).min(buf.len() - k);
+                    if width == 1 && DECODE_URI_RESERVED.contains(&buf[k]) && !component {
+                        decoded.push_str(&s[i + k * 3..i + k * 3 + 3]);
+                    } else {
+                        match std::str::from_utf8(&buf[k..k + width]) {
+                            Ok(cs) => decoded.push_str(cs),
+                            Err(_) => decoded.push(char::REPLACEMENT_CHARACTER),
+                        }
+                    }
+                    k += width;
+                }
+                i = j;
+                continue;
+            }
+        }
+        let c = s[i..].chars().next().unwrap();
+        decoded.push(c);
+        i += c.len_utf8();
+    }
+
+    Some(Raw(Str(decoded)))
+}
+
 #[cfg(test)]
 mod test_encode_decode {
     use crate::js::build_javascript_tree;
@@ -199,5 +319,56 @@ mod test_encode_decode {
         assert_eq!(deobfuscate("unescape('@*_+-./');"), "'@*_+-./';");
         assert_eq!(deobfuscate("unescape();"), "'undefined';");
         assert_eq!(deobfuscate("unescape(null);"), "'null';");
+    }
+
+    #[test]
+    fn test_encode_uri() {
+        assert_eq!(deobfuscate("encodeURI('abc123');"), "'abc123';");
+        assert_eq!(deobfuscate("encodeURI('&');"), "'&';");
+        assert_eq!(deobfuscate("encodeURI('ć');"), "'%C4%87';");
+        assert_eq!(
+            deobfuscate("encodeURI('https://mozilla.org/?x=шеллы');"),
+            "'https://mozilla.org/?x=%D1%88%D0%B5%D0%BB%D0%BB%D1%8B';"
+        );
+        assert_eq!(deobfuscate("encodeURI(';,/?:@&=+$#');"), "';,/?:@&=+$#';");
+        assert_eq!(deobfuscate("encodeURI('-_.!~*\\'()');"), "'-_.!~*\\'()';");
+        assert_eq!(
+            deobfuscate("encodeURI('ABC abc 123');"),
+            "'ABC%20abc%20123';"
+        );
+        assert_eq!(deobfuscate("encodeURI();"), "'undefined';");
+        assert_eq!(deobfuscate("encodeURI(null);"), "'null';");
+    }
+
+    #[test]
+    fn test_decode_uri() {
+        assert_eq!(deobfuscate("decodeURI('%C4%87');"), "'ć';");
+        assert_eq!(deobfuscate("decodeURI('%26');"), "'%26';");
+        assert_eq!(
+            deobfuscate("decodeURI('https://mozilla.org/?x=%D1%88%D0%B5%D0%BB%D0%BB%D1%8B');"),
+            "'https://mozilla.org/?x=шеллы';"
+        );
+        assert_eq!(deobfuscate("decodeURI();"), "'undefined';");
+        assert_eq!(deobfuscate("decodeURI(null);"), "'null';");
+    }
+
+    #[test]
+    fn test_encode_uri_component() {
+        assert_eq!(deobfuscate("encodeURIComponent('&');"), "'%26';");
+        assert_eq!(
+            deobfuscate("encodeURIComponent('https://mozilla.org/?x=шеллы');"),
+            "'https%3A%2F%2Fmozilla.org%2F%3Fx%3D%D1%88%D0%B5%D0%BB%D0%BB%D1%8B';"
+        );
+    }
+
+    #[test]
+    fn test_decode_uri_component() {
+        assert_eq!(deobfuscate("decodeURIComponent('%26');"), "'&';");
+        assert_eq!(
+            deobfuscate(
+                "decodeURIComponent('https%3A%2F%2Fmozilla.org%2F%3Fx%3D%D1%88%D0%B5%D0%BB%D0%BB%D1%8B');"
+            ),
+            "'https://mozilla.org/?x=шеллы';"
+        );
     }
 }
