@@ -1,4 +1,5 @@
 use crate::error::MinusOneResult;
+use crate::js::r#switch::simplify_switch_statement_text;
 use crate::rule::Rule;
 use crate::tree::Node;
 use log::trace;
@@ -717,6 +718,18 @@ impl<'a> Rule<'a> for RemoveUnused {
                             return Ok(false);
                         }
                     }
+                }
+            }
+            "switch_statement" => {
+                if let Some(replacement) = simplify_switch_statement_text(node) {
+                    if replacement.is_empty() {
+                        trace!("RemoveUnusedVar: removing empty deterministic switch");
+                        self.remove_node(node)?;
+                    } else {
+                        trace!("RemoveUnusedVar: simplifying deterministic switch");
+                        self.replace_node_with_text(node, &replacement)?;
+                    }
+                    return Ok(false);
                 }
             }
             _ => {}
