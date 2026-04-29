@@ -222,8 +222,8 @@ fn normalize_js_pattern_for_rust(pattern: &str) -> Option<String> {
 
         match next {
             // js supported escapes
-            'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'b' | 'B' | 'f' | 'n' | 'r' | 't' | 'v'
-            | '0' | 'p' | 'P' => {
+            'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'b' | 'B' | 'f' | 'n' | 'r' | 't' | 'v' | '0'
+            | 'p' | 'P' => {
                 out.push('\\');
                 out.push(next);
             }
