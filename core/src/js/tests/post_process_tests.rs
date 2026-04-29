@@ -450,4 +450,37 @@ mod test_js_post_process {
             "while (x) { console.log('maybe'); }"
         );
     }
+
+    #[test]
+    fn test_remove_empty_if_statement() {
+        assert_eq!(clean("if (x) { } console.log('ok');"), "console.log('ok');");
+    }
+
+    #[test]
+    fn test_flip_empty_if_with_else() {
+        assert_eq!(clean("if (x) { } else { a(); }"), "if (!(x)) { a(); }");
+    }
+
+    #[test]
+    fn test_remove_empty_else_clause() {
+        assert_eq!(clean("if (x) { a(); } else { }"), "if (x) { a(); }");
+    }
+
+    #[test]
+    fn test_remove_if_true_empty_else() {
+        assert_eq!(clean("if (true) { } else { a(); } b();"), "b();");
+    }
+
+    #[test]
+    fn test_remove_empty_try_catch() {
+        assert_eq!(
+            clean("try { } catch (e) { } console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_unwrap_finally_only_try() {
+        assert_eq!(clean("try { } finally { a(); }"), "a();");
+    }
 }

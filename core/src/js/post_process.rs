@@ -573,6 +573,22 @@ impl RemoveUnused {
         }
     }
 
+    fn statement_block_is_empty(block: &Node<()>) -> bool {
+        Self::block_inner_text(block)
+            .map(|inner| inner.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    fn else_clause_body_text(else_clause: &Node<()>) -> Option<String> {
+        for child in else_clause.iter() {
+            if child.kind() == "else" {
+                continue;
+            }
+            return Some(child.text().ok()?.trim().to_string());
+        }
+        None
+    }
+
     fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
         let start = node.start_abs().min(self.source.len());
         let end = node.end_abs().min(self.source.len());
@@ -595,6 +611,21 @@ impl RemoveUnused {
         }
         self.last_index = end;
         Ok(())
+    }
+
+    fn trim_output_trailing_space(&mut self) {
+        if self.output.ends_with(' ') {
+            self.output.pop();
+        }
+    }
+
+    fn negate_condition_text(text: &str) -> String {
+        let trimmed = text.trim();
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            format!("!{}", trimmed)
+        } else {
+            format!("!({})", trimmed)
+        }
     }
 }
 
@@ -684,6 +715,56 @@ impl<'a> Rule<'a> for RemoveUnused {
             // if statements with known boolean conditions
             "if_statement" => {
                 if let Some(condition) = node.named_child("condition") {
+                    let consequence = node.named_child("consequence");
+                    let consequence_empty = consequence
+                        .as_ref()
+                        .is_some_and(|block| block.kind() == "statement_block")
+                        && consequence
+                            .as_ref()
+                            .is_some_and(Self::statement_block_is_empty);
+
+                    if consequence_empty {
+                        let mut else_body = None;
+                        for child in node.iter() {
+                            if child.kind() == "else_clause" {
+                                else_body = Self::else_clause_body_text(&child);
+                                if let Some(body) = &else_body {
+                                    if body.trim().is_empty() {
+                                        trace!("RemoveUnusedVar: removing empty else clause");
+                                        self.remove_node(&child)?;
+                                        return Ok(false);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                        if let Some(body) = else_body {
+                            if Self::is_literal_bool(&condition, true) {
+                                trace!("RemoveUnusedVar: removing if (true) with empty body");
+                                self.remove_node(node)?;
+                                return Ok(false);
+                            } else if Self::is_literal_bool(&condition, false) {
+                                trace!(
+                                    "RemoveUnusedVar: replacing if (false) ... else with else body"
+                                );
+                                self.replace_node_with_text(node, &body)?;
+                                return Ok(false);
+                            } else {
+                                let cond_text = condition.text()?;
+                                let negated = Self::negate_condition_text(&cond_text);
+                                let replacement = format!("if ({}) {}", negated, body);
+                                trace!("RemoveUnusedVar: flipping empty if into negated else");
+                                self.replace_node_with_text(node, &replacement)?;
+                                return Ok(false);
+                            }
+                        } else {
+                            trace!("RemoveUnusedVar: removing empty if statement");
+                            self.remove_node(node)?;
+                            return Ok(false);
+                        }
+                    }
+
                     if Self::is_literal_bool(&condition, false) {
                         if Self::has_else_clause(node) {
                             // if (false) { ... } else { BODY } -> keep BODY
@@ -739,6 +820,64 @@ impl<'a> Rule<'a> for RemoveUnused {
                         self.remove_node(node)?;
                         return Ok(false);
                     }
+                }
+            }
+            "else_clause" => {
+                for child in node.iter() {
+                    if child.kind() == "statement_block" && Self::statement_block_is_empty(&child) {
+                        trace!("RemoveUnusedVar: removing empty else clause");
+                        self.remove_node(node)?;
+                        self.trim_output_trailing_space();
+                        return Ok(false);
+                    }
+                }
+            }
+            "try_statement" => {
+                let try_block = node.named_child("body");
+                let try_empty = try_block
+                    .as_ref()
+                    .is_some_and(|block| block.kind() == "statement_block")
+                    && try_block
+                        .as_ref()
+                        .is_some_and(Self::statement_block_is_empty);
+
+                let mut catch_empty = true;
+                let mut saw_catch = false;
+                let mut finally_text = None;
+
+                for child in node.iter() {
+                    if child.kind() == "catch_clause" {
+                        saw_catch = true;
+                        for catch_child in child.iter() {
+                            if catch_child.kind() == "statement_block" {
+                                catch_empty = Self::statement_block_is_empty(&catch_child);
+                                break;
+                            }
+                        }
+                    } else if child.kind() == "finally_clause" {
+                        for finally_child in child.iter() {
+                            if finally_child.kind() == "statement_block" {
+                                finally_text = Self::block_inner_text(&finally_child);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if saw_catch && !catch_empty {
+                    catch_empty = false;
+                }
+
+                if try_empty && catch_empty {
+                    if let Some(inner) = finally_text {
+                        trace!("RemoveUnusedVar: unwrapping finally-only try statement");
+                        self.replace_node_with_text(node, &inner)?;
+                        return Ok(false);
+                    }
+
+                    trace!("RemoveUnusedVar: removing empty try statement");
+                    self.remove_node(node)?;
+                    return Ok(false);
                 }
             }
             _ => {}
