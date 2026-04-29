@@ -21,7 +21,13 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "[{}]", arr_str)
             }
-            Regex { pattern, flags } => write!(f, "/{}/{}", pattern.replace('/', "\\/"), flags),
+            Regex { pattern, flags } => {
+                if pattern.is_empty() {
+                    write!(f, "RegExp('', '{})", flags) // avoid //g regex which is comment syntax
+                } else {
+                    write!(f, "/{}/{}", pattern.replace('/', "\\/"), flags)
+                }
+            }
             Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),
             NaN => write!(f, "NaN"),
