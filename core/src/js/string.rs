@@ -1976,4 +1976,24 @@ mod tests_js_string {
             "let a = 1; console.log('2');"
         );
     }
+
+    #[test]
+    fn test_replace_with_literal_escape() {
+        assert_eq!(
+            deobfuscate("console.log(('aZbZc').replace(/\\Z/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aZbZc').replace(/Z/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aXbXc').replace(/\\X/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aXbXc').replace(/X/g, \"\"))"),
+            "console.log('abc')"
+        );
+    }
 }
