@@ -35,9 +35,35 @@ impl<'a> RuleMut<'a> for ParseArray {
         }
 
         let mut js = Vec::new();
+        let mut expect_value = true;
         for child in view.iter() {
+            if let Ok(text) = child.text() {
+                match text {
+                    "[" => {
+                        expect_value = true;
+                        continue;
+                    }
+                    "]" => break,
+                    "," => {
+                        if expect_value {
+                            js.push(Undefined);
+                        }
+                        expect_value = true;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             if let Some(data) = child.data() {
                 js.push(data.clone());
+                expect_value = false;
+            } else {
+                warn!(
+                    "ParseArray: unable to parse array element {:?}",
+                    child.text()
+                );
+                return Ok(());
             }
         }
 
@@ -359,7 +385,6 @@ pub fn flatten_array(arr: &Vec<JavaScript>, separator: Option<String>) -> String
     let separator = separator.unwrap_or_else(|| ",".to_string());
     arr.iter()
         .map(|value| flatten_value(value, Some(separator.clone())))
-        .filter(|s| !s.is_empty())
         .collect::<Vec<String>>()
         .join(&separator)
 }

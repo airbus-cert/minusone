@@ -5,6 +5,7 @@ mod tests_js_array {
     use crate::js::forward::Forward;
     use crate::js::integer::{ParseInt, Substract};
     use crate::js::linter::Linter;
+    use crate::js::objects::object::ObjectField;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::BracketCharAt;
     use crate::js::string::ParseString;
@@ -22,6 +23,7 @@ mod tests_js_array {
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),
             BracketCharAt::default(),
+            ObjectField::default(),
         ))
         .unwrap();
 
@@ -71,5 +73,22 @@ mod tests_js_array {
     #[test]
     fn test_dont_reduce_array_lookup_when_used_as_callee() {
         assert_eq!(deobfuscate("var x = [][[]]();"), "var x = [][[]]();");
+    }
+
+    #[test]
+    fn test_sparse_array_indexing() {
+        assert_eq!(
+            deobfuscate("var x = [,,, 'hello',,][3];"),
+            "var x = 'hello';"
+        );
+        assert_eq!(
+            deobfuscate("var x = [,,, 'hello',,][4];"),
+            "var x = undefined;"
+        );
+    }
+
+    #[test]
+    fn test_sparse_array_length() {
+        assert_eq!(deobfuscate("var x = [,,, 'hello',,].length;"), "var x = 5;");
     }
 }
