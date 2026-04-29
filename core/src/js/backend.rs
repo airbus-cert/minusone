@@ -42,33 +42,6 @@ impl DeobfuscationBackend for JavaScriptBackend {
             current = reduce_sequence.clear()?;
         }
 
-        // remove obvious dead code
-        let mut i = 0;
-        loop {
-            i += 1;
-            trace!(
-                "Pre-clean pass iteration {}: current code length = {}",
-                i,
-                current.len()
-            );
-
-            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-
-            let mut rule = UnusedVar::default();
-            tree.apply(&mut rule)?;
-
-            let mut clean_view = RemoveUnused::new(rule);
-            tree.apply(&mut clean_view)?;
-            let next = clean_view.clear()?;
-
-            if next == current {
-                current = next;
-                break;
-            }
-
-            current = next;
-        }
-
         // simplify bracket calls to member expressions to help some rules
         {
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
