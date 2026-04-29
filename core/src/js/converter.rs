@@ -115,9 +115,14 @@ impl JavaScript {
                 if array.is_empty() {
                     Raw(Num(0.0))
                 } else {
-                    match flatten_array(array, None).parse::<f64>() {
-                        Ok(n) => Raw(Num(n)),
-                        Err(_) => NaN,
+                    let flat = flatten_array(array, None);
+                    if flat.trim().is_empty() {
+                        Raw(Num(0.0))
+                    } else {
+                        match flat.parse::<f64>() {
+                            Ok(n) => Raw(Num(n)),
+                            Err(_) => NaN,
+                        }
                     }
                 }
             }

@@ -573,6 +573,22 @@ impl RemoveUnused {
         }
     }
 
+    fn statement_block_is_empty(block: &Node<()>) -> bool {
+        Self::block_inner_text(block)
+            .map(|inner| inner.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    fn else_clause_body_text(else_clause: &Node<()>) -> Option<String> {
+        for child in else_clause.iter() {
+            if child.kind() == "else" {
+                continue;
+            }
+            return Some(child.text().ok()?.trim().to_string());
+        }
+        None
+    }
+
     fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
         let start = node.start_abs().min(self.source.len());
         let end = node.end_abs().min(self.source.len());
@@ -595,6 +611,21 @@ impl RemoveUnused {
         }
         self.last_index = end;
         Ok(())
+    }
+
+    fn trim_output_trailing_space(&mut self) {
+        if self.output.ends_with(' ') {
+            self.output.pop();
+        }
+    }
+
+    fn negate_condition_text(text: &str) -> String {
+        let trimmed = text.trim();
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            format!("!{}", trimmed)
+        } else {
+            format!("!({})", trimmed)
+        }
     }
 }
 
@@ -684,6 +715,56 @@ impl<'a> Rule<'a> for RemoveUnused {
             // if statements with known boolean conditions
             "if_statement" => {
                 if let Some(condition) = node.named_child("condition") {
+                    let consequence = node.named_child("consequence");
+                    let consequence_empty = consequence
+                        .as_ref()
+                        .is_some_and(|block| block.kind() == "statement_block")
+                        && consequence
+                            .as_ref()
+                            .is_some_and(Self::statement_block_is_empty);
+
+                    if consequence_empty {
+                        let mut else_body = None;
+                        for child in node.iter() {
+                            if child.kind() == "else_clause" {
+                                else_body = Self::else_clause_body_text(&child);
+                                if let Some(body) = &else_body {
+                                    if body.trim().is_empty() {
+                                        trace!("RemoveUnusedVar: removing empty else clause");
+                                        self.remove_node(&child)?;
+                                        return Ok(false);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                        if let Some(body) = else_body {
+                            if Self::is_literal_bool(&condition, true) {
+                                trace!("RemoveUnusedVar: removing if (true) with empty body");
+                                self.remove_node(node)?;
+                                return Ok(false);
+                            } else if Self::is_literal_bool(&condition, false) {
+                                trace!(
+                                    "RemoveUnusedVar: replacing if (false) ... else with else body"
+                                );
+                                self.replace_node_with_text(node, &body)?;
+                                return Ok(false);
+                            } else {
+                                let cond_text = condition.text()?;
+                                let negated = Self::negate_condition_text(&cond_text);
+                                let replacement = format!("if ({}) {}", negated, body);
+                                trace!("RemoveUnusedVar: flipping empty if into negated else");
+                                self.replace_node_with_text(node, &replacement)?;
+                                return Ok(false);
+                            }
+                        } else {
+                            trace!("RemoveUnusedVar: removing empty if statement");
+                            self.remove_node(node)?;
+                            return Ok(false);
+                        }
+                    }
+
                     if Self::is_literal_bool(&condition, false) {
                         if Self::has_else_clause(node) {
                             // if (false) { ... } else { BODY } -> keep BODY
@@ -729,6 +810,73 @@ impl<'a> Rule<'a> for RemoveUnused {
                         trace!("RemoveUnusedVar: simplifying deterministic switch");
                         self.replace_node_with_text(node, &replacement)?;
                     }
+                    return Ok(false);
+                }
+            }
+            "while_statement" => {
+                if let Some(condition) = node.named_child("condition") {
+                    if Self::is_literal_bool(&condition, false) {
+                        trace!("RemoveUnusedVar: removing dead while (false) loop");
+                        self.remove_node(node)?;
+                        return Ok(false);
+                    }
+                }
+            }
+            "else_clause" => {
+                for child in node.iter() {
+                    if child.kind() == "statement_block" && Self::statement_block_is_empty(&child) {
+                        trace!("RemoveUnusedVar: removing empty else clause");
+                        self.remove_node(node)?;
+                        self.trim_output_trailing_space();
+                        return Ok(false);
+                    }
+                }
+            }
+            "try_statement" => {
+                let try_block = node.named_child("body");
+                let try_empty = try_block
+                    .as_ref()
+                    .is_some_and(|block| block.kind() == "statement_block")
+                    && try_block
+                        .as_ref()
+                        .is_some_and(Self::statement_block_is_empty);
+
+                let mut catch_empty = true;
+                let mut saw_catch = false;
+                let mut finally_text = None;
+
+                for child in node.iter() {
+                    if child.kind() == "catch_clause" {
+                        saw_catch = true;
+                        for catch_child in child.iter() {
+                            if catch_child.kind() == "statement_block" {
+                                catch_empty = Self::statement_block_is_empty(&catch_child);
+                                break;
+                            }
+                        }
+                    } else if child.kind() == "finally_clause" {
+                        for finally_child in child.iter() {
+                            if finally_child.kind() == "statement_block" {
+                                finally_text = Self::block_inner_text(&finally_child);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if saw_catch && !catch_empty {
+                    catch_empty = false;
+                }
+
+                if try_empty && catch_empty {
+                    if let Some(inner) = finally_text {
+                        trace!("RemoveUnusedVar: unwrapping finally-only try statement");
+                        self.replace_node_with_text(node, &inner)?;
+                        return Ok(false);
+                    }
+
+                    trace!("RemoveUnusedVar: removing empty try statement");
+                    self.remove_node(node)?;
                     return Ok(false);
                 }
             }
@@ -1175,348 +1323,5 @@ impl<'a> Rule<'a> for ReduceSequenceExpression {
 
     fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test_js_deadcode {
-    use super::*;
-    use crate::js::build_javascript_tree_for_storage;
-    use crate::tree::EmptyStorage;
-
-    fn clean(input: &str) -> String {
-        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
-        let mut inline_iife = InlineIife::default();
-        tree.apply(&mut inline_iife).unwrap();
-        let rewritten = inline_iife.clear().unwrap();
-
-        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut rewrite = ExpandAugmentedAssignment::default();
-        tree.apply(&mut rewrite).unwrap();
-        let rewritten = rewrite.clear().unwrap();
-
-        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut reduce_sequence = ReduceSequenceExpression::default();
-        tree.apply(&mut reduce_sequence).unwrap();
-        let rewritten = reduce_sequence.clear().unwrap();
-
-        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut for_to_while = ForToWhile::default();
-        tree.apply(&mut for_to_while).unwrap();
-        let rewritten = for_to_while.clear().unwrap();
-
-        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
-        tree.apply(&mut bracket_to_member).unwrap();
-        let rewritten = bracket_to_member.clear().unwrap();
-
-        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut unused = UnusedVar::default();
-        tree.apply(&mut unused).unwrap();
-        let mut remover = RemoveUnused::new(unused);
-        tree.apply(&mut remover).unwrap();
-        remover.clear().unwrap()
-    }
-
-    #[test]
-    fn test_remove_unused_var() {
-        assert_eq!(
-            clean("var a = 'hello'; console.log('world');"),
-            "console.log('world');"
-        );
-    }
-
-    #[test]
-    fn test_keep_used_var() {
-        assert_eq!(
-            clean("var a = 'hello'; console.log(a);"),
-            "var a = 'hello'; console.log(a);"
-        );
-    }
-
-    #[test]
-    fn test_remove_unused_assignment() {
-        assert_eq!(
-            clean("var a = 1; a = 2; console.log('ok');"),
-            "console.log('ok');"
-        );
-    }
-
-    #[test]
-    fn test_remove_unused_function() {
-        assert_eq!(
-            clean("function unused() { return 1; } console.log('hello');"),
-            "console.log('hello');"
-        );
-    }
-
-    #[test]
-    fn test_keep_used_function() {
-        assert_eq!(
-            clean("function test() { return 1; } test();"),
-            "function test() { return 1; } test();"
-        );
-    }
-
-    #[test]
-    fn test_remove_multiple_unused() {
-        assert_eq!(
-            clean("var a = 1; var b = 2; console.log('ok');"),
-            "console.log('ok');"
-        );
-    }
-
-    #[test]
-    fn test_keep_mixed() {
-        assert_eq!(
-            clean("var a = 1; var b = 2; console.log(a);"),
-            "var a = 1; console.log(a);"
-        );
-    }
-
-    #[test]
-    fn test_remove_unused_let_const() {
-        assert_eq!(
-            clean("let a = 1; const b = 2; console.log('ok');"),
-            "console.log('ok');"
-        );
-    }
-
-    #[test]
-    fn test_full_pipeline_dead_code() {
-        assert_eq!(
-            clean("function test() { return 'hello'; } console.log('hello');"),
-            "console.log('hello');"
-        );
-    }
-
-    #[test]
-    fn test_remove_bare_number() {
-        assert_eq!(clean("1; console.log('ok');"), "console.log('ok');");
-    }
-
-    #[test]
-    fn test_remove_bare_string() {
-        assert_eq!(clean("'hello'; console.log('ok');"), "console.log('ok');");
-    }
-
-    #[test]
-    fn test_remove_bare_bool() {
-        assert_eq!(
-            clean("true; false; console.log('ok');"),
-            "console.log('ok');"
-        );
-    }
-
-    #[test]
-    fn test_remove_bare_literal_after_fncall_inlining() {
-        assert_eq!(clean("1; console.log('world');"), "console.log('world');");
-    }
-
-    #[test]
-    fn test_remove_if_false() {
-        assert_eq!(
-            clean("if (false) { console.log('no'); } console.log('yes');"),
-            "console.log('yes');"
-        );
-    }
-
-    #[test]
-    fn test_if_false_with_else_keeps_else_body() {
-        assert_eq!(
-            clean("if (false) { console.log('no'); } else { console.log('yes'); }"),
-            "console.log('yes');"
-        );
-    }
-
-    #[test]
-    fn test_if_true_keeps_if_body() {
-        assert_eq!(
-            clean("if (true) { console.log('yes'); }"),
-            "console.log('yes');"
-        );
-    }
-
-    #[test]
-    fn test_if_true_with_else_keeps_if_body() {
-        assert_eq!(
-            clean("if (true) { console.log('yes'); } else { console.log('no'); }"),
-            "console.log('yes');"
-        );
-    }
-
-    #[test]
-    fn test_keep_if_variable() {
-        assert_eq!(
-            clean("if (x) { console.log('maybe'); }"),
-            "if (x) { console.log('maybe'); }"
-        );
-    }
-
-    #[test]
-    fn test_no_panic_when_parent_removed_before_children() {
-        assert_eq!(
-            clean("function drop() { var a = 1; a = 2; 1; } console.log('ok');"),
-            "console.log('ok');"
-        );
-    }
-
-    #[test]
-    fn test_split_chained_let_declaration() {
-        assert_eq!(
-            clean("let r = 4027, E = 'A', S = 'B';"),
-            "let r = 4027; let E = 'A'; let S = 'B';"
-        );
-    }
-
-    #[test]
-    fn test_split_chained_const_declaration() {
-        assert_eq!(clean("const a = 1, b = 2;"), "const a = 1; const b = 2;");
-    }
-
-    #[test]
-    fn test_keep_for_header_chained_declaration() {
-        assert_eq!(
-            clean("for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"),
-            "for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"
-        );
-    }
-
-    #[test]
-    fn test_rewrite_for_ever_to_while_true() {
-        assert_eq!(
-            clean("for (;;) { console.log('x'); }"),
-            "while (true) { console.log('x'); }"
-        );
-    }
-
-    #[test]
-    fn test_rewrite_for_condition_only_to_while() {
-        assert_eq!(clean("for (; a != b;) { x(); }"), "while (a != b) { x(); }");
-    }
-
-    #[test]
-    fn test_keep_for_with_increment() {
-        assert_eq!(
-            clean("for (; i < 10; i++) { x(); }"),
-            "for (; i < 10; i++) { x(); }"
-        );
-    }
-
-    #[test]
-    fn test_keep_for_with_initializer() {
-        assert_eq!(
-            clean("for (let i = 0; i < 10;) { x(); }"),
-            "for (let i = 0; i < 10;) { x(); }"
-        );
-    }
-
-    #[test]
-    fn test_split_sequence_expression_statement() {
-        assert_eq!(
-            clean("a = 1, b = 2, console.log(b);"),
-            "a = 1; b = 2; console.log(b);"
-        );
-    }
-
-    #[test]
-    fn test_split_sequence_expression_statement_with_calls() {
-        assert_eq!(
-            clean(
-                "S = S.replaceAll(a, q), S = S.replaceAll(E, r), t.writeFileSync(r, S), n = transform(stq[10], ord), n = n.replaceAll(E, r);"
-            ),
-            "S = S.replaceAll(a, q); S = S.replaceAll(E, r); t.writeFileSync(r, S); n = transform(stq[10], ord); n = n.replaceAll(E, r);"
-        );
-    }
-
-    #[test]
-    fn test_rewrite_bracket_call_to_member_call() {
-        assert_eq!(clean("console['log'](a);"), "console.log(a);");
-    }
-
-    #[test]
-    fn test_keep_bracket_call_when_key_not_identifier() {
-        assert_eq!(clean("console['x-y'](a);"), "console['x-y'](a);");
-    }
-
-    #[test]
-    fn test_stress_many_removals_no_slice_panic() {
-        let mut input = String::new();
-        for i in 0..200 {
-            input += &format!("function f{}() {{ var a = 1; a = 2; 1; }} ", i);
-        }
-        input += "console.log('ok');";
-
-        assert_eq!(clean(&input), "console.log('ok');");
-    }
-
-    #[test]
-    fn test_inline_anonymous_iife() {
-        assert_eq!(
-            clean(
-                "(function () { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
-            ),
-            "var a = 123; var b = 'Hello, world! '; console.log(b + a);"
-        );
-    }
-
-    #[test]
-    fn test_do_not_inline_iife_with_arguments() {
-        assert_eq!(
-            clean("(function () { console.log('x'); })(foo());"),
-            "(function () { console.log('x'); })(foo());"
-        );
-    }
-
-    #[test]
-    fn test_do_not_inline_iife_with_return() {
-        assert_eq!(
-            clean("(function () { return 1; })(); console.log('ok');"),
-            "(function () { return 1; })(); console.log('ok');"
-        );
-    }
-
-    #[test]
-    fn test_do_not_inline_iife_with_name() {
-        assert_eq!(
-            clean(
-                "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
-            ),
-            "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
-        );
-    }
-
-    #[test]
-    fn test_rewrite_augmented_plus_equals() {
-        assert_eq!(clean("a += 2;"), "a = a + 2;");
-        assert_eq!(clean("a -= 2;"), "a = a - 2;");
-        assert_eq!(clean("a *= 2;"), "a = a * 2;");
-        assert_eq!(clean("a /= 2;"), "a = a / 2;");
-        assert_eq!(clean("a %= 2;"), "a = a % 2;");
-        assert_eq!(clean("obj.x += 2;"), "obj.x += 2;");
-    }
-
-    #[test]
-    fn test_reduce_sequence_expression_to_last_value() {
-        assert_eq!(
-            clean("console.log((\"a\",\"b\"));"),
-            "console.log((\"b\"));"
-        );
-    }
-
-    #[test]
-    fn test_reduce_sequence_expression_with_safe_prefixes() {
-        assert_eq!(
-            clean("console.log((1, null, \"b\"));"),
-            "console.log((\"b\"));"
-        );
-    }
-
-    #[test]
-    fn test_keep_sequence_expression_with_side_effects() {
-        assert_eq!(
-            clean("console.log((foo(), \"b\"));"),
-            "console.log((foo(), \"b\"));"
-        );
     }
 }

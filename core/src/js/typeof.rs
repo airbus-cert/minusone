@@ -48,7 +48,26 @@ impl<'a> RuleMut<'a> for Typeof {
         }
 
         if let Ok(text) = view.text()
-            && (text == "typeof window" || text == "typeof document" || text == "typeof browser")
+            && (
+                text == "typeof window" // if present -> browser
+                || text == "typeof document" // if present -> browser
+                || text == "typeof browser" // if present -> browser
+                || text == "typeof XMLHttpRequest" // if present -> browser
+                || text == "typeof navigator" // if present -> browser
+                || text == "typeof self" // if present -> browser
+                || text == "typeof globalThis" // if present -> browser
+                || text == "typeof location" // if present -> browser
+                || text == "typeof history" // if present -> browser
+                || text == "typeof screen" // if present -> browser
+                || text == "typeof localStorage" // if present -> browser
+                || text == "typeof sessionStorage" // if present -> browser
+                || text == "typeof Worker" // if present -> browser
+                || text == "typeof Element" // if present -> browser
+                || text == "typeof HTMLElement" // if present -> browser
+                || text == "typeof module" // if present -> NodeJS
+                || text == "typeof process"
+                // if present -> browser
+            )
         {
             warn!(
                 "The script tried to detect if the environment is a browser by using '{}'.",

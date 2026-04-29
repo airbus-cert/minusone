@@ -42,6 +42,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
             current = reduce_sequence.clear()?;
         }
 
+        #[cfg(debug_assertions)]
+        {
+            let debug_dir = std::path::Path::new("./debug");
+            if !debug_dir.exists() {
+                std::fs::create_dir_all(debug_dir).expect("Failed to create debug directory");
+            }
+        }
+
         // remove obvious dead code
         let mut i = 0;
         loop {
@@ -51,6 +59,13 @@ impl DeobfuscationBackend for JavaScriptBackend {
                 i,
                 current.len()
             );
+
+            #[cfg(debug_assertions)]
+            {
+                let debug_dir = std::path::Path::new("./debug");
+                let debug_file = debug_dir.join(format!("debug_pre_pass_{}.js", i));
+                std::fs::write(debug_file, &current).expect("Failed to write debug file");
+            }
 
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
@@ -160,6 +175,13 @@ impl CleanBackend for JavaScriptBackend {
                 i,
                 current.len()
             );
+
+            #[cfg(debug_assertions)]
+            {
+                let debug_dir = std::path::Path::new("./debug");
+                let debug_file = debug_dir.join(format!("debug_post_pass_{}.js", i));
+                std::fs::write(debug_file, &current).expect("Failed to write debug file");
+            }
 
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
