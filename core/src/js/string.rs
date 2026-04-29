@@ -574,6 +574,14 @@ fn string_builtin_replace_like(
     let replacement = match args.get(1) {
         None => "undefined".to_string(),
         Some(Raw(Str(s))) => s.clone(),
+        Some(object @ Object { .. }) => {
+            let obj_string = object.to_string();
+            if obj_string.eq("{name: 'String'}") {
+                String::new()
+            } else {
+                obj_string
+            }
+        }
         Some(js) => js.to_string(),
     };
 
