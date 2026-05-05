@@ -142,6 +142,7 @@ fn unescaped_js_string(s: &str) -> String {
 /// - `str.includes(substring)`
 /// - `str.indexOf(substring)`
 /// - `str.lastIndexOf(substring)`
+/// - `str.match(regex)`
 /// - `str.padStart(targetLength, [padString])`
 /// - `str.padEnd(targetLength, [padString])`
 /// - `str.repeat(count)`
@@ -160,23 +161,24 @@ fn unescaped_js_string(s: &str) -> String {
 type StringBuiltinHandler = fn(&str, &[JavaScript]) -> Option<JavaScript>;
 
 const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
+    ("anchor", string_builtin_anchor),
     ("at", string_builtin_at),
     ("charAt", string_builtin_char_at),
-    ("split", string_builtin_split),
-    ("replace", string_builtin_replace),
-    ("replaceAll", string_builtin_replace_all),
-    ("link", string_builtin_link),
-    ("anchor", string_builtin_anchor),
     ("codePointAt", string_builtin_code_point_at),
-    ("startsWith", string_builtin_start_with),
     ("endsWith", string_builtin_end_with),
     ("includes", string_builtin_includes),
     ("indexOf", string_builtin_index_of),
     ("lastIndexOf", string_builtin_last_index_of),
-    ("padStart", string_builtin_pad_start),
+    ("link", string_builtin_link),
+    ("match", string_builtin_match),
     ("padEnd", string_builtin_pad_end),
+    ("padStart", string_builtin_pad_start),
     ("repeat", string_builtin_repeat),
+    ("replace", string_builtin_replace),
+    ("replaceAll", string_builtin_replace_all),
     ("slice", string_builtin_slice),
+    ("split", string_builtin_split),
+    ("startsWith", string_builtin_start_with),
     ("substring", string_builtin_substring),
     ("toLowerCase", |input, _| {
         Some(Raw(Str(input.to_lowercase())))
@@ -185,11 +187,11 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
         Some(Raw(Str(input.to_uppercase())))
     }),
     ("trim", |input, _| Some(Raw(Str(input.trim().to_string())))),
-    ("trimStart", |input, _| {
-        Some(Raw(Str(input.trim_start().to_string())))
-    }),
     ("trimEnd", |input, _| {
         Some(Raw(Str(input.trim_end().to_string())))
+    }),
+    ("trimStart", |input, _| {
+        Some(Raw(Str(input.trim_start().to_string())))
     }),
 ];
 
@@ -642,6 +644,52 @@ fn string_builtin_dynamic_tag(
     };
 
     Some(Raw(Str(result)))
+}
+
+pub fn string_builtin_match(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let first_arg = args.first()?;
+
+    let (regex, is_global) = match first_arg {
+        Regex { pattern, flags } => {
+            let compiled = RegexExec::compile(pattern, flags)?;
+            let global = flags.contains('g');
+            (compiled, global)
+        }
+        Raw(Str(s)) => (RegexExec::compile(&regex::escape(s), "")?, false),
+        js => (
+            RegexExec::compile(&regex::escape(&js.to_string()), "")?,
+            false,
+        ),
+    };
+
+    if is_global {
+        // with 'g': return all full matches as a flat Array, or Null if none
+        let matches: Vec<JavaScript> = regex
+            .find_iter(input)
+            .map(|m| Raw(Str(m.as_str().to_string())))
+            .collect();
+
+        if matches.is_empty() {
+            Some(Null)
+        } else {
+            Some(Array(matches))
+        }
+    } else {
+        match regex.captures(input) {
+            None => Some(Null),
+            Some(caps) => {
+                let result: Vec<JavaScript> = caps
+                    .iter()
+                    .map(|m| match m {
+                        None => Undefined,
+                        Some(m) => Raw(Str(m.as_str().to_string())),
+                    })
+                    .collect();
+
+                Some(Array(result))
+            }
+        }
+    }
 }
 
 /// Infers charAt with bracket calls on string literals and reduces them to single-character string
