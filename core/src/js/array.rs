@@ -13,6 +13,52 @@ use log::{trace, warn};
 #[derive(Default)]
 pub struct ParseArray;
 
+impl ParseArray {
+    fn parse_array_call<'a>(
+        &self,
+        node: &mut NodeMut<'a, JavaScript>,
+        func_index: usize,
+        args_index: usize,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+
+        let is_array = view
+            .child(func_index)
+            .map(|f| f.text().ok() == Some("Array"))
+            .unwrap_or(false);
+
+        if !is_array {
+            return Ok(());
+        }
+
+        let Some(args_node) = view.child(args_index) else {
+            return Ok(());
+        };
+
+        let mut js = Vec::new();
+        for child in args_node.iter() {
+            if let Ok(text) = child.text() {
+                if text == "(" || text == ")" || text == "," {
+                    continue;
+                }
+            }
+            if let Some(data) = child.data() {
+                js.push(data.clone());
+            } else {
+                warn!(
+                    "ParseArray: unable to parse Array call argument {:?}",
+                    child.text()
+                );
+                return Ok(());
+            }
+        }
+
+        trace!("ParseArray (L): Array call with {} elements", js.len());
+        node.reduce(Array(js));
+        Ok(())
+    }
+}
+
 impl<'a> RuleMut<'a> for ParseArray {
     type Language = JavaScript;
 
@@ -30,19 +76,48 @@ impl<'a> RuleMut<'a> for ParseArray {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "array" {
-            return Ok(());
-        }
+        match view.kind() {
+            "array" => {
+                let mut js = Vec::new();
+                let mut expect_value = true;
+                for child in view.iter() {
+                    if let Ok(text) = child.text() {
+                        match text {
+                            "[" => {
+                                expect_value = true;
+                                continue;
+                            }
+                            "]" => break,
+                            "," => {
+                                if expect_value {
+                                    js.push(Undefined);
+                                }
+                                expect_value = true;
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
 
-        let mut js = Vec::new();
-        for child in view.iter() {
-            if let Some(data) = child.data() {
-                js.push(data.clone());
+                    if let Some(data) = child.data() {
+                        js.push(data.clone());
+                        expect_value = false;
+                    } else {
+                        warn!(
+                            "ParseArray: unable to parse array element {:?}",
+                            child.text()
+                        );
+                        return Ok(());
+                    }
+                }
+
+                trace!("ParseArray (L): array with {} elements", js.len());
+                node.reduce(Array(js));
             }
+            "call_expression" => self.parse_array_call(node, 0, 1)?,
+            "new_expression" => self.parse_array_call(node, 1, 2)?,
+            _ => {}
         }
-
-        trace!("ParseArray (L): array with {} elements", js.len());
-        node.reduce(Array(js));
 
         Ok(())
     }
