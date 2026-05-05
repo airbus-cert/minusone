@@ -1,41 +1,6 @@
-//! Resolves predictable JavaScript function calls and `eval(...)` invocations
-//! to their inferred return values.
-//!
-//! # Design overview
-//!
-//! Two recursion-prone operations live in this rule:
-//!
-//! 1. **Function call resolution** - when a call site references a known
-//!    function shape, we evaluate the shape with the call's arguments and
-//!    reduce the call expression to the resulting [`JavaScript`] value.
-//! 2. **`eval(...)` resolution** - when the callee is the `eval` builtin and
-//!    the argument is a literal source string, we parse it as a fresh
-//!    JavaScript program, run a small literal-reduction pipeline on it, and
-//!    reduce the eval call to the value of its **last** statement.
-//!
-//! Both expansions are gated by a [`RecursionTracker`] (see
-//! [`crate::js::recursion`]), so adversarial inputs (mutually recursive
-//! functions, `eval('eval("...")')` chains, decoder bombs) cannot push the
-//! deobfuscator into an infinite loop. The tracker uses a default depth of
-//! 16, which matches the constant requested by issue #152.
-//!
-//! ## Backup / restore semantics
-//!
-//! Issue #152 requires that a function's source remain *byte-identical* after
-//! a call to it has been resolved. A naive implementation that walked into
-//! the function body, propagated argument values, and let other rules (e.g.
-//! [`crate::js::integer::AddInt`]) rewrite the body would mutate the AST
-//! data attached to the function nodes, and the linter would then emit the
-//! mutated body instead of the original.
-//!
-//! To avoid that we **never** materialise call-site bindings inside the
-//! function body. Instead, [`FunctionShape`] is a parallel, immutable
-//! description of the function (params, simple straight-line steps, return
-//! expression). Shape evaluation runs on a transient
-//! [`std::collections::HashMap`] environment - the AST storage is untouched
-//! - and only the *call expression* node receives a `node.reduce(...)`.
-//! This is the backup/restore mechanism: the shape acts as a snapshot, and
-//! the function body never leaves its original state.
+//! Resolves function calls and `eval(...)` to their inferred return values.
+//! Recursion is gated by `RecursionTracker` (depth=16) and shape evaluation
+//! runs on a transient env, so the function body never gets mutated.
 
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
@@ -53,65 +18,17 @@ use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
 use std::collections::HashMap;
 
-/// Predictable function and `eval` call resolver.
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::forward::Forward;
-/// use minusone::js::integer::ParseInt;
-/// use minusone::js::string::ParseString;
-/// use minusone::js::var::Var;
-/// use minusone::js::functions::fncall::FnCall;
-/// use minusone::js::linter::Linter;
-/// use minusone::js::strategy::JavaScriptStrategy;
-///
-/// let mut tree = build_javascript_tree("function test() { return 'hello'; } console.log(test());").unwrap();
-/// tree.apply_mut_with_strategy(
-///     &mut (ParseString::default(), ParseInt::default(), Forward::default(), Var::default(), FnCall::default()),
-///     JavaScriptStrategy::default(),
-/// ).unwrap();
-///
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-///
-/// assert_eq!(linter.output, "function test() { return 'hello'; } console.log('hello');");
-/// ```
 #[derive(Default)]
 pub struct FnCall {
-    /// Functions with a single deterministic, parameter-independent return
-    /// value (legacy path, kept for backwards compatibility with existing
-    /// rules and tests that depend on it).
     functions: HashMap<String, JavaScript>,
-    /// Variables holding a function value.
     vars: HashMap<String, JavaScript>,
-    /// Object fields holding a function value: `obj.field = function() {...}`.
     object_fields: HashMap<(String, String), JavaScript>,
-    /// Function shapes resolved by variable name.
     var_shapes: HashMap<String, FunctionShape>,
-    /// Function shapes resolved by `(object, field)` access.
     object_field_shapes: HashMap<(String, String), FunctionShape>,
-    /// Function shapes indexed by their textual source (allows resolving
-    /// inline expressions like `(function () { return 1; })()`).
     shapes_by_source: HashMap<String, FunctionShape>,
-    /// Recursion guard for nested expansions (function inlining and `eval`).
     recursion: RecursionTracker,
 }
 
-/// A simple expression that may appear in a return statement or in the
-/// right-hand side of an assignment we are willing to constant-fold.
-///
-/// `Call` carries the structure of a nested function invocation so that
-/// `function b(y) { return a(y) + 3 }` can be resolved by recursing into
-/// `a`'s shape with `y` bound to the actual argument. The recursion is
-/// always gated by the rule's [`RecursionTracker`] so that mutually
-/// recursive shapes terminate at the depth cap rather than blowing the
-/// stack.
-///
-/// `Ternary` mirrors the JavaScript `cond ? a : b` operator. It lives at
-/// the expression level (it can be nested inside a `BinOp` or a `Call`
-/// argument) - the equivalent if/else **statement** form is captured by
-/// [`ReturnForm::Conditional`] instead.
 #[derive(Clone)]
 enum ReturnExpr {
     Literal(JavaScript),
@@ -134,24 +51,9 @@ enum ReturnExpr {
         then_branch: Box<ReturnExpr>,
         else_branch: Box<ReturnExpr>,
     },
-    /// `[a, b, c]` - captured at hoist time when no rule has reduced
-    /// the array yet. Each item is itself a `ReturnExpr` so an array of
-    /// resolvable expressions (`[fn(2), fn(3)]`) can still feed a
-    /// shape's environment.
     ArrayLiteral(Vec<ReturnExpr>),
 }
 
-/// Statement-level return shape. A function body either resolves to a
-/// single expression (`Plain`) or to a conditional branch (`Conditional`)
-/// for `if (cond) return X; else return Y;` patterns - including the
-/// implicit-else form `if (cond) return X; return Y;`. Nested else-if
-/// chains nest [`ReturnForm::Conditional`] recursively in the
-/// `else_branch` slot.
-///
-/// We only model patterns where every reachable code path ends in a
-/// `return` statement; any other shape (loops, throws, nested
-/// non-trivial control flow) leaves the function unmodelled and the
-/// call site unreduced.
 #[derive(Clone)]
 enum ReturnForm {
     Plain(ReturnExpr),
@@ -162,8 +64,6 @@ enum ReturnForm {
     },
 }
 
-/// An immutable description of a function's body, used to evaluate calls
-/// without mutating the function's AST.
 #[derive(Clone)]
 struct FunctionShape {
     params: Vec<String>,
@@ -177,11 +77,6 @@ enum EvalStep {
 }
 
 impl FnCall {
-    // -----------------------------------------------------------------
-    //  Subscript reduction (kept here so that array-access and call-site
-    //  reductions live in one place).
-    // -----------------------------------------------------------------
-
     fn reduce_array_subscript(node: &mut NodeMut<JavaScript>) {
         let view = node.view();
         if let (Some(array_node), Some(index_node)) = (view.child(0), view.child(2)) {
@@ -205,10 +100,6 @@ impl FnCall {
             }
         }
     }
-
-    // -----------------------------------------------------------------
-    //  Return-value extraction (legacy literal path).
-    // -----------------------------------------------------------------
 
     fn find_single_return_value(body: &Node<JavaScript>) -> Option<JavaScript> {
         let mut return_value: Option<JavaScript> = None;
@@ -247,9 +138,7 @@ impl FnCall {
                 | "function"
                 | "arrow_function"
                 | "generator_function_declaration"
-                | "generator_function" => {
-                    // skip nested functions, they own their returns
-                }
+                | "generator_function" => {}
                 "if_statement" | "while_statement" | "do_statement" | "for_statement"
                 | "for_in_statement" | "switch_statement" | "try_statement" => {
                     let mut inner_count = 0;
@@ -282,10 +171,6 @@ impl FnCall {
             }
         }
     }
-
-    // -----------------------------------------------------------------
-    //  Member access helpers.
-    // -----------------------------------------------------------------
 
     fn extract_member_access(node: &Node<JavaScript>) -> Option<(String, String)> {
         if node.kind() != "member_expression" {
@@ -336,18 +221,7 @@ impl FnCall {
         vec![]
     }
 
-    // -----------------------------------------------------------------
-    //  Function shape construction (the "backup" half of backup/restore).
-    //
-    //  The shape is a snapshot of the function's body that we can evaluate
-    //  any number of times without ever touching the original AST nodes.
-    //  The function's source therefore stays byte-identical after a call is
-    //  resolved - no separate restore step is needed because no mutation
-    //  ever happened in the first place.
-    // -----------------------------------------------------------------
-
     fn parse_return_expr(node: &Node<JavaScript>) -> Option<ReturnExpr> {
-        // Prefer reduced data when available (post-leave shape extraction).
         if let Some(data) = node.data() {
             return Some(ReturnExpr::Literal(data.clone()));
         }
@@ -358,15 +232,7 @@ impl FnCall {
                 Some(ReturnExpr::Symbol(name))
             }
 
-            // Raw literal nodes - used at hoist time (program-enter), before
-            // ParseInt / ParseString / ParseBool have run on the body. A
-            // hoisted shape that fails to capture `n * 2` because `2` is
-            // still a "number" token would be useless for forward calls.
-            //
-            // We mirror ParseInt's literal recognition (hex/octal/binary
-            // prefixes, plus underscore separators) so that obfuscated
-            // sources using `0x550` etc. inside a function body produce
-            // a complete shape at hoist time.
+            // Raw literals at hoist time, before ParseInt/ParseString have run.
             "number" => {
                 let raw = node.text().ok()?;
                 let cleaned = if !raw.starts_with('_') && !raw.ends_with('_') {
@@ -392,11 +258,6 @@ impl FnCall {
                 Some(ReturnExpr::Literal(JavaScript::Raw(Num(n))))
             }
             "string" => {
-                // Decode JS escapes here so a hoisted shape captures the
-                // semantically correct value even when the call site
-                // visits the call BEFORE `ParseString` has run on the
-                // function body. Reuses the same decoder as ParseString
-                // (single source of truth for `\xHH` / `\uHHHH` / etc.).
                 let text = node.text().ok()?;
                 if text.len() >= 2
                     && (text.starts_with('"') || text.starts_with('\''))
@@ -443,10 +304,6 @@ impl FnCall {
                     index: Box::new(Self::parse_return_expr(&index)?),
                 })
             }
-            // Nested function call inside a return / assignment expression.
-            // Only identifier-callees are captured here; member calls and
-            // dynamic callees fall through and disable shape resolution
-            // for the enclosing function (safe default).
             "call_expression" => {
                 let callee = node.named_child("function").or_else(|| node.child(0))?;
                 if callee.kind() != "identifier" {
@@ -463,11 +320,6 @@ impl FnCall {
                 }
                 Some(ReturnExpr::Call { name, args })
             }
-            // Issue #152 (review v2): unary `-x` and `+x` allow shape
-            // extraction to capture expressions like `function f(n) {
-            // return -n; }` and call sites such as `f(-2)`. We desugar
-            // `-x` into `0 - x` so the existing `BinOp` evaluator
-            // handles it without a new variant.
             "unary_expression" => {
                 let op_node = node.child(0)?;
                 let operand_node = node
@@ -485,10 +337,6 @@ impl FnCall {
                     _ => None,
                 }
             }
-            // Array literal at hoist time. We only capture it when none
-            // of the items is itself unresolvable - if any item fails to
-            // parse, the whole shape bails out and we fall back to the
-            // original AST.
             "array" => {
                 let mut items = Vec::new();
                 for child in node.iter() {
@@ -499,11 +347,6 @@ impl FnCall {
                 }
                 Some(ReturnExpr::ArrayLiteral(items))
             }
-            // `cond ? a : b` - the expression-level conditional. The
-            // statement-level `if (cond) return a; else return b;` form
-            // is captured by [`ReturnForm::Conditional`] separately, but
-            // both pieces share `eval_branch` semantics: evaluate the
-            // condition, take exactly one branch.
             "ternary_expression" => {
                 let cond = node
                     .named_child("condition")
@@ -614,16 +457,6 @@ impl FnCall {
         None
     }
 
-    /// Block-shape extractor with conditional-return support
-    /// (issue #152, review v2).
-    ///
-    /// Walks the named children of a `statement_block` and recognises:
-    ///   * straight-line steps (var/let/const declarations and bare
-    ///     identifier-target assignments) terminated by a `return`;
-    ///   * an `if` with an explicit `else` whose every branch returns;
-    ///   * the implicit-else pattern `if (cond) { return X; } return Y;`.
-    /// Anything else (loops, mid-block returns, side-effect calls) bails
-    /// out with `None` and the call is left unreduced.
     fn extract_block_shape(body: &Node<JavaScript>) -> Option<(Vec<EvalStep>, ReturnForm)> {
         let statements: Vec<Node<JavaScript>> = body
             .iter()
@@ -646,11 +479,7 @@ impl FnCall {
                     return Some((steps, form));
                 }
                 "if_statement" => {
-                    // Implicit-else: if (cond) {...return...} return Y;
-                    // Pattern requires the if to have NO alternative and
-                    // the immediately following statement to be a
-                    // `return`. The `if` and `return` must form the
-                    // tail of the block.
+                    // Implicit-else: `if (cond) {...return...} return Y;`
                     if stmt.named_child("alternative").is_none()
                         && i + 2 == statements.len()
                         && statements[i + 1].kind() == "return_statement"
@@ -670,8 +499,6 @@ impl FnCall {
                         ));
                     }
 
-                    // Otherwise the `if` must be the last statement and
-                    // have a full `else` branch.
                     if i + 1 != statements.len() {
                         return None;
                     }
@@ -689,11 +516,6 @@ impl FnCall {
         None
     }
 
-    /// Extract a [`ReturnForm`] from a single statement node:
-    /// a `return_statement`, a `statement_block` (recurse via
-    /// `extract_block_shape` but discard any steps - sub-blocks must not
-    /// leak local bindings into the parent shape), or an `if_statement`
-    /// (recurse via `extract_return_form_from_if`).
     fn extract_return_form(stmt: &Node<JavaScript>) -> Option<ReturnForm> {
         match stmt.kind() {
             "return_statement" => {
@@ -702,8 +524,6 @@ impl FnCall {
             "statement_block" => {
                 let (steps, form) = Self::extract_block_shape(stmt)?;
                 if !steps.is_empty() {
-                    // A sub-block introducing locals would shadow the
-                    // outer shape's environment - we don't model that.
                     return None;
                 }
                 Some(form)
@@ -721,7 +541,6 @@ impl FnCall {
         let then_form = Self::extract_return_form(&consequence)?;
 
         let alt = if_stmt.named_child("alternative")?;
-        // `alt` is an `else_clause`; find its first non-`else` named child.
         let inner = alt.iter().find(|c| c.kind() != "else")?;
         let else_form = Self::extract_return_form(&inner)?;
 
@@ -732,41 +551,12 @@ impl FnCall {
         })
     }
 
-    /// Last-resort fallback for bodies that don't match any structured
-    /// pattern: scan recursively for a single `return` and accept its
-    /// expression if exactly one is found. This keeps shape extraction
-    /// working for bodies like `function f(x) { console.log(x); return
-    /// 1; }` where the `console.log` statement is not modelled but the
-    /// return is unconditional.
     fn fallback_single_return_form(body: &Node<JavaScript>) -> Option<ReturnForm> {
         Self::find_single_return_expr(body).map(ReturnForm::Plain)
     }
 
-    /// Recognise the **self-redefining function** idiom widely used by
-    /// JavaScript obfuscators (e.g. obfuscator.io string-table
-    /// encoders). The body has the shape:
-    ///
-    /// ```js
-    /// function NAME() {
-    ///     [ steps... ]
-    ///     NAME = function () { ... return X; };
-    ///     return NAME();
-    /// }
-    /// ```
-    ///
-    /// At runtime the first call sets up the cached state, reassigns
-    /// itself to a closure that returns the cached value, and tail-calls
-    /// the new closure - so every call to `NAME()` produces the same
-    /// value. We model this statically by inlining the inner closure's
-    /// shape, prefixed with whatever steps the outer body performed
-    /// before the redefinition. The outer parameters must be empty
-    /// (otherwise the inner closure would not see them through the
-    /// closure-over-the-cached-state trick) and the inner closure
-    /// itself must be parameter-less.
-    ///
-    /// This is an additive pattern: it only kicks in when
-    /// `extract_block_shape` has already declined to produce a shape,
-    /// so it can never override more precise extractions.
+    // Recognise the obfuscator self-redefining idiom:
+    // `function NAME() { steps...; NAME = function () { ... }; return NAME(); }`.
     fn extract_self_redefining_shape(
         body: &Node<JavaScript>,
         fn_name: &str,
@@ -779,7 +569,6 @@ impl FnCall {
             return None;
         }
 
-        // Trailing `return NAME();`
         let last = statements.last().unwrap();
         if last.kind() != "return_statement" {
             return None;
@@ -800,7 +589,6 @@ impl FnCall {
             return None;
         }
 
-        // Penultimate `NAME = function () { ... };`
         let assign_stmt = &statements[statements.len() - 2];
         if assign_stmt.kind() != "expression_statement" {
             return None;
@@ -820,9 +608,6 @@ impl FnCall {
             return None;
         }
 
-        // The inner closure must be parameter-less; otherwise its
-        // semantics depend on call-site arguments that we can't bind
-        // without a much more invasive analysis.
         let inner_params = Self::extract_params(&rhs);
         if !inner_params.is_empty() {
             return None;
@@ -830,20 +615,14 @@ impl FnCall {
         let inner_body = rhs.named_child("body")?;
         let inner_form = if inner_body.kind() == "statement_block" {
             let (inner_steps, inner_form) = Self::extract_block_shape(&inner_body)?;
-            // The inner closure cannot itself add new steps (we have
-            // no environment to thread them through) - if it does, we
-            // bail.
             if !inner_steps.is_empty() {
                 return None;
             }
             inner_form
         } else {
-            // Arrow function with implicit return
             ReturnForm::Plain(Self::parse_return_expr(&inner_body)?)
         };
 
-        // Prefix steps come from every statement BEFORE the
-        // self-assignment. Each must be representable as a step.
         let mut steps: Vec<EvalStep> = Vec::new();
         for stmt in &statements[..statements.len() - 2] {
             let step = Self::parse_assignment_step(stmt)?;
@@ -867,9 +646,6 @@ impl FnCall {
         }
 
         let params = Self::extract_params(function_node);
-        // Identifier name is needed to recognise the self-redefining
-        // pattern - anonymous function expressions can't be detected
-        // because the name slot is empty.
         let fn_name: Option<String> = function_node
             .named_child("name")
             .and_then(|n| n.text().ok().map(|s| s.to_string()));
@@ -883,13 +659,11 @@ impl FnCall {
                     && let Some((steps, form)) =
                         Self::extract_self_redefining_shape(&body, name)
                 {
-                    // Common JS-obfuscator string-table pattern.
                     (steps, Some(form))
                 } else {
                     (vec![], Self::fallback_single_return_form(&body))
                 }
             } else {
-                // Arrow-function expression body: implicit return.
                 (
                     vec![],
                     Self::parse_return_expr(&body).map(ReturnForm::Plain),
@@ -918,16 +692,6 @@ impl FnCall {
         args
     }
 
-    /// Evaluate a [`ReturnExpr`] in the given environment.
-    ///
-    /// `shapes` provides the lookup table for nested [`ReturnExpr::Call`]
-    /// resolution. `recursion` tracks the depth so that mutually recursive
-    /// shapes (issue #152 example 3) terminate at the cap rather than
-    /// overflowing the stack. The two parameters are explicit (rather
-    /// than `&mut self`) so callers can hold an immutable borrow on
-    /// `self.var_shapes` and a mutable borrow on `self.recursion`
-    /// simultaneously - a partial-borrow split that is rejected through
-    /// `&mut self`.
     fn eval_return_expr(
         expr: &ReturnExpr,
         env: &HashMap<String, JavaScript>,
@@ -938,12 +702,6 @@ impl FnCall {
             ReturnExpr::Literal(value) => Some(value.clone()),
             ReturnExpr::Symbol(name) => env.get(name).cloned(),
             ReturnExpr::BinOp { op, left, right } => {
-                // Logical operators need short-circuit semantics: we
-                // must NOT evaluate the right operand when the left
-                // already determines the result. This matters for
-                // shape recursion - `n == 0 ? 1 : n * f(n - 1)` written
-                // as `(n == 0) || expensive` would otherwise blow the
-                // recursion budget on the trivially-false branch.
                 if op == "&&" || op == "||" {
                     let lhs = Self::eval_return_expr(left, env, shapes, recursion)?;
                     let lhs_bool = match &lhs {
@@ -978,19 +736,6 @@ impl FnCall {
                     _ => None,
                 }
             }
-            // Issue #152 (review feedback): nested call resolution.
-            //
-            // We look the callee up in `shapes`, evaluate every argument
-            // against the *current* environment (so callers can pass
-            // expressions, not just literals), build a fresh environment
-            // bound to the callee's parameters, and recurse into
-            // `eval_shape_with_env`. The recursion is bracketed by
-            // bump/unbump so that:
-            //   - any path through the recursive call (Some, None, deeper
-            //     bumps that fail) decrements the counter exactly once;
-            //   - a depth-cap miss at any level returns `None` cleanly,
-            //     leaving the call expression unreduced rather than
-            //     panicking.
             ReturnExpr::Call { name, args } => {
                 let callee_shape = shapes.get(name)?;
                 if callee_shape.params.len() != args.len() {
@@ -1037,10 +782,6 @@ impl FnCall {
         }
     }
 
-    /// Pure operator dispatch. Kept separate from `eval_return_expr` so
-    /// that the operand-evaluation strategy (eager vs short-circuit)
-    /// stays in one place. Returns `None` for any operator/operand-type
-    /// combination we don't model statically.
     fn eval_binop(op: &str, lhs: &JavaScript, rhs: &JavaScript) -> Option<JavaScript> {
         match (lhs, rhs) {
             (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => match op {
@@ -1076,10 +817,6 @@ impl FnCall {
         }
     }
 
-    /// Evaluate a [`ReturnForm`] - either a plain expression or a
-    /// statement-level conditional. The conditional dispatches to the
-    /// branch its `condition` selects, just like
-    /// [`ReturnExpr::Ternary`] does at the expression level.
     fn eval_return_form(
         form: &ReturnForm,
         env: &HashMap<String, JavaScript>,
@@ -1149,10 +886,6 @@ impl FnCall {
             _ => None,
         }
     }
-
-    // -----------------------------------------------------------------
-    //  Program-level shape pre-pass for forward references.
-    // -----------------------------------------------------------------
 
     fn find_program_node<'a>(node: &Node<'a, JavaScript>) -> Option<Node<'a, JavaScript>> {
         let mut current = node.parent();
@@ -1249,7 +982,6 @@ impl FnCall {
         }
 
         let mut current = name;
-        // Bound the alias chain at the same depth as the recursion tracker.
         for _ in 0..crate::js::recursion::DEFAULT_MAX_RECURSION_DEPTH {
             let next = aliases.get(current)?;
             if let Some(shape) = var_shapes.get(next) {
@@ -1309,11 +1041,6 @@ impl FnCall {
         let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
         Self::eval_shape(&shape, call_node, &var_shapes, recursion)
     }
-
-    // -----------------------------------------------------------------
-    //  Source-text fallbacks (used by a handful of edge-case tests where
-    //  the function declaration was emitted in a self-modifying form).
-    // -----------------------------------------------------------------
 
     fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
         let return_idx = source.find("return")?;
@@ -1493,29 +1220,10 @@ impl FnCall {
             .or_else(|| Self::parse_simple_return_literal(&function_source))
     }
 
-    // -----------------------------------------------------------------
-    //  Eval handling.
-    //
-    //  Implements the issue #152 contract:
-    //    * `eval(literalString)` reduces to the value of the **last**
-    //      statement in the parsed string.
-    //    * The eval source itself is evaluated through a literal-only
-    //      pipeline (ParseInt, ParseString, AddInt, Concat, ...) - we never
-    //      reuse FnCall on the sub-tree, which guarantees that an eval
-    //      cannot trigger another eval expansion via mutual recursion.
-    //    * The whole expansion is gated by [`RecursionTracker`] so that
-    //      adversarial inputs hit the depth cap (16) instead of looping.
-    // -----------------------------------------------------------------
-
     fn is_eval_callee(callee: &Node<JavaScript>) -> bool {
         callee.kind() == "identifier" && callee.text().map(|t| t == "eval").unwrap_or(false)
     }
 
-    /// Extract a string source from an `eval()` argument node.
-    ///
-    /// Accepts both already-inferred `Raw(Str(...))` data and literal
-    /// `"..."`/`'...'` source text (the latter is used when ParseString has
-    /// not run yet on the call site).
     fn eval_source_from_argument(arg: &Node<JavaScript>) -> Option<String> {
         if let Some(JavaScript::Raw(Str(s))) = arg.data() {
             return Some(s.clone());
@@ -1536,11 +1244,6 @@ impl FnCall {
         None
     }
 
-    /// Find the value of the last statement in a parsed eval program.
-    ///
-    /// This deliberately ignores intermediate expression statements (their
-    /// side effects are conservatively forgotten by the [`crate::js::var::Var`]
-    /// rule, which clears any local that an `eval(...)` call could touch).
     fn last_statement_value(program: &Node<JavaScript>) -> Option<JavaScript> {
         let mut last_stmt: Option<Node<JavaScript>> = None;
         for child in program.iter() {
@@ -1565,12 +1268,7 @@ impl FnCall {
                 }
                 None
             }
-            "variable_declaration" | "lexical_declaration" => {
-                // declarations have no value in JS (they yield undefined),
-                // but minusone has no Undefined-as-value in this context, so
-                // we simply refuse to reduce.
-                None
-            }
+            "variable_declaration" | "lexical_declaration" => None,
             "return_statement" => {
                 for i in 0..stmt.child_count() {
                     if let Some(c) = stmt.child(i)
@@ -1586,21 +1284,10 @@ impl FnCall {
         }
     }
 
-    /// Run the literal-reduction pipeline on a fresh sub-tree built from
-    /// the eval source string and return the value of the last statement.
     fn evaluate_eval_source(source: &str) -> Option<JavaScript> {
         let mut tree = build_javascript_tree(source).ok()?;
 
-        // The pipeline below is deliberately narrow: only rules that infer
-        // values out of literal tokens. We exclude [`crate::js::functions::fncall::FnCall`]
-        // and [`crate::js::var::Var`] because:
-        //   * FnCall would re-enter this same function when the eval source
-        //     contains another `eval(...)`. The recursion tracker is the
-        //     hard safety net but the cleaner contract is "eval does not
-        //     trigger function inlining inside its own sub-tree".
-        //   * Var depends on a scope manager that lives outside this
-        //     sub-tree; running it without state would forget more than it
-        //     should.
+        // Literal-only pipeline; no FnCall/Var so eval can't trigger nested fn inlining.
         tree.apply_mut(&mut (
             ParseInt::default(),
             ParseString::default(),
@@ -1631,8 +1318,6 @@ impl FnCall {
 
         let source = Self::eval_source_from_argument(&positional[0])?;
 
-        // Reserve a recursion slot via the node-driven helper so the depth
-        // counter is decremented automatically when the closure returns.
         call_node
             .within_recursion(&mut self.recursion, |_| {
                 Self::evaluate_eval_source(&source)
@@ -1640,17 +1325,6 @@ impl FnCall {
             .flatten()
     }
 
-    // -----------------------------------------------------------------
-    //  Function-declaration hoisting (issue #152, review feedback).
-    // -----------------------------------------------------------------
-
-    /// Register a top-level `function_declaration` (or generator) shape
-    /// into `var_shapes` so that forward calls (call before declaration in
-    /// source order) and nested calls inside other functions can resolve.
-    ///
-    /// Only top-level declarations are hoisted. Inner declarations are
-    /// handled by the per-node `leave()` path; hoisting them too would
-    /// leak inner-scope functions into the program scope.
     fn hoist_function_declaration(
         node: &Node<JavaScript>,
         var_shapes: &mut HashMap<String, FunctionShape>,
@@ -1675,10 +1349,6 @@ impl FnCall {
         }
     }
 
-    // -----------------------------------------------------------------
-    //  Recursion-aware helpers used from `leave()` to expand a call site.
-    // -----------------------------------------------------------------
-
     fn try_eval_shape(
         &mut self,
         shape: &FunctionShape,
@@ -1687,8 +1357,6 @@ impl FnCall {
         if !self.recursion.bump() {
             return None;
         }
-        // Disjoint-field borrow: `&self.var_shapes` and `&mut self.recursion`
-        // are different fields, the borrow checker accepts the split.
         let result = Self::eval_shape(shape, view, &self.var_shapes, &mut self.recursion);
         self.recursion.unbump();
         result
@@ -1759,21 +1427,7 @@ impl<'a> RuleMut<'a> for FnCall {
             self.shapes_by_source.clear();
             self.recursion.reset();
 
-            // Issue #152 (review feedback): JavaScript hoists every
-            // top-level `function_declaration` to the top of its
-            // enclosing scope. We pre-register their shapes here so
-            // that calls appearing earlier in source order than their
-            // declaration can still be resolved. The shapes are built
-            // from the *raw* tree (no rule has visited the descendants
-            // yet) - `parse_return_expr` therefore handles raw literal
-            // tokens (`number`, `string`, `true`, `false`) directly,
-            // not just nodes that have been reduced.
-            //
-            // Inner function declarations are handled by the per-node
-            // `leave()` path, where they will overwrite the hoisted
-            // shape with one built from a fully-reduced body. We only
-            // hoist top-level declarations here to avoid leaking
-            // inner functions into the program scope.
+            // Hoist top-level function_declarations so forward calls resolve.
             for child in view.iter() {
                 Self::hoist_function_declaration(&child, &mut self.var_shapes);
             }
@@ -1815,12 +1469,6 @@ impl<'a> RuleMut<'a> for FnCall {
                             && let Ok(rhs_name) = value_node.text()
                             && let Some(shape) = self.var_shapes.get(rhs_name).cloned()
                         {
-                            // Alias to a (possibly hoisted) function shape:
-                            //   `var alias = some_fn;` followed by
-                            //   `alias(...)`. Without this branch the
-                            //   `assignment_expression` form (`alias = fn`)
-                            //   would resolve but `var` initialisation
-                            //   would not - see issue #152 review v3.
                             self.var_shapes.insert(name.clone(), shape);
                         } else if let Some(value) = value.as_ref()
                             && let Some(shape) = self.shape_from_value(value)
@@ -1840,11 +1488,6 @@ impl<'a> RuleMut<'a> for FnCall {
                 {
                     let fn_name = name_node.text()?.to_string();
 
-                    // Issue #152: store a shape for parametric function
-                    // declarations too. The shape evaluation engine never
-                    // mutates the function body, so storing the shape is
-                    // safe and unlocks `function f(a) { return a + 1 }`
-                    // style calls.
                     if let Some(shape) = Self::function_shape_from_node(&view) {
                         self.var_shapes.insert(fn_name.clone(), shape);
                     }
@@ -1935,9 +1578,6 @@ impl<'a> RuleMut<'a> for FnCall {
             }
             "call_expression" => {
                 if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
-                    // 1) eval(...) - special-cased before any function
-                    //    inlining so that an eval call always goes through
-                    //    the eval pipeline.
                     if Self::is_eval_callee(&func_node)
                         && let Some(value) = self.try_resolve_eval(&view)
                     {
@@ -2120,10 +1760,6 @@ mod tests {
         );
     }
 
-    /// Issue #152: parametric function declarations are now resolved at the
-    /// call site by evaluating their shape with the actual arguments. The
-    /// function body itself is never rewritten - shape evaluation runs on
-    /// an in-memory environment, so the original source is preserved.
     #[test]
     fn test_fncall_resolves_param_dependent_return() {
         assert_eq!(
@@ -2148,11 +1784,6 @@ mod tests {
         );
     }
 
-    /// Issue #152 review v2: with statement-level conditional shape support,
-    /// `if (constant)` lets us statically pick a branch. Previously this
-    /// returned `test()` unreduced; the more accurate reduction takes the
-    /// `if (true)` then-branch and folds the call to `'a'`. The function
-    /// source is still preserved byte-for-byte.
     #[test]
     fn test_fncall_constant_conditional_resolves() {
         assert_eq!(

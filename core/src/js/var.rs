@@ -296,14 +296,8 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 };
 
-                // Issue #152: when an update expression mutates a variable
-                // that is non-local in the current scope and the expression
-                // sits inside a function declaration, we must NOT reduce
-                // the node. The function body is a snapshot of behaviour:
-                // collapsing `a++` to `1` here would silently rewrite the
-                // function's source, and the mutation cannot be propagated
-                // to the outer scope because the function has not been
-                // called yet.
+                // Skip update expressions on non-locals inside a function body
+                // - reducing them would rewrite the function source.
                 if matches!(
                     self.scope_manager.current().is_local(&var_name),
                     Some(false)
@@ -356,14 +350,7 @@ impl<'a> RuleMut<'a> for Var {
                         .forget(&var_name, node.is_ongoing_transaction());
                 }
             }
-            // Issue #152: an `eval(...)` call can mutate any variable in
-            // the surrounding scope. We don't statically model the
-            // mutation, so the only sound option is to forget every
-            // local before subsequent reads can propagate stale values.
-            // Without this, a sequence such as
-            //     let a = -1; eval('a++'); console.log(a);
-            // would incorrectly fold to `console.log(-1)` because Var
-            // still believes `a == -1`.
+            // `eval(...)` can mutate any local; forget them all to stay sound.
             "call_expression" => {
                 if let Some(func) = view.named_child("function").or_else(|| view.child(0))
                     && func.kind() == "identifier"
