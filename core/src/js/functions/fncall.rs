@@ -39,7 +39,7 @@
 
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::Value::{Num, Str};
+use crate::js::Value::{Bool, Num, Str};
 use crate::js::build_javascript_tree;
 use crate::js::forward::Forward;
 use crate::js::functions::function::function_value_from_node;
@@ -98,9 +98,15 @@ pub struct FnCall {
     recursion: RecursionTracker,
 }
 
-/// A simple, side-effect-free expression that may appear in a return
-/// statement or in the right-hand side of an assignment we are willing to
-/// constant-fold.
+/// A simple expression that may appear in a return statement or in the
+/// right-hand side of an assignment we are willing to constant-fold.
+///
+/// `Call` carries the structure of a nested function invocation so that
+/// `function b(y) { return a(y) + 3 }` can be resolved by recursing into
+/// `a`'s shape with `y` bound to the actual argument. The recursion is
+/// always gated by the rule's [`RecursionTracker`] so that mutually
+/// recursive shapes terminate at the depth cap rather than blowing the
+/// stack.
 #[derive(Clone)]
 enum ReturnExpr {
     Literal(JavaScript),
@@ -113,6 +119,10 @@ enum ReturnExpr {
     Subscript {
         array: Box<ReturnExpr>,
         index: Box<ReturnExpr>,
+    },
+    Call {
+        name: String,
+        args: Vec<ReturnExpr>,
     },
 }
 
@@ -301,6 +311,7 @@ impl FnCall {
     // -----------------------------------------------------------------
 
     fn parse_return_expr(node: &Node<JavaScript>) -> Option<ReturnExpr> {
+        // Prefer reduced data when available (post-leave shape extraction).
         if let Some(data) = node.data() {
             return Some(ReturnExpr::Literal(data.clone()));
         }
@@ -310,6 +321,31 @@ impl FnCall {
                 let name = node.text().ok()?.to_string();
                 Some(ReturnExpr::Symbol(name))
             }
+
+            // Raw literal nodes - used at hoist time (program-enter), before
+            // ParseInt / ParseString / ParseBool have run on the body. A
+            // hoisted shape that fails to capture `n * 2` because `2` is
+            // still a "number" token would be useless for forward calls.
+            "number" => {
+                let n = node.text().ok()?.parse::<f64>().ok()?;
+                Some(ReturnExpr::Literal(JavaScript::Raw(Num(n))))
+            }
+            "string" => {
+                let text = node.text().ok()?;
+                if text.len() >= 2
+                    && (text.starts_with('"') || text.starts_with('\''))
+                    && text.ends_with(text.chars().next().unwrap())
+                {
+                    Some(ReturnExpr::Literal(JavaScript::Raw(Str(
+                        text[1..text.len() - 1].to_string(),
+                    ))))
+                } else {
+                    None
+                }
+            }
+            "true" => Some(ReturnExpr::Literal(JavaScript::Raw(Bool(true)))),
+            "false" => Some(ReturnExpr::Literal(JavaScript::Raw(Bool(false)))),
+
             "parenthesized_expression" => {
                 for child in node.iter() {
                     if child.kind() != "("
@@ -340,6 +376,26 @@ impl FnCall {
                     array: Box::new(Self::parse_return_expr(&array)?),
                     index: Box::new(Self::parse_return_expr(&index)?),
                 })
+            }
+            // Nested function call inside a return / assignment expression.
+            // Only identifier-callees are captured here; member calls and
+            // dynamic callees fall through and disable shape resolution
+            // for the enclosing function (safe default).
+            "call_expression" => {
+                let callee = node.named_child("function").or_else(|| node.child(0))?;
+                if callee.kind() != "identifier" {
+                    return None;
+                }
+                let name = callee.text().ok()?.to_string();
+                let args_node = node.named_child("arguments")?;
+                let mut args = Vec::new();
+                for child in args_node.iter() {
+                    if matches!(child.kind(), "(" | ")" | ",") {
+                        continue;
+                    }
+                    args.push(Self::parse_return_expr(&child)?);
+                }
+                Some(ReturnExpr::Call { name, args })
             }
             _ => None,
         }
@@ -513,16 +569,28 @@ impl FnCall {
         args
     }
 
+    /// Evaluate a [`ReturnExpr`] in the given environment.
+    ///
+    /// `shapes` provides the lookup table for nested [`ReturnExpr::Call`]
+    /// resolution. `recursion` tracks the depth so that mutually recursive
+    /// shapes (issue #152 example 3) terminate at the cap rather than
+    /// overflowing the stack. The two parameters are explicit (rather
+    /// than `&mut self`) so callers can hold an immutable borrow on
+    /// `self.var_shapes` and a mutable borrow on `self.recursion`
+    /// simultaneously - a partial-borrow split that is rejected through
+    /// `&mut self`.
     fn eval_return_expr(
         expr: &ReturnExpr,
         env: &HashMap<String, JavaScript>,
+        shapes: &HashMap<String, FunctionShape>,
+        recursion: &mut RecursionTracker,
     ) -> Option<JavaScript> {
         match expr {
             ReturnExpr::Literal(value) => Some(value.clone()),
             ReturnExpr::Symbol(name) => env.get(name).cloned(),
             ReturnExpr::BinOp { op, left, right } => {
-                let lhs = Self::eval_return_expr(left, env)?;
-                let rhs = Self::eval_return_expr(right, env)?;
+                let lhs = Self::eval_return_expr(left, env, shapes, recursion)?;
+                let rhs = Self::eval_return_expr(right, env, shapes, recursion)?;
                 match (lhs, rhs) {
                     (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => {
                         let result = match op.as_str() {
@@ -534,12 +602,15 @@ impl FnCall {
                         };
                         Some(JavaScript::Raw(Num(result)))
                     }
+                    (JavaScript::Raw(Str(a)), JavaScript::Raw(Str(b))) if op == "+" => {
+                        Some(JavaScript::Raw(Str(format!("{a}{b}"))))
+                    }
                     _ => None,
                 }
             }
             ReturnExpr::Subscript { array, index } => {
-                let array = Self::eval_return_expr(array, env)?;
-                let index = Self::eval_return_expr(index, env)?;
+                let array = Self::eval_return_expr(array, env, shapes, recursion)?;
+                let index = Self::eval_return_expr(index, env, shapes, recursion)?;
 
                 match (array, index) {
                     (JavaScript::Array(arr), JavaScript::Raw(Num(i))) if i >= 0.0 => {
@@ -552,10 +623,67 @@ impl FnCall {
                     _ => None,
                 }
             }
+            // Issue #152 (review feedback): nested call resolution.
+            //
+            // We look the callee up in `shapes`, evaluate every argument
+            // against the *current* environment (so callers can pass
+            // expressions, not just literals), build a fresh environment
+            // bound to the callee's parameters, and recurse into
+            // `eval_shape_with_env`. The recursion is bracketed by
+            // bump/unbump so that:
+            //   - any path through the recursive call (Some, None, deeper
+            //     bumps that fail) decrements the counter exactly once;
+            //   - a depth-cap miss at any level returns `None` cleanly,
+            //     leaving the call expression unreduced rather than
+            //     panicking.
+            ReturnExpr::Call { name, args } => {
+                let callee_shape = shapes.get(name)?;
+                if callee_shape.params.len() != args.len() {
+                    return None;
+                }
+
+                let mut sub_env: HashMap<String, JavaScript> = HashMap::new();
+                for (param, arg_expr) in callee_shape.params.iter().zip(args.iter()) {
+                    let value = Self::eval_return_expr(arg_expr, env, shapes, recursion)?;
+                    sub_env.insert(param.clone(), value);
+                }
+
+                if !recursion.bump() {
+                    return None;
+                }
+                let result =
+                    Self::eval_shape_with_env(callee_shape, sub_env, shapes, recursion);
+                recursion.unbump();
+                result
+            }
         }
     }
 
-    fn eval_shape(shape: &FunctionShape, call_node: &Node<JavaScript>) -> Option<JavaScript> {
+    fn eval_shape_with_env(
+        shape: &FunctionShape,
+        mut env: HashMap<String, JavaScript>,
+        shapes: &HashMap<String, FunctionShape>,
+        recursion: &mut RecursionTracker,
+    ) -> Option<JavaScript> {
+        for step in &shape.steps {
+            match step {
+                EvalStep::Assign { name, expr } => {
+                    let value = Self::eval_return_expr(expr, &env, shapes, recursion)?;
+                    env.insert(name.clone(), value);
+                }
+            }
+        }
+
+        let expr = shape.return_expr.as_ref()?;
+        Self::eval_return_expr(expr, &env, shapes, recursion)
+    }
+
+    fn eval_shape(
+        shape: &FunctionShape,
+        call_node: &Node<JavaScript>,
+        shapes: &HashMap<String, FunctionShape>,
+        recursion: &mut RecursionTracker,
+    ) -> Option<JavaScript> {
         let args = Self::extract_call_args(call_node);
         let mut env: HashMap<String, JavaScript> = HashMap::new();
         for (idx, param) in shape.params.iter().enumerate() {
@@ -564,17 +692,7 @@ impl FnCall {
             }
         }
 
-        for step in &shape.steps {
-            match step {
-                EvalStep::Assign { name, expr } => {
-                    let value = Self::eval_return_expr(expr, &env)?;
-                    env.insert(name.clone(), value);
-                }
-            }
-        }
-
-        let expr = shape.return_expr.as_ref()?;
-        Self::eval_return_expr(expr, &env)
+        Self::eval_shape_with_env(shape, env, shapes, recursion)
     }
 
     fn shape_from_value(&self, value: &JavaScript) -> Option<FunctionShape> {
@@ -699,6 +817,7 @@ impl FnCall {
         call_node: &Node<'a, JavaScript>,
         base: &str,
         key: &str,
+        recursion: &mut RecursionTracker,
     ) -> Option<JavaScript> {
         let program = Self::find_program_node(call_node)?;
         let mut var_shapes = HashMap::new();
@@ -714,12 +833,13 @@ impl FnCall {
         );
 
         let shape = object_field_shapes.get(&(base.to_string(), key.to_string()))?;
-        Self::eval_shape(shape, call_node)
+        Self::eval_shape(shape, call_node, &var_shapes, recursion)
     }
 
     fn resolve_identifier_call_semantic_fallback<'a>(
         call_node: &Node<'a, JavaScript>,
         fn_name: &str,
+        recursion: &mut RecursionTracker,
     ) -> Option<JavaScript> {
         let program = Self::find_program_node(call_node)?;
         let mut var_shapes = HashMap::new();
@@ -739,7 +859,7 @@ impl FnCall {
         }
 
         let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
-        Self::eval_shape(&shape, call_node)
+        Self::eval_shape(&shape, call_node, &var_shapes, recursion)
     }
 
     // -----------------------------------------------------------------
@@ -1073,6 +1193,41 @@ impl FnCall {
     }
 
     // -----------------------------------------------------------------
+    //  Function-declaration hoisting (issue #152, review feedback).
+    // -----------------------------------------------------------------
+
+    /// Register a top-level `function_declaration` (or generator) shape
+    /// into `var_shapes` so that forward calls (call before declaration in
+    /// source order) and nested calls inside other functions can resolve.
+    ///
+    /// Only top-level declarations are hoisted. Inner declarations are
+    /// handled by the per-node `leave()` path; hoisting them too would
+    /// leak inner-scope functions into the program scope.
+    fn hoist_function_declaration(
+        node: &Node<JavaScript>,
+        var_shapes: &mut HashMap<String, FunctionShape>,
+    ) {
+        if !matches!(
+            node.kind(),
+            "function_declaration" | "generator_function_declaration"
+        ) {
+            return;
+        }
+        let Some(name_node) = node.named_child("name") else {
+            return;
+        };
+        if name_node.kind() != "identifier" {
+            return;
+        }
+        let Ok(name) = name_node.text() else {
+            return;
+        };
+        if let Some(shape) = Self::function_shape_from_node(node) {
+            var_shapes.insert(name.to_string(), shape);
+        }
+    }
+
+    // -----------------------------------------------------------------
     //  Recursion-aware helpers used from `leave()` to expand a call site.
     // -----------------------------------------------------------------
 
@@ -1081,8 +1236,14 @@ impl FnCall {
         shape: &FunctionShape,
         view: &Node<JavaScript>,
     ) -> Option<JavaScript> {
-        view.within_recursion(&mut self.recursion, |node| Self::eval_shape(shape, node))
-            .flatten()
+        if !self.recursion.bump() {
+            return None;
+        }
+        // Disjoint-field borrow: `&self.var_shapes` and `&mut self.recursion`
+        // are different fields, the borrow checker accepts the split.
+        let result = Self::eval_shape(shape, view, &self.var_shapes, &mut self.recursion);
+        self.recursion.unbump();
+        result
     }
 
     fn try_resolve_identifier_call(
@@ -1090,10 +1251,16 @@ impl FnCall {
         view: &Node<JavaScript>,
         fn_name: &str,
     ) -> Option<JavaScript> {
-        view.within_recursion(&mut self.recursion, |node| {
-            Self::resolve_identifier_call_semantic_fallback(node, fn_name)
-        })
-        .flatten()
+        if !self.recursion.bump() {
+            return None;
+        }
+        let result = Self::resolve_identifier_call_semantic_fallback(
+            view,
+            fn_name,
+            &mut self.recursion,
+        );
+        self.recursion.unbump();
+        result
     }
 
     fn try_resolve_member_call(
@@ -1102,10 +1269,17 @@ impl FnCall {
         base: &str,
         key: &str,
     ) -> Option<JavaScript> {
-        view.within_recursion(&mut self.recursion, |node| {
-            Self::resolve_member_call_semantic_fallback(node, base, key)
-        })
-        .flatten()
+        if !self.recursion.bump() {
+            return None;
+        }
+        let result = Self::resolve_member_call_semantic_fallback(
+            view,
+            base,
+            key,
+            &mut self.recursion,
+        );
+        self.recursion.unbump();
+        result
     }
 
     fn try_resolve_member_call_from_source(
@@ -1136,6 +1310,25 @@ impl<'a> RuleMut<'a> for FnCall {
             self.object_field_shapes.clear();
             self.shapes_by_source.clear();
             self.recursion.reset();
+
+            // Issue #152 (review feedback): JavaScript hoists every
+            // top-level `function_declaration` to the top of its
+            // enclosing scope. We pre-register their shapes here so
+            // that calls appearing earlier in source order than their
+            // declaration can still be resolved. The shapes are built
+            // from the *raw* tree (no rule has visited the descendants
+            // yet) - `parse_return_expr` therefore handles raw literal
+            // tokens (`number`, `string`, `true`, `false`) directly,
+            // not just nodes that have been reduced.
+            //
+            // Inner function declarations are handled by the per-node
+            // `leave()` path, where they will overwrite the hoisted
+            // shape with one built from a fully-reduced body. We only
+            // hoist top-level declarations here to avoid leaking
+            // inner functions into the program scope.
+            for child in view.iter() {
+                Self::hoist_function_declaration(&child, &mut self.var_shapes);
+            }
         }
         Ok(())
     }
@@ -1737,6 +1930,134 @@ mod tests {
         assert!(
             output.contains("function edit() { a++ }"),
             "function source mutated by call: {output}",
+        );
+    }
+
+    // ---------- Issue #152 review feedback: nested calls and hoisting ----------
+
+    /// UwUDev's primary nested-call example from PR #162 review:
+    /// `b(y)` returns `a(y) + 3`, and the resolver must descend into `a`'s
+    /// shape with `y` bound to `2` to produce `b(2) = 4 + 3 = 7`. Both
+    /// function bodies must remain untouched.
+    #[test]
+    fn test_fncall_nested_call_resolution() {
+        let output = deobfuscate(
+            "function a(x) { return x * x; } function b(y) { return a(y) + 3; } console.log(a(2)); console.log(b(2));",
+        );
+        assert!(
+            output.contains("function a(x) { return x * x; }"),
+            "function a source mutated: {output}",
+        );
+        assert!(
+            output.contains("function b(y) { return a(y) + 3; }"),
+            "function b source mutated: {output}",
+        );
+        assert!(
+            output.contains("console.log(4)"),
+            "a(2) did not reduce to 4: {output}",
+        );
+        assert!(
+            output.contains("console.log(7)"),
+            "b(2) did not reduce to a(2)+3=7: {output}",
+        );
+    }
+
+    /// Two-level deep nested call: `c(2) = b(2) + 1 = (a(2)*2) + 1 = 9`.
+    /// Each level must consume one recursion slot; well under the cap.
+    #[test]
+    fn test_fncall_double_nested_call_resolution() {
+        let output = deobfuscate(
+            "function a(n) { return n + 1; } \
+             function b(n) { return a(n) * 2; } \
+             function c(n) { return b(n) + 1; } \
+             console.log(c(2));",
+        );
+        // c(2) = b(2) + 1 = (a(2)*2) + 1 = (3*2) + 1 = 7
+        assert!(
+            output.contains("console.log(7)"),
+            "deeply nested call did not resolve: {output}",
+        );
+    }
+
+    /// UwUDev's hoisting example from PR #162 review: `square(5)` is
+    /// called *before* its declaration in source order. JavaScript hoists
+    /// `function_declaration` to the top of the enclosing scope; minusone
+    /// must do the same to resolve the forward call.
+    #[test]
+    fn test_fncall_hoisting_function_declaration() {
+        let output = deobfuscate(
+            "console.log(square(5)); function square(x) { return x * x; }",
+        );
+        assert!(
+            output.contains("console.log(25)"),
+            "forward call to hoisted function not resolved: {output}",
+        );
+        assert!(
+            output.contains("function square(x) { return x * x; }"),
+            "function source mutated by hoisting: {output}",
+        );
+    }
+
+    /// Hoisting combined with nested calls: a forward call to `outer`
+    /// resolves through `inner` even though `inner` itself is declared
+    /// after `outer`.
+    #[test]
+    fn test_fncall_hoisting_with_nested_call() {
+        let output = deobfuscate(
+            "console.log(outer(3)); \
+             function outer(n) { return inner(n) + 1; } \
+             function inner(n) { return n * 2; }",
+        );
+        // outer(3) = inner(3) + 1 = 6 + 1 = 7
+        assert!(
+            output.contains("console.log(7)"),
+            "forward call with nested resolution failed: {output}",
+        );
+    }
+
+    /// UwUDev's mutual-recursion-with-conditional example from PR #162
+    /// review. Conditional shapes are intentionally not modelled (would
+    /// require a much larger refactor); the contract here is "no panic,
+    /// no infinite loop, function sources preserved". The depth cap is
+    /// the safety net even though shape extraction returns `None` for
+    /// bodies containing an `if_statement` and the call therefore never
+    /// actually starts recursing in this case.
+    #[test]
+    fn test_fncall_mutual_recursion_with_conditional_does_not_panic() {
+        let output = deobfuscate(
+            "console.log(b(2, 3)); \
+             function a(x, r) { if (r == 0) { return x; } else { return b(x * x, r - 1); } } \
+             function b(y, r) { if (r == 0) { return y; } else { return a(y * y, r - 1); } }",
+        );
+        assert!(
+            output.contains("function a(x, r)"),
+            "function a source mutated: {output}",
+        );
+        assert!(
+            output.contains("function b(y, r)"),
+            "function b source mutated: {output}",
+        );
+        // The call did not reduce (acceptable - conditional shapes are
+        // out of scope) but the deobfuscator must not have looped.
+        assert!(
+            output.contains("b(2, 3)"),
+            "call expression unexpectedly removed: {output}",
+        );
+    }
+
+    /// Self-recursive function without a base case (mutual or otherwise):
+    /// the depth cap MUST stop the expansion and the deobfuscator MUST
+    /// return without panicking.
+    #[test]
+    fn test_fncall_self_recursive_in_return_terminates() {
+        let output = deobfuscate(
+            "function loop(n) { return loop(n + 1); } var stop = 'sentinel'; var x = loop(0);",
+        );
+        // 'sentinel' must still be present - we must not have looped
+        // forever before reaching the second statement.
+        assert!(
+            output.contains("'sentinel'"),
+            "deobfuscation did not terminate: {output}",
         );
     }
 }

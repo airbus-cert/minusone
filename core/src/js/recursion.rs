@@ -94,6 +94,37 @@ impl RecursionTracker {
     pub fn reset(&mut self) {
         self.depth = 0;
     }
+
+    /// Manual recursion bracket - returns `true` if the depth was bumped,
+    /// `false` if the cap has been reached. The caller MUST balance every
+    /// successful `bump` with exactly one [`RecursionTracker::unbump`].
+    ///
+    /// This pair is the imperative counterpart to [`RecursionTracker::enter`]
+    /// for the cases where the borrow checker rejects the RAII guard - in
+    /// particular when the recursive callee needs `&mut self` access to the
+    /// owning rule (the guard would otherwise hold an exclusive borrow on
+    /// the tracker for the duration of the recursive call).
+    ///
+    /// Prefer [`RecursionTracker::enter`] whenever the recursive scope is a
+    /// closure that does not need to mutate the rule's other fields.
+    pub fn bump(&mut self) -> bool {
+        if self.depth >= self.max_depth {
+            log::trace!(
+                "RecursionTracker: depth limit {} reached, refusing to recurse",
+                self.max_depth
+            );
+            return false;
+        }
+        self.depth += 1;
+        true
+    }
+
+    /// Counterpart of [`RecursionTracker::bump`]. Saturating-decrements the
+    /// counter so that an extra `unbump` on a zero counter is a no-op
+    /// rather than a panic.
+    pub fn unbump(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+    }
 }
 
 impl Default for RecursionTracker {
@@ -182,6 +213,23 @@ mod tests {
     fn test_default_max_depth_is_sixteen() {
         assert_eq!(DEFAULT_MAX_RECURSION_DEPTH, 16);
         assert_eq!(RecursionTracker::default().max_depth(), 16);
+    }
+
+    #[test]
+    fn test_bump_unbump_roundtrip() {
+        let mut tracker = RecursionTracker::new(3);
+        assert!(tracker.bump());
+        assert!(tracker.bump());
+        assert!(tracker.bump());
+        assert!(!tracker.bump()); // cap hit
+        tracker.unbump();
+        assert!(tracker.bump()); // freed slot
+        tracker.unbump();
+        tracker.unbump();
+        tracker.unbump();
+        // saturating: extra unbump is a no-op
+        tracker.unbump();
+        assert_eq!(tracker.depth(), 0);
     }
 
     #[test]
