@@ -296,6 +296,31 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 };
 
+                // Issue #152: when an update expression mutates a variable
+                // that is non-local in the current scope and the expression
+                // sits inside a function declaration, we must NOT reduce
+                // the node. The function body is a snapshot of behaviour:
+                // collapsing `a++` to `1` here would silently rewrite the
+                // function's source, and the mutation cannot be propagated
+                // to the outer scope because the function has not been
+                // called yet.
+                if matches!(
+                    self.scope_manager.current().is_local(&var_name),
+                    Some(false)
+                ) && view
+                    .get_parent_of_types(vec![
+                        "function_declaration",
+                        "function",
+                        "arrow_function",
+                        "method_definition",
+                        "generator_function_declaration",
+                        "generator_function",
+                    ])
+                    .is_some()
+                {
+                    return Ok(());
+                }
+
                 if let Some(current_value) =
                     self.scope_manager.current().get_var(&var_name).cloned()
                 {
