@@ -1,7 +1,3 @@
-//! Resolves function calls and `eval(...)` to their inferred return values.
-//! Recursion is gated by `RecursionTracker` (depth=16) and shape evaluation
-//! runs on a transient env, so the function body never gets mutated.
-
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::Value::{Bool, Num, Str};
@@ -18,6 +14,30 @@ use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
 use std::collections::HashMap;
 
+/// Tracks function declarations with predictable return values
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::forward::Forward;
+/// use minusone::js::integer::ParseInt;
+/// use minusone::js::string::ParseString;
+/// use minusone::js::var::Var;
+/// use minusone::js::functions::fncall::FnCall;
+/// use minusone::js::linter::Linter;
+/// use minusone::js::strategy::JavaScriptStrategy;
+///
+/// let mut tree = build_javascript_tree("function test() { return 'hello'; } console.log(test());").unwrap();
+/// tree.apply_mut_with_strategy(
+///     &mut (ParseString::default(), ParseInt::default(), Forward::default(), Var::default(), FnCall::default()),
+///     JavaScriptStrategy::default(),
+/// ).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+///
+/// assert_eq!(linter.output, "function test() { return 'hello'; } console.log('hello');");
+/// ```
 #[derive(Default)]
 pub struct FnCall {
     functions: HashMap<String, JavaScript>,
@@ -138,7 +158,10 @@ impl FnCall {
                 | "function"
                 | "arrow_function"
                 | "generator_function_declaration"
-                | "generator_function" => {}
+                | "generator_function" => {
+                    // skip nested fn having their own returns
+                }
+                // skip loops and conditionals
                 "if_statement" | "while_statement" | "do_statement" | "for_statement"
                 | "for_in_statement" | "switch_statement" | "try_statement" => {
                     let mut inner_count = 0;
@@ -164,7 +187,9 @@ impl FnCall {
                 | "function"
                 | "arrow_function"
                 | "generator_function_declaration"
-                | "generator_function" => {}
+                | "generator_function" => {
+                    // skip nested fn
+                }
                 _ => {
                     Self::count_returns_in_subtree(&child, count);
                 }
@@ -1577,6 +1602,7 @@ impl<'a> RuleMut<'a> for FnCall {
                 }
             }
             "call_expression" => {
+                // check known fn
                 if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
                     if Self::is_eval_callee(&func_node)
                         && let Some(value) = self.try_resolve_eval(&view)
