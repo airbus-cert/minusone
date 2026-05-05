@@ -42,6 +42,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
             current = reduce_sequence.clear()?;
         }
 
+        // sanitize var names
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut sanitize = SanitizeVarNames::default();
+            tree.apply(&mut sanitize)?;
+            current = sanitize.clear()?;
+        }
+
         // remove obvious dead code
         let mut i = 0;
         loop {

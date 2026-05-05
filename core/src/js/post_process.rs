@@ -1178,6 +1178,107 @@ impl<'a> Rule<'a> for ReduceSequenceExpression {
     }
 }
 
+/// Sanitize var names by replacing \uXXXX by their unicode character.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::SanitizeVarNames;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "let \\u0061 = 1;";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut sanitize = SanitizeVarNames::default();
+/// tree.apply(&mut sanitize).unwrap();
+///
+/// assert_eq!(sanitize.clear().unwrap(), "let a = 1;");
+/// ```
+#[derive(Default)]
+pub struct SanitizeVarNames {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl SanitizeVarNames {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        self.last_index = end;
+    }
+}
+
+impl<'a> Rule<'a> for SanitizeVarNames {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "identifier" => {
+                if let Some(text) = node.text().ok() {
+                    if text.contains("\\u") {
+                        let mut real_name = String::new();
+                        let mut i = 0;
+                        while i < text.len() {
+                            if text[i..].starts_with("\\u") && i + 6 <= text.len() {
+                                if let Ok(code_point) = u32::from_str_radix(&text[i + 2..i + 6], 16)
+                                {
+                                    if let Some(ch) = char::from_u32(code_point) {
+                                        real_name.push(ch);
+                                        i += 6;
+                                        continue;
+                                    }
+                                }
+                            }
+                            real_name.push(text.as_bytes()[i] as char);
+                            i += 1;
+                        }
+                        trace!("SanitizeVarNames: replacing {} with {}", text, real_name);
+                        self.replace_node_with_text(node, &real_name);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test_js_deadcode {
     use super::*;
