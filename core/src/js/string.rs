@@ -51,7 +51,7 @@ impl<'a> RuleMut<'a> for ParseString {
     }
 }
 
-fn unescaped_js_string(s: &str) -> String {
+pub(crate) fn unescaped_js_string(s: &str) -> String {
     if s.len() < 2 {
         return s.to_string();
     }

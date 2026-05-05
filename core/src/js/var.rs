@@ -356,6 +356,27 @@ impl<'a> RuleMut<'a> for Var {
                         .forget(&var_name, node.is_ongoing_transaction());
                 }
             }
+            // Issue #152: an `eval(...)` call can mutate any variable in
+            // the surrounding scope. We don't statically model the
+            // mutation, so the only sound option is to forget every
+            // local before subsequent reads can propagate stale values.
+            // Without this, a sequence such as
+            //     let a = -1; eval('a++'); console.log(a);
+            // would incorrectly fold to `console.log(-1)` because Var
+            // still believes `a == -1`.
+            "call_expression" => {
+                if let Some(func) = view.named_child("function").or_else(|| view.child(0))
+                    && func.kind() == "identifier"
+                    && let Ok(name) = func.text()
+                    && name == "eval"
+                {
+                    let names = self.scope_manager.current().get_var_names();
+                    let ongoing = node.is_ongoing_transaction();
+                    for var in names {
+                        self.scope_manager.current_mut().forget(&var, ongoing);
+                    }
+                }
+            }
             // read
             "identifier" => {
                 if !is_write_target(&view) {

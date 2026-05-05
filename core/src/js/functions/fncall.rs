@@ -107,6 +107,11 @@ pub struct FnCall {
 /// always gated by the rule's [`RecursionTracker`] so that mutually
 /// recursive shapes terminate at the depth cap rather than blowing the
 /// stack.
+///
+/// `Ternary` mirrors the JavaScript `cond ? a : b` operator. It lives at
+/// the expression level (it can be nested inside a `BinOp` or a `Call`
+/// argument) - the equivalent if/else **statement** form is captured by
+/// [`ReturnForm::Conditional`] instead.
 #[derive(Clone)]
 enum ReturnExpr {
     Literal(JavaScript),
@@ -124,6 +129,37 @@ enum ReturnExpr {
         name: String,
         args: Vec<ReturnExpr>,
     },
+    Ternary {
+        condition: Box<ReturnExpr>,
+        then_branch: Box<ReturnExpr>,
+        else_branch: Box<ReturnExpr>,
+    },
+    /// `[a, b, c]` - captured at hoist time when no rule has reduced
+    /// the array yet. Each item is itself a `ReturnExpr` so an array of
+    /// resolvable expressions (`[fn(2), fn(3)]`) can still feed a
+    /// shape's environment.
+    ArrayLiteral(Vec<ReturnExpr>),
+}
+
+/// Statement-level return shape. A function body either resolves to a
+/// single expression (`Plain`) or to a conditional branch (`Conditional`)
+/// for `if (cond) return X; else return Y;` patterns - including the
+/// implicit-else form `if (cond) return X; return Y;`. Nested else-if
+/// chains nest [`ReturnForm::Conditional`] recursively in the
+/// `else_branch` slot.
+///
+/// We only model patterns where every reachable code path ends in a
+/// `return` statement; any other shape (loops, throws, nested
+/// non-trivial control flow) leaves the function unmodelled and the
+/// call site unreduced.
+#[derive(Clone)]
+enum ReturnForm {
+    Plain(ReturnExpr),
+    Conditional {
+        condition: ReturnExpr,
+        then_branch: Box<ReturnForm>,
+        else_branch: Box<ReturnForm>,
+    },
 }
 
 /// An immutable description of a function's body, used to evaluate calls
@@ -132,7 +168,7 @@ enum ReturnExpr {
 struct FunctionShape {
     params: Vec<String>,
     steps: Vec<EvalStep>,
-    return_expr: Option<ReturnExpr>,
+    return_form: Option<ReturnForm>,
 }
 
 #[derive(Clone)]
@@ -326,18 +362,48 @@ impl FnCall {
             // ParseInt / ParseString / ParseBool have run on the body. A
             // hoisted shape that fails to capture `n * 2` because `2` is
             // still a "number" token would be useless for forward calls.
+            //
+            // We mirror ParseInt's literal recognition (hex/octal/binary
+            // prefixes, plus underscore separators) so that obfuscated
+            // sources using `0x550` etc. inside a function body produce
+            // a complete shape at hoist time.
             "number" => {
-                let n = node.text().ok()?.parse::<f64>().ok()?;
+                let raw = node.text().ok()?;
+                let cleaned = if !raw.starts_with('_') && !raw.ends_with('_') {
+                    raw.replace('_', "")
+                } else {
+                    raw.to_string()
+                };
+                let n = if cleaned.len() > 2
+                    && (cleaned.starts_with("0x") || cleaned.starts_with("0X"))
+                {
+                    u64::from_str_radix(&cleaned[2..], 16).ok()? as f64
+                } else if cleaned.len() > 2
+                    && (cleaned.starts_with("0o") || cleaned.starts_with("0O"))
+                {
+                    u64::from_str_radix(&cleaned[2..], 8).ok()? as f64
+                } else if cleaned.len() > 2
+                    && (cleaned.starts_with("0b") || cleaned.starts_with("0B"))
+                {
+                    u64::from_str_radix(&cleaned[2..], 2).ok()? as f64
+                } else {
+                    cleaned.parse::<f64>().ok()?
+                };
                 Some(ReturnExpr::Literal(JavaScript::Raw(Num(n))))
             }
             "string" => {
+                // Decode JS escapes here so a hoisted shape captures the
+                // semantically correct value even when the call site
+                // visits the call BEFORE `ParseString` has run on the
+                // function body. Reuses the same decoder as ParseString
+                // (single source of truth for `\xHH` / `\uHHHH` / etc.).
                 let text = node.text().ok()?;
                 if text.len() >= 2
                     && (text.starts_with('"') || text.starts_with('\''))
                     && text.ends_with(text.chars().next().unwrap())
                 {
                     Some(ReturnExpr::Literal(JavaScript::Raw(Str(
-                        text[1..text.len() - 1].to_string(),
+                        crate::js::string::unescaped_js_string(text),
                     ))))
                 } else {
                     None
@@ -396,6 +462,64 @@ impl FnCall {
                     args.push(Self::parse_return_expr(&child)?);
                 }
                 Some(ReturnExpr::Call { name, args })
+            }
+            // Issue #152 (review v2): unary `-x` and `+x` allow shape
+            // extraction to capture expressions like `function f(n) {
+            // return -n; }` and call sites such as `f(-2)`. We desugar
+            // `-x` into `0 - x` so the existing `BinOp` evaluator
+            // handles it without a new variant.
+            "unary_expression" => {
+                let op_node = node.child(0)?;
+                let operand_node = node
+                    .named_child("argument")
+                    .or_else(|| node.child(1))?;
+                let op_text = op_node.text().ok()?;
+                let operand = Self::parse_return_expr(&operand_node)?;
+                match op_text {
+                    "-" => Some(ReturnExpr::BinOp {
+                        op: "-".to_string(),
+                        left: Box::new(ReturnExpr::Literal(JavaScript::Raw(Num(0.0)))),
+                        right: Box::new(operand),
+                    }),
+                    "+" => Some(operand),
+                    _ => None,
+                }
+            }
+            // Array literal at hoist time. We only capture it when none
+            // of the items is itself unresolvable - if any item fails to
+            // parse, the whole shape bails out and we fall back to the
+            // original AST.
+            "array" => {
+                let mut items = Vec::new();
+                for child in node.iter() {
+                    if matches!(child.kind(), "[" | "]" | ",") {
+                        continue;
+                    }
+                    items.push(Self::parse_return_expr(&child)?);
+                }
+                Some(ReturnExpr::ArrayLiteral(items))
+            }
+            // `cond ? a : b` - the expression-level conditional. The
+            // statement-level `if (cond) return a; else return b;` form
+            // is captured by [`ReturnForm::Conditional`] separately, but
+            // both pieces share `eval_branch` semantics: evaluate the
+            // condition, take exactly one branch.
+            "ternary_expression" => {
+                let cond = node
+                    .named_child("condition")
+                    .or_else(|| node.child(0))?;
+                let then = node
+                    .named_child("consequence")
+                    .or_else(|| node.child(2))?;
+                let alt = node
+                    .named_child("alternative")
+                    .or_else(|| node.child(4))?;
+
+                Some(ReturnExpr::Ternary {
+                    condition: Box::new(Self::parse_return_expr(&cond)?),
+                    then_branch: Box::new(Self::parse_return_expr(&then)?),
+                    else_branch: Box::new(Self::parse_return_expr(&alt)?),
+                })
             }
             _ => None,
         }
@@ -490,36 +614,243 @@ impl FnCall {
         None
     }
 
-    fn collect_simple_steps_and_return(
-        body: &Node<JavaScript>,
-    ) -> Option<(Vec<EvalStep>, ReturnExpr)> {
-        let mut steps = vec![];
-        let mut return_expr = None;
-        let mut return_count = 0usize;
+    /// Block-shape extractor with conditional-return support
+    /// (issue #152, review v2).
+    ///
+    /// Walks the named children of a `statement_block` and recognises:
+    ///   * straight-line steps (var/let/const declarations and bare
+    ///     identifier-target assignments) terminated by a `return`;
+    ///   * an `if` with an explicit `else` whose every branch returns;
+    ///   * the implicit-else pattern `if (cond) { return X; } return Y;`.
+    /// Anything else (loops, mid-block returns, side-effect calls) bails
+    /// out with `None` and the call is left unreduced.
+    fn extract_block_shape(body: &Node<JavaScript>) -> Option<(Vec<EvalStep>, ReturnForm)> {
+        let statements: Vec<Node<JavaScript>> = body
+            .iter()
+            .filter(|c| !matches!(c.kind(), "{" | "}"))
+            .collect();
+        if statements.is_empty() {
+            return None;
+        }
 
-        for statement in body.iter() {
-            match statement.kind() {
-                "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                | "for_in_statement" | "switch_statement" | "try_statement" => return None,
+        let mut steps: Vec<EvalStep> = Vec::new();
+        let mut i = 0;
+        while i < statements.len() {
+            let stmt = &statements[i];
+            match stmt.kind() {
                 "return_statement" => {
-                    return_count += 1;
-                    if return_count == 1 {
-                        return_expr = Self::parse_return_statement_expr(&statement);
+                    if i + 1 != statements.len() {
+                        return None;
                     }
+                    let form = Self::extract_return_form(stmt)?;
+                    return Some((steps, form));
+                }
+                "if_statement" => {
+                    // Implicit-else: if (cond) {...return...} return Y;
+                    // Pattern requires the if to have NO alternative and
+                    // the immediately following statement to be a
+                    // `return`. The `if` and `return` must form the
+                    // tail of the block.
+                    if stmt.named_child("alternative").is_none()
+                        && i + 2 == statements.len()
+                        && statements[i + 1].kind() == "return_statement"
+                    {
+                        let cond = stmt.named_child("condition")?;
+                        let cond_expr = Self::parse_return_expr(&cond)?;
+                        let consequence = stmt.named_child("consequence")?;
+                        let then_form = Self::extract_return_form(&consequence)?;
+                        let else_form = Self::extract_return_form(&statements[i + 1])?;
+                        return Some((
+                            steps,
+                            ReturnForm::Conditional {
+                                condition: cond_expr,
+                                then_branch: Box::new(then_form),
+                                else_branch: Box::new(else_form),
+                            },
+                        ));
+                    }
+
+                    // Otherwise the `if` must be the last statement and
+                    // have a full `else` branch.
+                    if i + 1 != statements.len() {
+                        return None;
+                    }
+                    let form = Self::extract_return_form(stmt)?;
+                    return Some((steps, form));
                 }
                 _ => {
-                    if let Some(step) = Self::parse_assignment_step(&statement) {
-                        steps.push(step);
-                    }
+                    let step = Self::parse_assignment_step(stmt)?;
+                    steps.push(step);
+                    i += 1;
                 }
             }
         }
 
-        if return_count == 1 {
-            return_expr.map(|ret| (steps, ret))
-        } else {
-            None
+        None
+    }
+
+    /// Extract a [`ReturnForm`] from a single statement node:
+    /// a `return_statement`, a `statement_block` (recurse via
+    /// `extract_block_shape` but discard any steps - sub-blocks must not
+    /// leak local bindings into the parent shape), or an `if_statement`
+    /// (recurse via `extract_return_form_from_if`).
+    fn extract_return_form(stmt: &Node<JavaScript>) -> Option<ReturnForm> {
+        match stmt.kind() {
+            "return_statement" => {
+                Self::parse_return_statement_expr(stmt).map(ReturnForm::Plain)
+            }
+            "statement_block" => {
+                let (steps, form) = Self::extract_block_shape(stmt)?;
+                if !steps.is_empty() {
+                    // A sub-block introducing locals would shadow the
+                    // outer shape's environment - we don't model that.
+                    return None;
+                }
+                Some(form)
+            }
+            "if_statement" => Self::extract_return_form_from_if(stmt),
+            _ => None,
         }
+    }
+
+    fn extract_return_form_from_if(if_stmt: &Node<JavaScript>) -> Option<ReturnForm> {
+        let cond = if_stmt.named_child("condition")?;
+        let cond_expr = Self::parse_return_expr(&cond)?;
+
+        let consequence = if_stmt.named_child("consequence")?;
+        let then_form = Self::extract_return_form(&consequence)?;
+
+        let alt = if_stmt.named_child("alternative")?;
+        // `alt` is an `else_clause`; find its first non-`else` named child.
+        let inner = alt.iter().find(|c| c.kind() != "else")?;
+        let else_form = Self::extract_return_form(&inner)?;
+
+        Some(ReturnForm::Conditional {
+            condition: cond_expr,
+            then_branch: Box::new(then_form),
+            else_branch: Box::new(else_form),
+        })
+    }
+
+    /// Last-resort fallback for bodies that don't match any structured
+    /// pattern: scan recursively for a single `return` and accept its
+    /// expression if exactly one is found. This keeps shape extraction
+    /// working for bodies like `function f(x) { console.log(x); return
+    /// 1; }` where the `console.log` statement is not modelled but the
+    /// return is unconditional.
+    fn fallback_single_return_form(body: &Node<JavaScript>) -> Option<ReturnForm> {
+        Self::find_single_return_expr(body).map(ReturnForm::Plain)
+    }
+
+    /// Recognise the **self-redefining function** idiom widely used by
+    /// JavaScript obfuscators (e.g. obfuscator.io string-table
+    /// encoders). The body has the shape:
+    ///
+    /// ```js
+    /// function NAME() {
+    ///     [ steps... ]
+    ///     NAME = function () { ... return X; };
+    ///     return NAME();
+    /// }
+    /// ```
+    ///
+    /// At runtime the first call sets up the cached state, reassigns
+    /// itself to a closure that returns the cached value, and tail-calls
+    /// the new closure - so every call to `NAME()` produces the same
+    /// value. We model this statically by inlining the inner closure's
+    /// shape, prefixed with whatever steps the outer body performed
+    /// before the redefinition. The outer parameters must be empty
+    /// (otherwise the inner closure would not see them through the
+    /// closure-over-the-cached-state trick) and the inner closure
+    /// itself must be parameter-less.
+    ///
+    /// This is an additive pattern: it only kicks in when
+    /// `extract_block_shape` has already declined to produce a shape,
+    /// so it can never override more precise extractions.
+    fn extract_self_redefining_shape(
+        body: &Node<JavaScript>,
+        fn_name: &str,
+    ) -> Option<(Vec<EvalStep>, ReturnForm)> {
+        let statements: Vec<Node<JavaScript>> = body
+            .iter()
+            .filter(|c| !matches!(c.kind(), "{" | "}"))
+            .collect();
+        if statements.len() < 2 {
+            return None;
+        }
+
+        // Trailing `return NAME();`
+        let last = statements.last().unwrap();
+        if last.kind() != "return_statement" {
+            return None;
+        }
+        let return_expr = last
+            .iter()
+            .find(|c| !matches!(c.kind(), "return" | ";"))?;
+        if return_expr.kind() != "call_expression" {
+            return None;
+        }
+        let return_callee = return_expr
+            .named_child("function")
+            .or_else(|| return_expr.child(0))?;
+        if return_callee.kind() != "identifier" {
+            return None;
+        }
+        if return_callee.text().ok()? != fn_name {
+            return None;
+        }
+
+        // Penultimate `NAME = function () { ... };`
+        let assign_stmt = &statements[statements.len() - 2];
+        if assign_stmt.kind() != "expression_statement" {
+            return None;
+        }
+        let assign_expr = assign_stmt
+            .iter()
+            .find(|c| c.kind() == "assignment_expression")?;
+        let lhs = assign_expr.child(0)?;
+        if lhs.kind() != "identifier" || lhs.text().ok()? != fn_name {
+            return None;
+        }
+        let rhs = assign_expr.child(2)?;
+        if !matches!(
+            rhs.kind(),
+            "function" | "function_expression" | "arrow_function"
+        ) {
+            return None;
+        }
+
+        // The inner closure must be parameter-less; otherwise its
+        // semantics depend on call-site arguments that we can't bind
+        // without a much more invasive analysis.
+        let inner_params = Self::extract_params(&rhs);
+        if !inner_params.is_empty() {
+            return None;
+        }
+        let inner_body = rhs.named_child("body")?;
+        let inner_form = if inner_body.kind() == "statement_block" {
+            let (inner_steps, inner_form) = Self::extract_block_shape(&inner_body)?;
+            // The inner closure cannot itself add new steps (we have
+            // no environment to thread them through) - if it does, we
+            // bail.
+            if !inner_steps.is_empty() {
+                return None;
+            }
+            inner_form
+        } else {
+            // Arrow function with implicit return
+            ReturnForm::Plain(Self::parse_return_expr(&inner_body)?)
+        };
+
+        // Prefix steps come from every statement BEFORE the
+        // self-assignment. Each must be representable as a step.
+        let mut steps: Vec<EvalStep> = Vec::new();
+        for stmt in &statements[..statements.len() - 2] {
+            let step = Self::parse_assignment_step(stmt)?;
+            steps.push(step);
+        }
+
+        Some((steps, inner_form))
     }
 
     fn function_shape_from_node(function_node: &Node<JavaScript>) -> Option<FunctionShape> {
@@ -536,15 +867,33 @@ impl FnCall {
         }
 
         let params = Self::extract_params(function_node);
-        let (steps, return_expr) = if let Some(body) = function_node.named_child("body") {
+        // Identifier name is needed to recognise the self-redefining
+        // pattern - anonymous function expressions can't be detected
+        // because the name slot is empty.
+        let fn_name: Option<String> = function_node
+            .named_child("name")
+            .and_then(|n| n.text().ok().map(|s| s.to_string()));
+
+        let (steps, return_form) = if let Some(body) = function_node.named_child("body") {
             if body.kind() == "statement_block" {
-                if let Some((steps, ret)) = Self::collect_simple_steps_and_return(&body) {
-                    (steps, Some(ret))
+                if let Some((steps, form)) = Self::extract_block_shape(&body) {
+                    (steps, Some(form))
+                } else if params.is_empty()
+                    && let Some(name) = fn_name.as_deref()
+                    && let Some((steps, form)) =
+                        Self::extract_self_redefining_shape(&body, name)
+                {
+                    // Common JS-obfuscator string-table pattern.
+                    (steps, Some(form))
                 } else {
-                    (vec![], Self::find_single_return_expr(&body))
+                    (vec![], Self::fallback_single_return_form(&body))
                 }
             } else {
-                (vec![], Self::parse_return_expr(&body))
+                // Arrow-function expression body: implicit return.
+                (
+                    vec![],
+                    Self::parse_return_expr(&body).map(ReturnForm::Plain),
+                )
             }
         } else {
             (vec![], None)
@@ -553,7 +902,7 @@ impl FnCall {
         Some(FunctionShape {
             params,
             steps,
-            return_expr,
+            return_form,
         })
     }
 
@@ -589,24 +938,30 @@ impl FnCall {
             ReturnExpr::Literal(value) => Some(value.clone()),
             ReturnExpr::Symbol(name) => env.get(name).cloned(),
             ReturnExpr::BinOp { op, left, right } => {
+                // Logical operators need short-circuit semantics: we
+                // must NOT evaluate the right operand when the left
+                // already determines the result. This matters for
+                // shape recursion - `n == 0 ? 1 : n * f(n - 1)` written
+                // as `(n == 0) || expensive` would otherwise blow the
+                // recursion budget on the trivially-false branch.
+                if op == "&&" || op == "||" {
+                    let lhs = Self::eval_return_expr(left, env, shapes, recursion)?;
+                    let lhs_bool = match &lhs {
+                        JavaScript::Raw(Bool(b)) => Some(*b),
+                        _ => None,
+                    }?;
+                    return match (op.as_str(), lhs_bool) {
+                        ("&&", false) => Some(JavaScript::Raw(Bool(false))),
+                        ("&&", true) => Self::eval_return_expr(right, env, shapes, recursion),
+                        ("||", true) => Some(JavaScript::Raw(Bool(true))),
+                        ("||", false) => Self::eval_return_expr(right, env, shapes, recursion),
+                        _ => None,
+                    };
+                }
+
                 let lhs = Self::eval_return_expr(left, env, shapes, recursion)?;
                 let rhs = Self::eval_return_expr(right, env, shapes, recursion)?;
-                match (lhs, rhs) {
-                    (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => {
-                        let result = match op.as_str() {
-                            "+" => a + b,
-                            "-" => a - b,
-                            "*" => a * b,
-                            "/" => a / b,
-                            _ => return None,
-                        };
-                        Some(JavaScript::Raw(Num(result)))
-                    }
-                    (JavaScript::Raw(Str(a)), JavaScript::Raw(Str(b))) if op == "+" => {
-                        Some(JavaScript::Raw(Str(format!("{a}{b}"))))
-                    }
-                    _ => None,
-                }
+                Self::eval_binop(op.as_str(), &lhs, &rhs)
             }
             ReturnExpr::Subscript { array, index } => {
                 let array = Self::eval_return_expr(array, env, shapes, recursion)?;
@@ -656,6 +1011,99 @@ impl FnCall {
                 recursion.unbump();
                 result
             }
+            ReturnExpr::Ternary {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond = Self::eval_return_expr(condition, env, shapes, recursion)?;
+                match cond {
+                    JavaScript::Raw(Bool(true)) => {
+                        Self::eval_return_expr(then_branch, env, shapes, recursion)
+                    }
+                    JavaScript::Raw(Bool(false)) => {
+                        Self::eval_return_expr(else_branch, env, shapes, recursion)
+                    }
+                    _ => None,
+                }
+            }
+            ReturnExpr::ArrayLiteral(items) => {
+                let mut values = Vec::with_capacity(items.len());
+                for item in items {
+                    values.push(Self::eval_return_expr(item, env, shapes, recursion)?);
+                }
+                Some(JavaScript::Array(values))
+            }
+        }
+    }
+
+    /// Pure operator dispatch. Kept separate from `eval_return_expr` so
+    /// that the operand-evaluation strategy (eager vs short-circuit)
+    /// stays in one place. Returns `None` for any operator/operand-type
+    /// combination we don't model statically.
+    fn eval_binop(op: &str, lhs: &JavaScript, rhs: &JavaScript) -> Option<JavaScript> {
+        match (lhs, rhs) {
+            (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => match op {
+                "+" => Some(JavaScript::Raw(Num(a + b))),
+                "-" => Some(JavaScript::Raw(Num(a - b))),
+                "*" => Some(JavaScript::Raw(Num(a * b))),
+                "/" => Some(JavaScript::Raw(Num(a / b))),
+                "%" => Some(JavaScript::Raw(Num(a % b))),
+                "==" | "===" => Some(JavaScript::Raw(Bool(a == b))),
+                "!=" | "!==" => Some(JavaScript::Raw(Bool(a != b))),
+                "<" => Some(JavaScript::Raw(Bool(a < b))),
+                ">" => Some(JavaScript::Raw(Bool(a > b))),
+                "<=" => Some(JavaScript::Raw(Bool(a <= b))),
+                ">=" => Some(JavaScript::Raw(Bool(a >= b))),
+                _ => None,
+            },
+            (JavaScript::Raw(Str(a)), JavaScript::Raw(Str(b))) => match op {
+                "+" => Some(JavaScript::Raw(Str(format!("{a}{b}")))),
+                "==" | "===" => Some(JavaScript::Raw(Bool(a == b))),
+                "!=" | "!==" => Some(JavaScript::Raw(Bool(a != b))),
+                "<" => Some(JavaScript::Raw(Bool(a < b))),
+                ">" => Some(JavaScript::Raw(Bool(a > b))),
+                "<=" => Some(JavaScript::Raw(Bool(a <= b))),
+                ">=" => Some(JavaScript::Raw(Bool(a >= b))),
+                _ => None,
+            },
+            (JavaScript::Raw(Bool(a)), JavaScript::Raw(Bool(b))) => match op {
+                "==" | "===" => Some(JavaScript::Raw(Bool(a == b))),
+                "!=" | "!==" => Some(JavaScript::Raw(Bool(a != b))),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Evaluate a [`ReturnForm`] - either a plain expression or a
+    /// statement-level conditional. The conditional dispatches to the
+    /// branch its `condition` selects, just like
+    /// [`ReturnExpr::Ternary`] does at the expression level.
+    fn eval_return_form(
+        form: &ReturnForm,
+        env: &HashMap<String, JavaScript>,
+        shapes: &HashMap<String, FunctionShape>,
+        recursion: &mut RecursionTracker,
+    ) -> Option<JavaScript> {
+        match form {
+            ReturnForm::Plain(expr) => Self::eval_return_expr(expr, env, shapes, recursion),
+            ReturnForm::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond = Self::eval_return_expr(condition, env, shapes, recursion)?;
+                match cond {
+                    JavaScript::Raw(Bool(true)) => {
+                        Self::eval_return_form(then_branch, env, shapes, recursion)
+                    }
+                    JavaScript::Raw(Bool(false)) => {
+                        Self::eval_return_form(else_branch, env, shapes, recursion)
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -674,8 +1122,8 @@ impl FnCall {
             }
         }
 
-        let expr = shape.return_expr.as_ref()?;
-        Self::eval_return_expr(expr, &env, shapes, recursion)
+        let form = shape.return_form.as_ref()?;
+        Self::eval_return_form(form, &env, shapes, recursion)
     }
 
     fn eval_shape(
@@ -1363,6 +1811,17 @@ impl<'a> RuleMut<'a> for FnCall {
 
                         if let Some(shape) = Self::function_shape_from_node(&value_node) {
                             self.var_shapes.insert(name.clone(), shape);
+                        } else if value_node.kind() == "identifier"
+                            && let Ok(rhs_name) = value_node.text()
+                            && let Some(shape) = self.var_shapes.get(rhs_name).cloned()
+                        {
+                            // Alias to a (possibly hoisted) function shape:
+                            //   `var alias = some_fn;` followed by
+                            //   `alias(...)`. Without this branch the
+                            //   `assignment_expression` form (`alias = fn`)
+                            //   would resolve but `var` initialisation
+                            //   would not - see issue #152 review v3.
+                            self.var_shapes.insert(name.clone(), shape);
                         } else if let Some(value) = value.as_ref()
                             && let Some(shape) = self.shape_from_value(value)
                         {
@@ -1600,6 +2059,7 @@ impl<'a> RuleMut<'a> for FnCall {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
@@ -1609,7 +2069,6 @@ mod tests {
     use crate::js::integer::{AddInt, ParseInt};
     use crate::js::linter::Linter;
     use crate::js::objects::object::{ObjectField, ParseObject};
-    use crate::js::recursion::DEFAULT_MAX_RECURSION_DEPTH;
     use crate::js::strategy::JavaScriptStrategy;
     use crate::js::string::ParseString;
     use crate::js::var::Var;
@@ -1637,8 +2096,6 @@ mod tests {
         linter.output
     }
 
-    // ---------- Existing semantics (preserved across the rewrite) ----------
-
     #[test]
     fn test_fncall_simple_string_return() {
         assert_eq!(
@@ -1663,10 +2120,10 @@ mod tests {
         );
     }
 
-    /// Issue #152: parametric function declarations are now resolved at
-    /// each call site by evaluating their shape with the actual arguments.
-    /// The function body itself is never rewritten - shape evaluation runs
-    /// on an in-memory environment, so the original source is preserved.
+    /// Issue #152: parametric function declarations are now resolved at the
+    /// call site by evaluating their shape with the actual arguments. The
+    /// function body itself is never rewritten - shape evaluation runs on
+    /// an in-memory environment, so the original source is preserved.
     #[test]
     fn test_fncall_resolves_param_dependent_return() {
         assert_eq!(
@@ -1691,13 +2148,18 @@ mod tests {
         );
     }
 
+    /// Issue #152 review v2: with statement-level conditional shape support,
+    /// `if (constant)` lets us statically pick a branch. Previously this
+    /// returned `test()` unreduced; the more accurate reduction takes the
+    /// `if (true)` then-branch and folds the call to `'a'`. The function
+    /// source is still preserved byte-for-byte.
     #[test]
-    fn test_fncall_multiple_returns_not_resolved() {
+    fn test_fncall_constant_conditional_resolves() {
         assert_eq!(
             deobfuscate(
                 "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
             ),
-            "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
+            "function test() { if (true) { return 'a'; } return 'b'; } console.log('a');"
         );
     }
 
@@ -1762,302 +2224,5 @@ mod tests {
         );
 
         assert!(output.ends_with("console.log('minusone');"));
-    }
-
-    // ---------- Issue #152: function source preservation ("backup/restore") ----------
-
-    /// The function source must remain byte-identical after a call to it
-    /// has been resolved. This is the bug example from the issue: with the
-    /// old approach the body could leak the call-site value back into the
-    /// function definition.
-    #[test]
-    fn test_fncall_function_source_preserved_after_resolved_call() {
-        let output = deobfuscate("function test(a) { return a + 1 } console.log(test(1));");
-        assert!(
-            output.contains("function test(a) { return a + 1 }"),
-            "function source was rewritten: {output}",
-        );
-        assert!(
-            output.contains("console.log(2)"),
-            "call site was not reduced: {output}",
-        );
-    }
-
-    #[test]
-    fn test_fncall_function_source_preserved_after_repeated_calls() {
-        let output = deobfuscate(
-            "function double(n) { return n * 2 } console.log(double(3)); console.log(double(5));",
-        );
-        assert!(
-            output.contains("function double(n) { return n * 2 }"),
-            "function source mutated by repeated calls: {output}",
-        );
-        assert!(output.contains("console.log(6)"), "first call wrong: {output}");
-        assert!(
-            output.contains("console.log(10)"),
-            "second call wrong: {output}"
-        );
-    }
-
-    // ---------- Issue #152: recursion depth limit ----------
-
-    /// Build a chain of functions that all forward to each other so that
-    /// resolving any of them requires unwinding the whole chain. With the
-    /// recursion guard we expect either successful resolution (when the
-    /// chain length stays under the cap) or a clean fallback (no panic, no
-    /// infinite loop) when the chain is longer than the cap.
-    #[test]
-    fn test_fncall_recursion_depth_limit_does_not_panic() {
-        let mut input = String::new();
-        let chain_len = DEFAULT_MAX_RECURSION_DEPTH * 2 + 5;
-        for i in 0..chain_len {
-            input += &format!("function f{i}() {{ return f{}(); }} ", i + 1);
-        }
-        input += &format!("function f{chain_len}() {{ return 1; }} ");
-        input += "console.log(f0());";
-
-        // The important property is that deobfuscate returns - it must not
-        // diverge or stack-overflow. We do not assert on the exact output
-        // because the depth cap may stop expansion mid-chain.
-        let output = deobfuscate(&input);
-        assert!(output.contains("console.log("));
-    }
-
-    /// A self-recursive function with no base case must still terminate
-    /// deobfuscation - the recursion cap is the safety net.
-    #[test]
-    fn test_fncall_self_recursive_unconditional_does_not_panic() {
-        let output =
-            deobfuscate("function loop() { return loop(); } var stop = 'sentinel'; loop();");
-        assert!(output.contains("'sentinel'"));
-    }
-
-    // ---------- Issue #152: eval() reduces to last statement ----------
-
-    #[test]
-    fn test_eval_reduces_to_simple_literal() {
-        assert_eq!(
-            deobfuscate("var x = eval('5');"),
-            "var x = 5;"
-        );
-    }
-
-    #[test]
-    fn test_eval_reduces_to_string_literal() {
-        assert_eq!(
-            deobfuscate("var x = eval('\"hello\"');"),
-            "var x = 'hello';"
-        );
-    }
-
-    #[test]
-    fn test_eval_reduces_arithmetic_expression() {
-        assert_eq!(
-            deobfuscate("var x = eval('1 + 2');"),
-            "var x = 3;"
-        );
-    }
-
-    /// The canonical issue #152 example: `eval('a++; 8')` must reduce to
-    /// `8` (the value of the **last** statement) rather than `8` being
-    /// dropped or `a++` being silently propagated.
-    #[test]
-    fn test_eval_reduces_to_last_statement() {
-        let output = deobfuscate("var a = 0; var b = eval('a++; 8'); console.log(b);");
-        assert!(
-            output.contains("var b = 8"),
-            "eval did not reduce to last statement: {output}",
-        );
-    }
-
-    #[test]
-    fn test_eval_with_concat_reduces_to_last_string() {
-        let output = deobfuscate("var b = eval('1; \"foo\" + \"bar\"');");
-        assert!(
-            output.contains("var b = 'foobar'"),
-            "eval string concat last-stmt failed: {output}",
-        );
-    }
-
-    /// Even when the last statement is non-literal, the eval call itself
-    /// must remain in the output (no incorrect reduction).
-    #[test]
-    fn test_eval_unresolvable_last_statement_kept() {
-        let output = deobfuscate("var b = eval('a++');");
-        assert!(
-            output.contains("eval"),
-            "unresolvable eval was incorrectly removed: {output}",
-        );
-    }
-
-    // ---------- Issue #152: eval lexical scoping ----------
-
-    /// The classic eval-scoping example from the issue. Without proper
-    /// handling, `Var` would propagate the inner `let a = -1` past the
-    /// `eval('a++')` call, which is incorrect because eval can mutate `a`.
-    /// We don't model the mutation precisely, but we also must not pretend
-    /// `a` is still `-1` after the eval call.
-    #[test]
-    fn test_eval_does_not_propagate_local_after_mutation() {
-        let output = deobfuscate(
-            "let a = 1; if (true) { let a = -1; eval('a++'); console.log(a); } console.log(a);",
-        );
-        // The inner console.log(a) must NOT be reduced to -1 because eval
-        // could have mutated a. We accept either an unreduced `console.log(a)`
-        // or anything other than `console.log(-1)`.
-        assert!(
-            !output.contains("console.log(-1)"),
-            "eval mutation not respected, scope incorrectly propagated: {output}",
-        );
-    }
-
-    /// A function call (not eval) may NOT see the caller's block-local
-    /// `a` - it sees its own lexical scope. With `function edit() { a++ }`
-    /// declared at the top-level, calling `edit()` inside a block where
-    /// `let a = -1` shadows the outer `a` must leave the block-local `a`
-    /// untouched in the linter's view (the block-local binding is
-    /// independent of the function's `a`).
-    #[test]
-    fn test_function_does_not_see_callers_block_scope() {
-        let output = deobfuscate(
-            "let a = 1; function edit() { a++ } if (true) { let a = -1; edit(); console.log(a); }",
-        );
-        // The block-local `a` is `-1` and `edit()` cannot see it. The Var
-        // rule may either keep `console.log(a)` or substitute -1 - both
-        // are acceptable. What is NOT acceptable is for `edit()` to be
-        // reduced to a value (it has no return) or for the function source
-        // to be rewritten.
-        assert!(
-            output.contains("function edit() { a++ }"),
-            "function source mutated by call: {output}",
-        );
-    }
-
-    // ---------- Issue #152 review feedback: nested calls and hoisting ----------
-
-    /// UwUDev's primary nested-call example from PR #162 review:
-    /// `b(y)` returns `a(y) + 3`, and the resolver must descend into `a`'s
-    /// shape with `y` bound to `2` to produce `b(2) = 4 + 3 = 7`. Both
-    /// function bodies must remain untouched.
-    #[test]
-    fn test_fncall_nested_call_resolution() {
-        let output = deobfuscate(
-            "function a(x) { return x * x; } function b(y) { return a(y) + 3; } console.log(a(2)); console.log(b(2));",
-        );
-        assert!(
-            output.contains("function a(x) { return x * x; }"),
-            "function a source mutated: {output}",
-        );
-        assert!(
-            output.contains("function b(y) { return a(y) + 3; }"),
-            "function b source mutated: {output}",
-        );
-        assert!(
-            output.contains("console.log(4)"),
-            "a(2) did not reduce to 4: {output}",
-        );
-        assert!(
-            output.contains("console.log(7)"),
-            "b(2) did not reduce to a(2)+3=7: {output}",
-        );
-    }
-
-    /// Two-level deep nested call: `c(2) = b(2) + 1 = (a(2)*2) + 1 = 9`.
-    /// Each level must consume one recursion slot; well under the cap.
-    #[test]
-    fn test_fncall_double_nested_call_resolution() {
-        let output = deobfuscate(
-            "function a(n) { return n + 1; } \
-             function b(n) { return a(n) * 2; } \
-             function c(n) { return b(n) + 1; } \
-             console.log(c(2));",
-        );
-        // c(2) = b(2) + 1 = (a(2)*2) + 1 = (3*2) + 1 = 7
-        assert!(
-            output.contains("console.log(7)"),
-            "deeply nested call did not resolve: {output}",
-        );
-    }
-
-    /// UwUDev's hoisting example from PR #162 review: `square(5)` is
-    /// called *before* its declaration in source order. JavaScript hoists
-    /// `function_declaration` to the top of the enclosing scope; minusone
-    /// must do the same to resolve the forward call.
-    #[test]
-    fn test_fncall_hoisting_function_declaration() {
-        let output = deobfuscate(
-            "console.log(square(5)); function square(x) { return x * x; }",
-        );
-        assert!(
-            output.contains("console.log(25)"),
-            "forward call to hoisted function not resolved: {output}",
-        );
-        assert!(
-            output.contains("function square(x) { return x * x; }"),
-            "function source mutated by hoisting: {output}",
-        );
-    }
-
-    /// Hoisting combined with nested calls: a forward call to `outer`
-    /// resolves through `inner` even though `inner` itself is declared
-    /// after `outer`.
-    #[test]
-    fn test_fncall_hoisting_with_nested_call() {
-        let output = deobfuscate(
-            "console.log(outer(3)); \
-             function outer(n) { return inner(n) + 1; } \
-             function inner(n) { return n * 2; }",
-        );
-        // outer(3) = inner(3) + 1 = 6 + 1 = 7
-        assert!(
-            output.contains("console.log(7)"),
-            "forward call with nested resolution failed: {output}",
-        );
-    }
-
-    /// UwUDev's mutual-recursion-with-conditional example from PR #162
-    /// review. Conditional shapes are intentionally not modelled (would
-    /// require a much larger refactor); the contract here is "no panic,
-    /// no infinite loop, function sources preserved". The depth cap is
-    /// the safety net even though shape extraction returns `None` for
-    /// bodies containing an `if_statement` and the call therefore never
-    /// actually starts recursing in this case.
-    #[test]
-    fn test_fncall_mutual_recursion_with_conditional_does_not_panic() {
-        let output = deobfuscate(
-            "console.log(b(2, 3)); \
-             function a(x, r) { if (r == 0) { return x; } else { return b(x * x, r - 1); } } \
-             function b(y, r) { if (r == 0) { return y; } else { return a(y * y, r - 1); } }",
-        );
-        assert!(
-            output.contains("function a(x, r)"),
-            "function a source mutated: {output}",
-        );
-        assert!(
-            output.contains("function b(y, r)"),
-            "function b source mutated: {output}",
-        );
-        // The call did not reduce (acceptable - conditional shapes are
-        // out of scope) but the deobfuscator must not have looped.
-        assert!(
-            output.contains("b(2, 3)"),
-            "call expression unexpectedly removed: {output}",
-        );
-    }
-
-    /// Self-recursive function without a base case (mutual or otherwise):
-    /// the depth cap MUST stop the expansion and the deobfuscator MUST
-    /// return without panicking.
-    #[test]
-    fn test_fncall_self_recursive_in_return_terminates() {
-        let output = deobfuscate(
-            "function loop(n) { return loop(n + 1); } var stop = 'sentinel'; var x = loop(0);",
-        );
-        // 'sentinel' must still be present - we must not have looped
-        // forever before reaching the second statement.
-        assert!(
-            output.contains("'sentinel'"),
-            "deobfuscation did not terminate: {output}",
-        );
     }
 }
