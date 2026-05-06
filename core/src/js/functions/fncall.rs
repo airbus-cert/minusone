@@ -1,12 +1,14 @@
+use crate::engine::{CleanEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScriptRuleSet;
 use crate::js::Value::{Bool, Num, Str};
+use crate::js::backend::JavaScriptBackend;
 use crate::js::build_javascript_tree;
 use crate::js::forward::Forward;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::integer::{AddInt, ParseInt};
-use crate::js::recursion::{RecursionExt, RecursionTracker};
+use crate::js::recursion::{RecursionExt, RecursionTracker, global_unbump, try_global_bump};
 use crate::js::specials::ParseSpecials;
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::string::{Concat, ParseString};
@@ -49,6 +51,9 @@ pub struct FnCall {
     object_field_shapes: HashMap<(String, String), FunctionShape>,
     shapes_by_source: HashMap<String, FunctionShape>,
     recursion: RecursionTracker,
+    // All top-level function declarations as raw source, prepended to every
+    // synthesised sub-program so sub-FnCall can hoist + resolve nested calls.
+    fn_decl_prelude: String,
 }
 
 #[derive(Clone)]
@@ -74,6 +79,9 @@ enum ReturnExpr {
         else_branch: Box<ReturnExpr>,
     },
     ArrayLiteral(Vec<ReturnExpr>),
+    // Anything we can't structurally parse — captured verbatim and
+    // passed to minusone for evaluation.
+    RawSource(String),
 }
 
 #[derive(Clone)]
@@ -91,16 +99,6 @@ struct FunctionShape {
     params: Vec<String>,
     steps: Vec<EvalStep>,
     return_form: Option<ReturnForm>,
-    // Source-text fallback used when shape evaluation can't reduce the body
-    // (method calls, regex, complex expressions). Synthesised at call time
-    // and run through the full JavaScript ruleset.
-    subtree_body: Option<SubtreeBody>,
-}
-
-#[derive(Clone)]
-struct SubtreeBody {
-    pre_statements: Vec<String>,
-    return_expr_src: String,
 }
 
 #[derive(Clone)]
@@ -342,20 +340,34 @@ impl FnCall {
                 })
             }
             "call_expression" => {
-                let callee = node.named_child("function").or_else(|| node.child(0))?;
-                if callee.kind() != "identifier" {
-                    return None;
-                }
-                let name = callee.text().ok()?.to_string();
-                let args_node = node.named_child("arguments")?;
-                let mut args = Vec::new();
-                for child in args_node.iter() {
-                    if matches!(child.kind(), "(" | ")" | ",") {
-                        continue;
+                if let Some(callee) = node.named_child("function").or_else(|| node.child(0))
+                    && callee.kind() == "identifier"
+                    && let Some(name) = callee.text().ok().map(|s| s.to_string())
+                    && let Some(args_node) = node.named_child("arguments")
+                {
+                    let mut args = Vec::new();
+                    let mut all_parsed = true;
+                    for child in args_node.iter() {
+                        if matches!(child.kind(), "(" | ")" | ",") {
+                            continue;
+                        }
+                        match Self::parse_return_expr(&child) {
+                            Some(e) => args.push(e),
+                            None => {
+                                all_parsed = false;
+                                break;
+                            }
+                        }
                     }
-                    args.push(Self::parse_return_expr(&child)?);
+                    if all_parsed {
+                        return Some(ReturnExpr::Call { name, args });
+                    }
                 }
-                Some(ReturnExpr::Call { name, args })
+                // Member calls and other shapes: capture verbatim so minusone
+                // evaluates them through the regular method-call rules.
+                node.text()
+                    .ok()
+                    .map(|s| ReturnExpr::RawSource(s.to_string()))
             }
             "unary_expression" => {
                 let op_node = node.child(0)?;
@@ -401,7 +413,13 @@ impl FnCall {
                     else_branch: Box::new(Self::parse_return_expr(&alt)?),
                 })
             }
-            _ => None,
+            // Fallback: capture the source text verbatim so the rendered
+            // sub-program contains the original expression and minusone
+            // gets to evaluate it (method calls, regex literals, etc.).
+            _ => node
+                .text()
+                .ok()
+                .map(|s| ReturnExpr::RawSource(s.to_string())),
         }
     }
 
@@ -712,279 +730,13 @@ impl FnCall {
             (vec![], None)
         };
 
-        let subtree_body = body_opt.as_ref().and_then(Self::extract_subtree_body);
+        let _ = body_opt;
 
         Some(FunctionShape {
             params,
             steps,
             return_form,
-            subtree_body,
         })
-    }
-
-    /// Capture the body of a straight-line function (no early returns, no
-    /// nested control flow) as raw source so it can be re-deobfuscated by
-    /// the full JavaScript ruleset on a synthesised sub-tree.
-    fn extract_subtree_body(body: &Node<JavaScript>) -> Option<SubtreeBody> {
-        if body.kind() != "statement_block" {
-            // Arrow function with implicit return: `(x) => x.foo()`.
-            let return_expr_src = body.text().ok()?.to_string();
-            return Some(SubtreeBody {
-                pre_statements: Vec::new(),
-                return_expr_src,
-            });
-        }
-
-        let statements: Vec<Node<JavaScript>> = body
-            .iter()
-            .filter(|c| !matches!(c.kind(), "{" | "}"))
-            .collect();
-        if statements.is_empty() {
-            return None;
-        }
-
-        let last = statements.last()?;
-        if last.kind() != "return_statement" {
-            return None;
-        }
-
-        for stmt in &statements[..statements.len() - 1] {
-            if Self::contains_return(stmt) {
-                return None;
-            }
-        }
-
-        let return_expr = last.iter().find(|c| !matches!(c.kind(), "return" | ";"))?;
-        let return_expr_src = return_expr.text().ok()?.to_string();
-
-        let mut pre_statements = Vec::new();
-        for stmt in &statements[..statements.len() - 1] {
-            pre_statements.push(stmt.text().ok()?.to_string());
-        }
-
-        Some(SubtreeBody {
-            pre_statements,
-            return_expr_src,
-        })
-    }
-
-    fn contains_return(node: &Node<JavaScript>) -> bool {
-        match node.kind() {
-            "function_declaration"
-            | "function"
-            | "function_expression"
-            | "arrow_function"
-            | "generator_function"
-            | "generator_function_declaration" => return false,
-            "return_statement" => return true,
-            _ => {}
-        }
-        for child in node.iter() {
-            if Self::contains_return(&child) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn extract_call_args(call_node: &Node<JavaScript>) -> Vec<JavaScript> {
-        let mut args = Vec::new();
-        if let Some(arguments_node) = call_node.named_child("arguments") {
-            for child in arguments_node.iter() {
-                if let Some(data) = child.data() {
-                    args.push(data.clone());
-                }
-            }
-        }
-        args
-    }
-
-    fn eval_return_expr(
-        expr: &ReturnExpr,
-        env: &HashMap<String, JavaScript>,
-        shapes: &HashMap<String, FunctionShape>,
-        recursion: &mut RecursionTracker,
-    ) -> Option<JavaScript> {
-        match expr {
-            ReturnExpr::Literal(value) => Some(value.clone()),
-            ReturnExpr::Symbol(name) => env.get(name).cloned(),
-            ReturnExpr::BinOp { op, left, right } => {
-                if op == "&&" || op == "||" {
-                    let lhs = Self::eval_return_expr(left, env, shapes, recursion)?;
-                    let lhs_bool = match &lhs {
-                        JavaScript::Raw(Bool(b)) => Some(*b),
-                        _ => None,
-                    }?;
-                    return match (op.as_str(), lhs_bool) {
-                        ("&&", false) => Some(JavaScript::Raw(Bool(false))),
-                        ("&&", true) => Self::eval_return_expr(right, env, shapes, recursion),
-                        ("||", true) => Some(JavaScript::Raw(Bool(true))),
-                        ("||", false) => Self::eval_return_expr(right, env, shapes, recursion),
-                        _ => None,
-                    };
-                }
-
-                let lhs = Self::eval_return_expr(left, env, shapes, recursion)?;
-                let rhs = Self::eval_return_expr(right, env, shapes, recursion)?;
-                Self::eval_binop(op.as_str(), &lhs, &rhs)
-            }
-            ReturnExpr::Subscript { array, index } => {
-                let array = Self::eval_return_expr(array, env, shapes, recursion)?;
-                let index = Self::eval_return_expr(index, env, shapes, recursion)?;
-
-                match (array, index) {
-                    (JavaScript::Array(arr), JavaScript::Raw(Num(i))) if i >= 0.0 => {
-                        arr.get(i as usize).cloned()
-                    }
-                    (JavaScript::Array(arr), JavaScript::Raw(Str(i))) => {
-                        let idx = i.parse::<usize>().ok()?;
-                        arr.get(idx).cloned()
-                    }
-                    _ => None,
-                }
-            }
-            ReturnExpr::Call { name, args } => {
-                let callee_shape = shapes.get(name)?;
-                if callee_shape.params.len() != args.len() {
-                    return None;
-                }
-
-                let mut sub_env: HashMap<String, JavaScript> = HashMap::new();
-                for (param, arg_expr) in callee_shape.params.iter().zip(args.iter()) {
-                    let value = Self::eval_return_expr(arg_expr, env, shapes, recursion)?;
-                    sub_env.insert(param.clone(), value);
-                }
-
-                if !recursion.bump() {
-                    return None;
-                }
-                let result =
-                    Self::eval_shape_with_env(callee_shape, sub_env, shapes, recursion);
-                recursion.unbump();
-                result
-            }
-            ReturnExpr::Ternary {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                let cond = Self::eval_return_expr(condition, env, shapes, recursion)?;
-                match cond {
-                    JavaScript::Raw(Bool(true)) => {
-                        Self::eval_return_expr(then_branch, env, shapes, recursion)
-                    }
-                    JavaScript::Raw(Bool(false)) => {
-                        Self::eval_return_expr(else_branch, env, shapes, recursion)
-                    }
-                    _ => None,
-                }
-            }
-            ReturnExpr::ArrayLiteral(items) => {
-                let mut values = Vec::with_capacity(items.len());
-                for item in items {
-                    values.push(Self::eval_return_expr(item, env, shapes, recursion)?);
-                }
-                Some(JavaScript::Array(values))
-            }
-        }
-    }
-
-    fn eval_binop(op: &str, lhs: &JavaScript, rhs: &JavaScript) -> Option<JavaScript> {
-        match (lhs, rhs) {
-            (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => match op {
-                "+" => Some(JavaScript::Raw(Num(a + b))),
-                "-" => Some(JavaScript::Raw(Num(a - b))),
-                "*" => Some(JavaScript::Raw(Num(a * b))),
-                "/" => Some(JavaScript::Raw(Num(a / b))),
-                "%" => Some(JavaScript::Raw(Num(a % b))),
-                "==" | "===" => Some(JavaScript::Raw(Bool(a == b))),
-                "!=" | "!==" => Some(JavaScript::Raw(Bool(a != b))),
-                "<" => Some(JavaScript::Raw(Bool(a < b))),
-                ">" => Some(JavaScript::Raw(Bool(a > b))),
-                "<=" => Some(JavaScript::Raw(Bool(a <= b))),
-                ">=" => Some(JavaScript::Raw(Bool(a >= b))),
-                _ => None,
-            },
-            (JavaScript::Raw(Str(a)), JavaScript::Raw(Str(b))) => match op {
-                "+" => Some(JavaScript::Raw(Str(format!("{a}{b}")))),
-                "==" | "===" => Some(JavaScript::Raw(Bool(a == b))),
-                "!=" | "!==" => Some(JavaScript::Raw(Bool(a != b))),
-                "<" => Some(JavaScript::Raw(Bool(a < b))),
-                ">" => Some(JavaScript::Raw(Bool(a > b))),
-                "<=" => Some(JavaScript::Raw(Bool(a <= b))),
-                ">=" => Some(JavaScript::Raw(Bool(a >= b))),
-                _ => None,
-            },
-            (JavaScript::Raw(Bool(a)), JavaScript::Raw(Bool(b))) => match op {
-                "==" | "===" => Some(JavaScript::Raw(Bool(a == b))),
-                "!=" | "!==" => Some(JavaScript::Raw(Bool(a != b))),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    fn eval_return_form(
-        form: &ReturnForm,
-        env: &HashMap<String, JavaScript>,
-        shapes: &HashMap<String, FunctionShape>,
-        recursion: &mut RecursionTracker,
-    ) -> Option<JavaScript> {
-        match form {
-            ReturnForm::Plain(expr) => Self::eval_return_expr(expr, env, shapes, recursion),
-            ReturnForm::Conditional {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                let cond = Self::eval_return_expr(condition, env, shapes, recursion)?;
-                match cond {
-                    JavaScript::Raw(Bool(true)) => {
-                        Self::eval_return_form(then_branch, env, shapes, recursion)
-                    }
-                    JavaScript::Raw(Bool(false)) => {
-                        Self::eval_return_form(else_branch, env, shapes, recursion)
-                    }
-                    _ => None,
-                }
-            }
-        }
-    }
-
-    fn eval_shape_with_env(
-        shape: &FunctionShape,
-        mut env: HashMap<String, JavaScript>,
-        shapes: &HashMap<String, FunctionShape>,
-        recursion: &mut RecursionTracker,
-    ) -> Option<JavaScript> {
-        for step in &shape.steps {
-            match step {
-                EvalStep::Assign { name, expr } => {
-                    let value = Self::eval_return_expr(expr, &env, shapes, recursion)?;
-                    env.insert(name.clone(), value);
-                }
-            }
-        }
-
-        let form = shape.return_form.as_ref()?;
-        Self::eval_return_form(form, &env, shapes, recursion)
-    }
-
-    fn eval_shape(
-        shape: &FunctionShape,
-        call_node: &Node<JavaScript>,
-        shapes: &HashMap<String, FunctionShape>,
-        recursion: &mut RecursionTracker,
-    ) -> Option<JavaScript> {
-        let args = Self::extract_call_args(call_node);
-        let mut env: HashMap<String, JavaScript> = HashMap::new();
-        for (idx, param) in shape.params.iter().enumerate() {
-            if let Some(arg) = args.get(idx) {
-                env.insert(param.clone(), arg.clone());
-            }
-        }
-
-        Self::eval_shape_with_env(shape, env, shapes, recursion)
     }
 
     // -----------------------------------------------------------------
@@ -1053,55 +805,217 @@ impl FnCall {
         Some(args)
     }
 
-    fn evaluate_subtree(
-        params: &[String],
-        subtree: &SubtreeBody,
+    fn extract_subtree_result(root: &Node<JavaScript>) -> Option<JavaScript> {
+        // Walk the program looking for `console.log(<expr>);` (the sticky
+        // consumer we synthesised) and read `<expr>`'s data.
+        fn find_console_log_arg<'a>(
+            node: &Node<'a, JavaScript>,
+        ) -> Option<JavaScript> {
+            for child in node.iter() {
+                if child.kind() == "expression_statement"
+                    && let Some(call) = child.iter().find(|c| c.kind() == "call_expression")
+                {
+                    let callee = call
+                        .named_child("function")
+                        .or_else(|| call.child(0));
+                    let is_console_log = callee
+                        .as_ref()
+                        .map(|c| {
+                            c.kind() == "member_expression"
+                                && c.text().map(|t| t == "console.log").unwrap_or(false)
+                        })
+                        .unwrap_or(false);
+                    if is_console_log
+                        && let Some(args) = call.named_child("arguments")
+                    {
+                        for a in args.iter() {
+                            if matches!(a.kind(), "(" | ")" | ",") {
+                                continue;
+                            }
+                            if let Some(data) = a.data() {
+                                return Some(data.clone());
+                            }
+                        }
+                    }
+                }
+                if let Some(found) = find_console_log_arg(&child) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        find_console_log_arg(root)
+    }
+
+    // -----------------------------------------------------------------
+    //  Shape-as-source rendering. Replaces the in-house evaluator
+    //  (eval_return_expr / eval_binop / eval_return_form) with a
+    //  rendering pass: the shape is emitted as JS source, parameters
+    //  bound as `var`s, the return-form rewritten to `if/else` with
+    //  assignments to a marker variable, and the whole thing fed to
+    //  the full minusone backend so method calls, array operations,
+    //  regex, etc. are handled by the same rules that handle them at
+    //  top level.
+    // -----------------------------------------------------------------
+
+    fn render_return_expr(expr: &ReturnExpr) -> Option<String> {
+        match expr {
+            ReturnExpr::Literal(value) => Self::js_value_to_source(value),
+            ReturnExpr::Symbol(name) => Some(name.clone()),
+            ReturnExpr::BinOp { op, left, right } => {
+                let l = Self::render_return_expr(left)?;
+                let r = Self::render_return_expr(right)?;
+                Some(format!("({} {} {})", l, op, r))
+            }
+            ReturnExpr::Subscript { array, index } => {
+                let a = Self::render_return_expr(array)?;
+                let i = Self::render_return_expr(index)?;
+                Some(format!("({})[{}]", a, i))
+            }
+            ReturnExpr::Call { name, args } => {
+                let parts: Option<Vec<String>> =
+                    args.iter().map(Self::render_return_expr).collect();
+                Some(format!("{}({})", name, parts?.join(",")))
+            }
+            ReturnExpr::Ternary {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let c = Self::render_return_expr(condition)?;
+                let t = Self::render_return_expr(then_branch)?;
+                let e = Self::render_return_expr(else_branch)?;
+                Some(format!("(({}) ? ({}) : ({}))", c, t, e))
+            }
+            ReturnExpr::ArrayLiteral(items) => {
+                let parts: Option<Vec<String>> =
+                    items.iter().map(Self::render_return_expr).collect();
+                Some(format!("[{}]", parts?.join(",")))
+            }
+            ReturnExpr::RawSource(src) => Some(format!("({})", src)),
+        }
+    }
+
+    fn render_return_form(form: &ReturnForm, marker: &str) -> Option<String> {
+        match form {
+            ReturnForm::Plain(expr) => {
+                let src = Self::render_return_expr(expr)?;
+                Some(format!("{} = ({});", marker, src))
+            }
+            ReturnForm::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_src = Self::render_return_expr(condition)?;
+                let then_src = Self::render_return_form(then_branch, marker)?;
+                let else_src = Self::render_return_form(else_branch, marker)?;
+                Some(format!(
+                    "if ({}) {{\n{}\n}} else {{\n{}\n}}",
+                    cond_src, then_src, else_src
+                ))
+            }
+        }
+    }
+
+    fn render_eval_step(step: &EvalStep) -> Option<String> {
+        match step {
+            EvalStep::Assign { name, expr } => {
+                let src = Self::render_return_expr(expr)?;
+                Some(format!("var {} = {};", name, src))
+            }
+        }
+    }
+
+    fn evaluate_shape_via_subtree(
+        shape: &FunctionShape,
         args: &[JavaScript],
+        prelude: &str,
     ) -> Option<JavaScript> {
-        if args.len() != params.len() {
+        // Allow `args.len() < params.len()` — JS lets the caller drop trailing
+        // arguments and the unbound params just stay `undefined`. Reject the
+        // reverse (more args than params) only because anything we'd lose
+        // there could have side-effect-laden reductions we want to keep.
+        if args.len() > shape.params.len() {
             return None;
         }
+
         let mut program = String::new();
-        for (param, arg) in params.iter().zip(args.iter()) {
-            let value_src = Self::js_value_to_source(arg)?;
-            program.push_str(&format!("var {} = {};\n", param, value_src));
-        }
-        for stmt in &subtree.pre_statements {
-            program.push_str(stmt);
+        if !prelude.is_empty() {
+            program.push_str(prelude);
             program.push('\n');
         }
-        program.push_str(&format!(
-            "var __minusone_return__ = ({});\n__minusone_return__\n",
-            subtree.return_expr_src
-        ));
 
-        let mut tree = build_javascript_tree(&program).ok()?;
+        // Bind every param: trailing ones we don't have an argument for get
+        // an explicit `undefined` so the synthesised body sees a known value.
+        for (i, param) in shape.params.iter().enumerate() {
+            let value_src = match args.get(i) {
+                Some(value) => Self::js_value_to_source(value)?,
+                None => "undefined".to_string(),
+            };
+            program.push_str(&format!("var {} = {};\n", param, value_src));
+        }
+
+        // Render steps (var declarations, assignments captured by shape extraction)
+        for step in &shape.steps {
+            program.push_str(&Self::render_eval_step(step)?);
+            program.push('\n');
+        }
+
+        // Render return form as an if/else assignment chain. The trailing
+        // `console.log(__minusone_return__)` is a sticky consumer: it has a
+        // side effect (so RemoveUnused keeps it) and after Var propagates,
+        // its argument carries the value we extract.
+        let form = shape.return_form.as_ref()?;
+        program.push_str("var __minusone_return__;\n");
+        program.push_str(&Self::render_return_form(form, "__minusone_return__")?);
+        program.push_str("\nconsole.log(__minusone_return__);\n");
+
+        Self::run_subtree_pipeline(&program)
+    }
+
+    fn run_subtree_pipeline(program: &str) -> Option<JavaScript> {
+        // 1. Pre-process: InlineIife, ExpandAugmentedAssignment, ReduceSequence,
+        //    UnusedVar+RemoveUnused (which does the constant-condition `if` collapsing).
+        let cleaned = JavaScriptBackend::remove_extra(program).ok()?;
+
+        // 2. Apply ruleset, lint, post-clean. Iterate the (rules + clean)
+        //    pair until the source stabilises - one cycle isn't enough when
+        //    a constant `if` collapse on iteration N exposes new constant
+        //    folds for iteration N+1 (e.g. recursive call resolution).
+        let mut current = cleaned;
+        for _ in 0..8 {
+            let mut tree = build_javascript_tree(&current).ok()?;
+            tree.apply_mut_with_strategy(
+                &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+                JavaScriptStrategy,
+            )
+            .ok()?;
+
+            let mut linter = crate::js::linter::Linter::default();
+            tree.apply(&mut linter).ok()?;
+            let linted = linter.output;
+
+            let post_cleaned = match CleanEngine::<JavaScriptBackend>::from_source(&linted) {
+                Ok(mut e) => e.clean().unwrap_or(linted),
+                Err(_) => return None,
+            };
+
+            if post_cleaned == current {
+                break;
+            }
+            current = post_cleaned;
+        }
+
+        // 3. Final pass to attach data on the stabilised tree.
+        let mut tree = build_javascript_tree(&current).ok()?;
         tree.apply_mut_with_strategy(
             &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
             JavaScriptStrategy,
         )
         .ok()?;
-
         let root = tree.root().ok()?;
         Self::extract_subtree_result(&root)
-    }
-
-    fn extract_subtree_result(root: &Node<JavaScript>) -> Option<JavaScript> {
-        let mut last_expr_stmt: Option<Node<JavaScript>> = None;
-        for child in root.iter() {
-            if child.kind() == "expression_statement" {
-                last_expr_stmt = Some(child);
-            }
-        }
-        let stmt = last_expr_stmt?;
-        for child in stmt.iter() {
-            if child.kind() != ";"
-                && let Some(data) = child.data()
-            {
-                return Some(data.clone());
-            }
-        }
-        None
     }
 
     fn shape_from_value(&self, value: &JavaScript) -> Option<FunctionShape> {
@@ -1217,11 +1131,25 @@ impl FnCall {
         None
     }
 
+    fn build_program_prelude(program: &Node<JavaScript>) -> String {
+        let mut prelude = String::new();
+        for child in program.iter() {
+            if matches!(
+                child.kind(),
+                "function_declaration" | "generator_function_declaration"
+            ) && let Ok(src) = child.text()
+            {
+                prelude.push_str(src);
+                prelude.push('\n');
+            }
+        }
+        prelude
+    }
+
     fn resolve_member_call_semantic_fallback<'a>(
         call_node: &Node<'a, JavaScript>,
         base: &str,
         key: &str,
-        recursion: &mut RecursionTracker,
     ) -> Option<JavaScript> {
         let program = Self::find_program_node(call_node)?;
         let mut var_shapes = HashMap::new();
@@ -1237,13 +1165,14 @@ impl FnCall {
         );
 
         let shape = object_field_shapes.get(&(base.to_string(), key.to_string()))?;
-        Self::eval_shape(shape, call_node, &var_shapes, recursion)
+        let args = Self::extract_positional_call_args(call_node)?;
+        let prelude = Self::build_program_prelude(&program);
+        Self::evaluate_shape_via_subtree(shape, &args, &prelude)
     }
 
     fn resolve_identifier_call_semantic_fallback<'a>(
         call_node: &Node<'a, JavaScript>,
         fn_name: &str,
-        recursion: &mut RecursionTracker,
     ) -> Option<JavaScript> {
         let program = Self::find_program_node(call_node)?;
         let mut var_shapes = HashMap::new();
@@ -1263,7 +1192,9 @@ impl FnCall {
         }
 
         let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
-        Self::eval_shape(&shape, call_node, &var_shapes, recursion)
+        let args = Self::extract_positional_call_args(call_node)?;
+        let prelude = Self::build_program_prelude(&program);
+        Self::evaluate_shape_via_subtree(&shape, &args, &prelude)
     }
 
     fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
@@ -1578,18 +1509,14 @@ impl FnCall {
         shape: &FunctionShape,
         view: &Node<JavaScript>,
     ) -> Option<JavaScript> {
-        if !self.recursion.bump() {
+        if !try_global_bump() {
             return None;
         }
-        let mut result = Self::eval_shape(shape, view, &self.var_shapes, &mut self.recursion);
-        // Fallback: full minusone pipeline on a synthesised body.
-        if result.is_none()
-            && let Some(subtree) = shape.subtree_body.as_ref()
-            && let Some(args) = Self::extract_positional_call_args(view)
-        {
-            result = Self::evaluate_subtree(&shape.params, subtree, &args);
-        }
-        self.recursion.unbump();
+        let result = (|| -> Option<JavaScript> {
+            let args = Self::extract_positional_call_args(view)?;
+            Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decl_prelude)
+        })();
+        global_unbump();
         result
     }
 
@@ -1598,15 +1525,11 @@ impl FnCall {
         view: &Node<JavaScript>,
         fn_name: &str,
     ) -> Option<JavaScript> {
-        if !self.recursion.bump() {
+        if !try_global_bump() {
             return None;
         }
-        let result = Self::resolve_identifier_call_semantic_fallback(
-            view,
-            fn_name,
-            &mut self.recursion,
-        );
-        self.recursion.unbump();
+        let result = Self::resolve_identifier_call_semantic_fallback(view, fn_name);
+        global_unbump();
         result
     }
 
@@ -1616,16 +1539,11 @@ impl FnCall {
         base: &str,
         key: &str,
     ) -> Option<JavaScript> {
-        if !self.recursion.bump() {
+        if !try_global_bump() {
             return None;
         }
-        let result = Self::resolve_member_call_semantic_fallback(
-            view,
-            base,
-            key,
-            &mut self.recursion,
-        );
-        self.recursion.unbump();
+        let result = Self::resolve_member_call_semantic_fallback(view, base, key);
+        global_unbump();
         result
     }
 
@@ -1657,10 +1575,20 @@ impl<'a> RuleMut<'a> for FnCall {
             self.object_field_shapes.clear();
             self.shapes_by_source.clear();
             self.recursion.reset();
+            self.fn_decl_prelude.clear();
 
-            // Hoist top-level function_declarations so forward calls resolve.
             for child in view.iter() {
+                // Hoist top-level function_declarations so forward calls resolve.
                 Self::hoist_function_declaration(&child, &mut self.var_shapes);
+                // Collect function declaration source for sub-program prelude.
+                if matches!(
+                    child.kind(),
+                    "function_declaration" | "generator_function_declaration"
+                ) && let Ok(src) = child.text()
+                {
+                    self.fn_decl_prelude.push_str(src);
+                    self.fn_decl_prelude.push('\n');
+                }
             }
         }
         Ok(())

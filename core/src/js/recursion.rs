@@ -1,6 +1,40 @@
 //! Depth-tracking utility for rules that recurse into function calls or `eval`.
 
 use crate::tree::Node;
+use std::cell::Cell;
+
+thread_local! {
+    static GLOBAL_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Cross-instance recursion bracket. Sub-pipelines spawn fresh `FnCall`
+/// instances with their own `RecursionTracker`, so the per-instance counter
+/// would reset to zero on every nested deobfuscation. The thread-local
+/// `GLOBAL_DEPTH` is shared between all `FnCall` instances on the same
+/// thread, so an inner sub-tree can see how deep the outer caller is and
+/// refuse to recurse past `DEFAULT_MAX_RECURSION_DEPTH`.
+pub fn try_global_bump() -> bool {
+    GLOBAL_DEPTH.with(|c| {
+        let depth = c.get();
+        if depth >= DEFAULT_MAX_RECURSION_DEPTH {
+            log::trace!(
+                "global recursion depth {} reached, refusing to recurse",
+                depth
+            );
+            return false;
+        }
+        c.set(depth + 1);
+        true
+    })
+}
+
+pub fn global_unbump() {
+    GLOBAL_DEPTH.with(|c| c.set(c.get().saturating_sub(1)));
+}
+
+pub fn global_depth() -> usize {
+    GLOBAL_DEPTH.with(|c| c.get())
+}
 
 pub const DEFAULT_MAX_RECURSION_DEPTH: usize = 16;
 
