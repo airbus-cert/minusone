@@ -6,6 +6,7 @@ use crate::js::Value::{BigInt, Bool};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
+use crate::js::objects::objectify::as_object;
 use crate::js::regex::RegexExec;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
@@ -33,21 +34,80 @@ impl<'a> RuleMut<'a> for ParseString {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "string" {
-            return Ok(());
+        match view.kind() {
+            "string" => {
+                let value = view.text();
+                if let Err(e) = value {
+                    warn!("ParseString: error getting text for node: {}", e);
+                    return Ok(());
+                }
+                let value = unescaped_js_string(value?);
+
+                trace!("ParseString (L): string literal with value '{}'", value);
+                node.reduce(Raw(Str(value)));
+                Ok(())
+            }
+            "call_expression" => {
+                let is_string = view
+                    .child(0)
+                    .map(|f| f.text().ok() == Some("String"))
+                    .unwrap_or(false);
+
+                if let Some(args) = view.child(1)
+                    && is_string
+                {
+                    if let Some(arg) = args.child(1) {
+                        let str = match arg.data() {
+                            None => String::new(),
+                            Some(Raw(Str(s))) => s.clone(),
+                            Some(Array(a)) => flatten_array(a, None),
+                            Some(value) => value.to_string(),
+                        };
+
+                        trace!("ParseString (L): string literal with value '{}'", str);
+                        node.reduce(Raw(Str(str)));
+                    }
+                }
+                Ok(())
+            }
+            "new_expression" => {
+                println!("ParseString (L): new expression");
+                let is_string = view
+                    .child(1)
+                    .map(|f| f.text().ok() == Some("String"))
+                    .unwrap_or(false);
+                println!("ParseString (L): is_string: {}", is_string);
+
+                if let Some(args) = view.child(2)
+                    && is_string
+                {
+                    if let Some(arg) = args.child(1) {
+                        let str = match arg.data() {
+                            None => String::new(),
+                            Some(Raw(Str(s))) => s.clone(),
+                            Some(Array(a)) => flatten_array(a, None),
+                            Some(value) => value.to_string(),
+                        };
+
+                        let obj = match as_object(&Raw(Str(str.clone()))) {
+                            Some(obj) => obj,
+                            None => {
+                                warn!(
+                                    "failed to create string object from string literal: {}",
+                                    str
+                                );
+                                return Ok(());
+                            }
+                        };
+
+                        trace!("ParseString (L): string object with value '{}'", str);
+                        node.reduce(obj);
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
         }
-
-        let value = view.text();
-        if let Err(e) = value {
-            warn!("ParseString: error getting text for node: {}", e);
-            return Ok(());
-        }
-        let value = unescaped_js_string(value?);
-
-        trace!("ParseString (L): string literal with value '{}'", value);
-        node.reduce(Raw(Str(value)));
-
-        Ok(())
     }
 }
 
@@ -884,71 +944,6 @@ impl<'a> RuleMut<'a> for FromCharCode {
     }
 }
 
-/// Infers `String(...)` coercion calls.
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, StringConstructor};
-/// use minusone::js::integer::ParseInt;
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = String(1);").unwrap();
-/// tree.apply_mut(&mut (ParseString::default(), ParseInt::default(), StringConstructor::default())).unwrap();
-///
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = '1';");
-/// ```
-#[derive(Default)]
-pub struct StringConstructor;
-
-impl<'a> RuleMut<'a> for StringConstructor {
-    type Language = JavaScript;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() != "call_expression" {
-            return Ok(());
-        }
-
-        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
-            return Ok(());
-        };
-        if callee.kind() != "identifier" {
-            return Ok(());
-        }
-        if callee.text()? != "String" {
-            return Ok(());
-        }
-
-        let args = view.named_child("arguments");
-        let positional_args = get_positional_arguments(args);
-
-        let result = match positional_args.first().and_then(|a| a.data()) {
-            None => String::new(),
-            Some(Raw(Str(s))) => s.clone(),
-            Some(value) => value.to_string(),
-        };
-
-        trace!("StringConstructor: reducing String(...) to '{}'", result);
-        node.reduce(Raw(Str(result)));
-        Ok(())
-    }
-}
-
 fn to_uint16(n: f64) -> u16 {
     if !n.is_finite() || n == 0.0 {
         return 0;
@@ -1503,7 +1498,6 @@ mod tests_js_string {
             BracketCharAt::default(),
             CharCodeAt::default(),
             FromCharCode::default(),
-            StringConstructor::default(),
             Concat::default(),
             AddInt::default(),
             StringRaw::default(),

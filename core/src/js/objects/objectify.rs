@@ -49,6 +49,13 @@ fn string_builtins(s: &str) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
 
     map.insert("length".to_string(), Raw(Num(s.chars().count() as f64)));
+    map.insert(
+        "valueOf".to_string(),
+        Function {
+            source: format!("function valueOf() {{ [native code] }}"),
+            return_value: Some(Box::new(Raw(Str(s.to_string())))),
+        },
+    );
 
     let tags = vec![
         ("big", "big"),
@@ -157,6 +164,9 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
 
     if let Raw(Str(s)) = value {
         map.extend(string_builtins(s));
+        print!("Extended");
+    } else {
+        println!("Not extended: {:?}", value);
     }
 
     if let Array(arr) = value {

@@ -163,7 +163,6 @@ impl_javascript_ruleset!(
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
-    StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
     Forward,    // Forward inferred type in the most simple cases
     ArrayPlusMinus, // Infer unary plus and minus on arrays
     ArrayJoin,  // Infer array join calls on literal arrays and reduce them to string literals
