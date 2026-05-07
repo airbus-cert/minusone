@@ -128,6 +128,8 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         });
     }
 
+    let mut to_string_override = None;
+
     let mut map = HashMap::new();
     map.insert(
         "constructor".to_string(),
@@ -163,19 +165,25 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
     }
 
     if let Raw(Str(s)) = value {
-        map.extend(string_builtins(s));
-        print!("Extended");
-    } else {
-        println!("Not extended: {:?}", value);
+        map.extend(string_builtins(s.as_str()));
+        to_string_override = Some(s.to_owned());
     }
 
     if let Array(arr) = value {
         map.extend(array_builtins(arr.clone()));
     }
 
+    println!(
+        "To string override: {}",
+        to_string_override
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("None")
+    );
+
     Some(Object {
         map,
-        to_string_override: None,
+        to_string_override,
     })
 }
 

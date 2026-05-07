@@ -27,14 +27,20 @@ impl Display for JavaScript {
             NaN => write!(f, "NaN"),
             Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
             Null => write!(f, "null"),
-            Object { map, .. } => {
-                let obj_str = map
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                write!(f, "{{{}}}", obj_str)
-            }
+            Object {
+                map,
+                to_string_override,
+            } => match to_string_override {
+                Some(override_str) => write!(f, "'{}'", override_str),
+                None => {
+                    let obj_str = map
+                        .iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    write!(f, "{{{}}}", obj_str)
+                }
+            },
             Buffer(b) => {
                 let hex = b
                     .iter()
