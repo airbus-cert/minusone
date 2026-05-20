@@ -6,6 +6,7 @@ use crate::js::string::escape_js_string;
 use crate::js::{JavaScript, Value};
 use num::{ToPrimitive, Zero};
 use std::fmt::Display;
+use log::warn;
 
 impl Display for JavaScript {
     // If a new type is added, try to put the raw value in the console and see the output
@@ -101,6 +102,8 @@ impl JavaScript {
                 }
                 Bool(b) => Raw(Num(if *b { 1.0 } else { 0.0 })),
                 BigInt(b) => {
+                    warn!("Casting BigInt to a Number should crash the JS runtime, casting anyway");
+
                     if b.is_zero() {
                         Raw(Num(0.0))
                     } else if let Some(n) = b.to_f64() {
