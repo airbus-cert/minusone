@@ -55,6 +55,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("at", array_builtin_at),
     ("concat", array_builtin_concat),
     ("copyWithin", array_builtin_copy_within),
+    ("entries", array_builtin_entries),
 ];
 
 #[derive(Default)]
@@ -209,6 +210,13 @@ fn array_builtin_copy_within(input: &Vec<JavaScript>, args: &[JavaScript]) -> Op
     }
 
     Some(Array(array))
+}
+
+fn array_builtin_entries(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    Some(Iterator {
+        values: input.clone(),
+        index: 0,
+    })
 }
 
 /// Infers `+` on two arrays
@@ -721,7 +729,9 @@ mod tests_js_array {
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
     use crate::js::integer::{ParseInt, PosNeg, Substract};
+    use crate::js::iterator::IteratorBuiltins;
     use crate::js::linter::Linter;
+    use crate::js::objects::object::ObjectField;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::BracketCharAt;
     use crate::js::string::ParseString;
@@ -736,7 +746,9 @@ mod tests_js_array {
             Forward::default(),
             Substract::default(),
             ArrayBuiltins::default(),
+            IteratorBuiltins::default(),
             PosNeg::default(),
+            //ObjectField::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),
@@ -845,6 +857,27 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin(2, 0, '??')"),
             "var x = [0, 1, 2, 3, 4, 5, 6]"
+        );
+    }
+
+    #[test]
+    fn test_builtin_entries() {
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2].entries()"),
+            "var x = [object Array Iterator]"
+        );
+
+        // Order of the fields is random ??
+        let result = deobfuscate("var x = [0, 1, 2].entries().next()");
+        if result.starts_with("var x = {v") {
+            assert_eq!(result, "var x = {value: [0, 0], done: false}");
+        } else {
+            assert_eq!(result, "var x = {done: false, value: [0, 0]}");
+        }
+
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2].entries().next().value"),
+            "var x = [0, 0]"
         );
     }
 }

@@ -10,6 +10,7 @@ pub mod forward;
 pub mod functions;
 pub mod globals;
 pub mod integer;
+pub mod iterator;
 pub mod linter;
 pub mod math;
 pub mod node;
@@ -25,6 +26,8 @@ pub mod r#typeof;
 mod utils;
 pub mod var;
 
+use self::JavaScript::*;
+use self::Value::*;
 use self::array::*;
 use self::b64::*;
 use self::bool::*;
@@ -34,6 +37,9 @@ use self::forward::*;
 use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
+use self::iterator::*;
+#[cfg(test)]
+use self::linter::Linter;
 use self::linter::RemoveComment;
 use self::math::*;
 use self::node::buffer::*;
@@ -44,10 +50,6 @@ use self::string::*;
 use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
-use crate::js::JavaScript::*;
-use crate::js::Value::*;
-#[cfg(test)]
-use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::HashMap;
@@ -84,6 +86,10 @@ pub enum JavaScript {
     Object {
         map: HashMap<String, JavaScript>,
         to_string_override: Option<String>,
+    },
+    Iterator {
+        values: Vec<JavaScript>,
+        index: usize,
     },
 }
 
@@ -161,6 +167,7 @@ impl_javascript_ruleset!(
     CombineArrays,        // Infer + operations on two arrays
     StringBuiltins,       // Shared dispatcher for string literals builtins (.at, etc.)
     ArrayBuiltins,        // Shared dispatcher for array literals builtins (.at, etc.)
+    IteratorBuiltins,     // Shared dispatcher for iterators literals builtins (.next, etc.)
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments

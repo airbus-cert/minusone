@@ -42,6 +42,7 @@ pub fn constructor_name(value: &JavaScript) -> &'static str {
         Null => "null",
         Object { .. } => "Object",
         Buffer(_) => "Buffer",
+        Iterator { .. } => "Iterator",
     }
 }
 

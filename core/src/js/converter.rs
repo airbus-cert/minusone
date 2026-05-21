@@ -42,6 +42,7 @@ impl Display for JavaScript {
                     .collect::<String>();
                 write!(f, "Buffer.from('{}', 'hex')", hex)
             }
+            Iterator { .. } => write!(f, "[object Array Iterator]"),
         }
     }
 }
@@ -132,6 +133,7 @@ impl JavaScript {
                 Ok(s) => Raw(Str(s)).as_js_num(),
                 Err(_) => NaN,
             },
+            Iterator { .. } => NaN,
         }
     }
 
@@ -160,6 +162,7 @@ impl JavaScript {
             }
             Object { .. } => true,
             Buffer(_) => true,
+            Iterator { .. } => true,
         }
     }
 
@@ -181,6 +184,7 @@ impl JavaScript {
             Bytes(_) => "string",
             Object { .. } => "object",
             Buffer(_) => "object",
+            Iterator { .. } => "object",
         }
     }
 }
