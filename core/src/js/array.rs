@@ -51,8 +51,11 @@ impl<'a> RuleMut<'a> for ParseArray {
 /// Centralized dispatcher for array literal builtins.
 type ArrayBuiltinHandler = fn(&Vec<JavaScript>, &[JavaScript]) -> Option<JavaScript>;
 
-const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] =
-    &[("at", array_builtin_at), ("concat", array_builtin_concat)];
+const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
+    ("at", array_builtin_at),
+    ("concat", array_builtin_concat),
+    ("copyWithin", array_builtin_copy_within),
+];
 
 #[derive(Default)]
 pub struct ArrayBuiltins;
@@ -154,6 +157,57 @@ fn array_builtin_concat(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<
             array.push(arg.clone());
         }
     }
+    Some(Array(array))
+}
+
+/// # `.copyWithin(x, y[, z])`
+/// No params = keep the array as is<br>
+/// `.copyWithin(x)` -> `.copyWithin(x, 0)`<br>
+/// `.copyWithin(x, y)` -> copy everything from x at y `[0,1,2,3,4,5,6].copyWithin(2,0)` -> `[0,1,0,1,2,3,4]`<br>
+/// `.copyWithin(x, y, z)` -> copy everything from x at y but limits to z elements `[0,1,2,3,4,5,6].copyWithin(2,0,3)` -> `[0,1,0,1,2,5,6]`
+fn array_builtin_copy_within(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Array(input.clone()));
+    }
+
+    let len = input.len();
+
+    let target = match args[0].as_js_num() {
+        Raw(Num(n)) => n as usize,
+        NaN => 0usize,
+        _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+    };
+
+    let start = if args.len() >= 2 {
+        match args[1].as_js_num() {
+            Raw(Num(n)) => n as usize,
+            NaN => 0usize,
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    } else {
+        0usize
+    };
+
+    let end = if args.len() >= 3 {
+        match args[2].as_js_num() {
+            Raw(Num(n)) => n as usize,
+            NaN => return Some(Array(input.clone())),
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    } else {
+        len
+    };
+
+    let count = end.min(len).saturating_sub(start);
+
+    let mut array = input.clone();
+    for i in 0..count {
+        if target + i >= len {
+            break;
+        }
+        array[target + i] = input[start + i].clone();
+    }
+
     Some(Array(array))
 }
 
@@ -755,6 +809,42 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0,1,2].concat(1, 'a', ['b', ['c']])"),
             "var x = [0, 1, 2, 1, 'a', 'b', ['c']]"
+        );
+    }
+
+    #[test]
+    fn test_builtin_copy_within() {
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin()"),
+            "var x = [0, 1, 2, 3, 4, 5, 6]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin(2)"),
+            "var x = [0, 1, 0, 1, 2, 3, 4]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin('2')"),
+            "var x = [0, 1, 0, 1, 2, 3, 4]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin('??')"),
+            "var x = [0, 1, 2, 3, 4, 5, 6]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin(2, 3)"),
+            "var x = [0, 1, 3, 4, 5, 6, 6]"
+        ); // crash here
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin(2, '??')"),
+            "var x = [0, 1, 0, 1, 2, 3, 4]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin(2, 0, 3)"),
+            "var x = [0, 1, 0, 1, 2, 5, 6]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5, 6].copyWithin(2, 0, '??')"),
+            "var x = [0, 1, 2, 3, 4, 5, 6]"
         );
     }
 }
