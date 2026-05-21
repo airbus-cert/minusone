@@ -7,7 +7,7 @@ use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
 use crate::js::regex::RegexExec;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
@@ -299,17 +299,6 @@ fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<Java
     }
 
     Some(Raw(Num(chars[index as usize] as u32 as f64)))
-}
-
-fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
-    match value {
-        None => 0,
-        Some(v) => match v.as_js_num() {
-            Raw(Num(n)) if n.is_finite() => n.trunc() as i64,
-            Raw(Num(_)) | NaN => 0,
-            _ => 0,
-        },
-    }
 }
 
 fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {

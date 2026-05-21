@@ -159,7 +159,8 @@ impl_javascript_ruleset!(
     BoolAlgebra,          // Infer boolean algebra operations (&&, ||)
     AddBool,              // Infer boolean addition operations
     CombineArrays,        // Infer + operations on two arrays
-    StringBuiltins,       // Shared dispatcher for string literal builtins (.at, etc.)
+    StringBuiltins,       // Shared dispatcher for string literals builtins (.at, etc.)
+    ArrayBuiltins,        // Shared dispatcher for array literals builtins (.at, etc.)
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments

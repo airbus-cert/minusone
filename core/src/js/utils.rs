@@ -1,6 +1,6 @@
 use crate::js::JavaScript;
-use crate::js::JavaScript::Raw;
-use crate::js::Value::Str;
+use crate::js::JavaScript::{NaN, Raw};
+use crate::js::Value::{Num, Str};
 use crate::tree::Node;
 
 pub fn method_name(callee: &Node<JavaScript>) -> Option<String> {
@@ -68,4 +68,15 @@ pub fn is_write_target(node: &Node<JavaScript>) -> bool {
     }
 
     false
+}
+
+pub fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
+    match value {
+        None => 0,
+        Some(v) => match v.as_js_num() {
+            Raw(Num(n)) if n.is_finite() => n.trunc() as i64,
+            Raw(Num(_)) | NaN => 0,
+            _ => 0,
+        },
+    }
 }

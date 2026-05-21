@@ -4,7 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
@@ -46,6 +46,97 @@ impl<'a> RuleMut<'a> for ParseArray {
 
         Ok(())
     }
+}
+
+/// Centralized dispatcher for array literal builtins.
+type ArrayBuiltinHandler = fn(&Vec<JavaScript>, &[JavaScript]) -> Option<JavaScript>;
+
+const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[("at", array_builtin_at)];
+
+#[derive(Default)]
+pub struct ArrayBuiltins;
+
+impl<'a> RuleMut<'a> for ArrayBuiltins {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Array(input)) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+        let mut arg_values = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data().cloned() else {
+                return Ok(());
+            };
+            arg_values.push(value);
+        }
+
+        let Some(result) = dispatch_array_builtin(&method, input, &arg_values) else {
+            return Ok(());
+        };
+
+        trace!(
+            "ArrayBuiltins: reducing '{}'.{}(...) to {}",
+            Array(input.clone()),
+            method,
+            result
+        );
+        node.reduce(result);
+        Ok(())
+    }
+}
+
+fn dispatch_array_builtin(
+    method: &str,
+    input: &Vec<JavaScript>,
+    args: &[JavaScript],
+) -> Option<JavaScript> {
+    ARRAY_BUILTINS
+        .iter()
+        .find_map(|(name, handler)| (*name == method).then(|| handler(input, args)))
+        .flatten()
+}
+
+fn array_builtin_at(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let index = js_index_from_optional_arg(args.first());
+    let len = input.len() as i64;
+    let normalized = if index >= 0 { index } else { len + index };
+
+    if normalized < 0 || normalized >= len {
+        return Some(Undefined);
+    }
+
+    Some(input[normalized as usize].clone())
 }
 
 /// Infers `+` on two arrays
