@@ -11,6 +11,7 @@ pub(crate) fn run_deobf<B: DeobfuscationBackend>(
     cli: Cli,
     rule_set: Option<Vec<String>>,
     skip_rule_set: Option<Vec<String>>,
+    keep_dead_code: bool,
 ) -> MinusOneResult<()>
 where
     <B as DeobfuscationBackend>::Language: Debug,
@@ -40,7 +41,7 @@ where
         println!("\n\n");
     }
 
-    println!("{}", engine.lint()?);
+    println!("{}", engine.lint(keep_dead_code)?);
     Ok(())
 }
 

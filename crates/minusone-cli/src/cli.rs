@@ -87,6 +87,10 @@ pub struct Cli {
     /// Toggle Base64 decoding utf8 <--> utf16le
     #[arg(long)]
     pub utf: bool,
+
+    /// Keep dead code
+    #[arg(short, long, alias = "kdc")]
+    pub keep_dead_code: bool,
 }
 
 impl Display for Language {
