@@ -51,7 +51,8 @@ impl<'a> RuleMut<'a> for ParseArray {
 /// Centralized dispatcher for array literal builtins.
 type ArrayBuiltinHandler = fn(&Vec<JavaScript>, &[JavaScript]) -> Option<JavaScript>;
 
-const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[("at", array_builtin_at)];
+const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] =
+    &[("at", array_builtin_at), ("concat", array_builtin_concat)];
 
 #[derive(Default)]
 pub struct ArrayBuiltins;
@@ -127,6 +128,8 @@ fn dispatch_array_builtin(
         .flatten()
 }
 
+/// ## `.at(x)`
+/// Handles negative index<br>overlapping pos/neg = `undefined`<br>no params = `.at(0)`
 fn array_builtin_at(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     let index = js_index_from_optional_arg(args.first());
     let len = input.len() as i64;
@@ -137,6 +140,21 @@ fn array_builtin_at(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<Java
     }
 
     Some(input[normalized as usize].clone())
+}
+/// ## `.concat(thing1, ..., thingX)`
+/// no params = keep the array as is<br>
+/// can take any type of args<br>
+/// only unpack once the arrays `[0,1,2].concat(1, "a", ["b", ["c"]])` -> `[0, 1, 2, 1, 'a', 'b', ['c']]`
+fn array_builtin_concat(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let mut array = input.clone();
+    for arg in args {
+        if let Array(arr) = arg {
+            array.extend_from_slice(arr);
+        } else {
+            array.push(arg.clone());
+        }
+    }
+    Some(Array(array))
 }
 
 /// Infers `+` on two arrays
@@ -648,7 +666,7 @@ mod tests_js_array {
     use super::*;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
-    use crate::js::integer::{ParseInt, Substract};
+    use crate::js::integer::{ParseInt, PosNeg, Substract};
     use crate::js::linter::Linter;
     use crate::js::specials::AddSubSpecials;
     use crate::js::string::BracketCharAt;
@@ -663,6 +681,8 @@ mod tests_js_array {
             CombineArrays::default(),
             Forward::default(),
             Substract::default(),
+            ArrayBuiltins::default(),
+            PosNeg::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),
@@ -716,5 +736,25 @@ mod tests_js_array {
     #[test]
     fn test_dont_reduce_array_lookup_when_used_as_callee() {
         assert_eq!(deobfuscate("var x = [][[]]();"), "var x = [][[]]();");
+    }
+
+    #[test]
+    fn test_builtin_at() {
+        assert_eq!(deobfuscate("var x = [0,1,2].at()"), "var x = 0");
+        assert_eq!(deobfuscate("var x = [0,1,2].at(2)"), "var x = 2");
+        assert_eq!(deobfuscate("var x = [0,1,2].at(3)"), "var x = undefined");
+        assert_eq!(deobfuscate("var x = [0,1,2].at(-1)"), "var x = 2");
+        assert_eq!(deobfuscate("var x = [0,1,2].at(-3)"), "var x = 0");
+        assert_eq!(deobfuscate("var x = [0,1,2].at(-4)"), "var x = undefined");
+    }
+
+    #[test]
+    fn test_builtin_concat() {
+        assert_eq!(deobfuscate("var x = [0].concat()"), "var x = [0]");
+        assert_eq!(deobfuscate("var x = [0].concat(1)"), "var x = [0, 1]");
+        assert_eq!(
+            deobfuscate("var x = [0,1,2].concat(1, 'a', ['b', ['c']])"),
+            "var x = [0, 1, 2, 1, 'a', 'b', ['c']]"
+        );
     }
 }
