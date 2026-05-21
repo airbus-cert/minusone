@@ -119,13 +119,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
     fn lint_tree<'a>(
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         _tab_chr: &str,
+        keep_dead_code: bool,
     ) -> MinusOneResult<String> {
         let mut linter = crate::js::linter::Linter::default();
         root.apply(&mut linter)?;
 
         // fallback to returning the linted output without cleaning if the clean pass fails
         match CleanEngine::<JavaScriptBackend>::from_source(&linter.output)
-            .and_then(|mut e| e.clean())
+            .and_then(|mut e| e.clean(keep_dead_code))
         {
             Ok(cleaned) => Ok(cleaned),
             Err(e) => {
@@ -148,34 +149,36 @@ impl CleanBackend for JavaScriptBackend {
         build_javascript_tree_for_storage(src)
     }
 
-    fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String> {
+    fn clean_tree(root: &Tree<EmptyStorage>, keep_dead_code: bool) -> MinusOneResult<String> {
         let mut current = root.root()?.text()?.to_string();
 
         // remove remaining dead code
-        let mut i = 0;
-        loop {
-            i += 1;
-            trace!(
-                "Post-lean pass iteration {}: current code length = {}",
-                i,
-                current.len()
-            );
+        if !keep_dead_code {
+            let mut i = 0;
+            loop {
+                i += 1;
+                trace!(
+                    "Post-lean pass iteration {}: current code length = {}",
+                    i,
+                    current.len()
+                );
 
-            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
-            let mut rule = UnusedVar::default();
-            tree.apply(&mut rule)?;
+                let mut rule = UnusedVar::default();
+                tree.apply(&mut rule)?;
 
-            let mut clean_view = RemoveUnused::new(rule);
-            tree.apply(&mut clean_view)?;
-            let next = clean_view.clear()?;
+                let mut clean_view = RemoveUnused::new(rule);
+                tree.apply(&mut clean_view)?;
+                let next = clean_view.clear()?;
 
-            if next == current {
+                if next == current {
+                    current = next;
+                    break;
+                }
+
                 current = next;
-                break;
             }
-
-            current = next;
         }
 
         // simplify bracket calls to member expressions to make it more "human readable"

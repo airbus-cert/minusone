@@ -65,7 +65,7 @@ where
             .map_err(MinusonejsError::MinusoneError)?;
     }
 
-    engine.lint().map_err(MinusonejsError::MinusoneError)
+    engine.lint(false).map_err(MinusonejsError::MinusoneError)
 }
 
 struct Minusone;

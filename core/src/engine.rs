@@ -26,6 +26,7 @@ pub trait DeobfuscationBackend {
     fn lint_tree<'a>(
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         tab_chr: &str,
+        keep_dead_code: bool,
     ) -> MinusOneResult<String>;
 
     fn language_rules<'a>() -> Vec<&'a str>;
@@ -64,12 +65,12 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
         B::deobfuscate_tree(&mut self.root)
     }
 
-    pub fn lint(&mut self) -> MinusOneResult<String> {
-        B::lint_tree(&self.root, "    ")
+    pub fn lint(&mut self, keep_dead_code: bool) -> MinusOneResult<String> {
+        B::lint_tree(&self.root, "    ", keep_dead_code)
     }
 
-    pub fn lint_format(&mut self, tab_chr: &str) -> MinusOneResult<String> {
-        B::lint_tree(&self.root, tab_chr)
+    pub fn lint_format(&mut self, tab_chr: &str, keep_dead_code: bool) -> MinusOneResult<String> {
+        B::lint_tree(&self.root, tab_chr, keep_dead_code)
     }
 
     pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
@@ -97,7 +98,7 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
 
 pub trait CleanBackend {
     fn build_clean_tree<'a>(src: &'a str) -> MinusOneResult<Tree<'a, EmptyStorage>>;
-    fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String>;
+    fn clean_tree(root: &Tree<EmptyStorage>, keep_dead_code: bool) -> MinusOneResult<String>;
 }
 
 pub struct CleanEngine<'a, B: CleanBackend> {
@@ -113,7 +114,7 @@ impl<'a, B: CleanBackend> CleanEngine<'a, B> {
         })
     }
 
-    pub fn clean(&mut self) -> MinusOneResult<String> {
-        B::clean_tree(&self.root)
+    pub fn clean(&mut self, keep_dead_code: bool) -> MinusOneResult<String> {
+        B::clean_tree(&self.root, keep_dead_code)
     }
 }

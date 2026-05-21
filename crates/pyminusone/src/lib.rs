@@ -44,7 +44,7 @@ where
         engine.deobfuscate().map_err(PyMinusOneError)?;
     }
 
-    Ok(engine.lint().map_err(PyMinusOneError)?)
+    Ok(engine.lint(false).map_err(PyMinusOneError)?)
 }
 
 #[pyfunction]
