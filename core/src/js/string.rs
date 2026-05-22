@@ -1,9 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Buffer, Null, Object, Raw, Regex};
-use crate::js::JavaScript::{NaN, Undefined};
-use crate::js::Value::{BigInt, Bool};
-use crate::js::Value::{Num, Str};
+use crate::js::JavaScript::*;
+use crate::js::Value::*;
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
 use crate::js::regex::RegexExec;
@@ -1120,6 +1118,16 @@ impl<'a> RuleMut<'a> for Concat {
                         s, obj_str, s
                     );
                     node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
+                }
+                (Some(Iterator { .. }), Some(Raw(Str(s)))) => {
+                    let result = format!("[object Array Iterator]{s}");
+                    trace!("Concat: reducing iterator + '{}' to '{}'", s, result);
+                    node.reduce(Raw(Str(result)));
+                }
+                (Some(Raw(Str(s))), Some(Iterator { .. })) => {
+                    let result = format!("[object Array Iterator]{s}");
+                    trace!("Concat: reducing iterator + '{}' to '{}'", s, result);
+                    node.reduce(Raw(Str(result)));
                 }
                 _ => {}
             }

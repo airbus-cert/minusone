@@ -90,13 +90,6 @@ fn array_builtins(_v: Vec<JavaScript>) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
 
     map.insert(
-        "entries".to_string(),
-        Function {
-            source: "[object Array Iterator]".to_string(),
-            return_value: Some(Box::new(Raw(Str("[object Array Iterator]".to_string())))),
-        },
-    );
-    map.insert(
         "flat".to_string(),
         Function {
             source: "function flat() { [native code] }".to_string(),

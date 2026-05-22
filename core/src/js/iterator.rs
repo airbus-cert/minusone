@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 type IteratorBuiltinHandler = fn(&mut JavaScript, &[JavaScript]) -> Option<JavaScript>;
 
-const ARRAY_BUILTINS: &[(&str, IteratorBuiltinHandler)] = &[("next", iterator_builtin_next)];
+const ITERATOR_BUILTINS: &[(&str, IteratorBuiltinHandler)] = &[("next", iterator_builtin_next)];
 
 #[derive(Default)]
 pub struct IteratorBuiltins;
@@ -82,7 +82,7 @@ fn dispatch_iterator_builtin(
     input: &mut JavaScript,
     args: &[JavaScript],
 ) -> Option<JavaScript> {
-    ARRAY_BUILTINS
+    ITERATOR_BUILTINS
         .iter()
         .find_map(|(name, handler)| (*name == method).then(|| handler(input, args)))
         .flatten()

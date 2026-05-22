@@ -56,6 +56,8 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("concat", array_builtin_concat),
     ("copyWithin", array_builtin_copy_within),
     ("entries", array_builtin_entries),
+    ("fill", array_builtin_fill),
+    ("flat", array_builtin_flat),
 ];
 
 #[derive(Default)]
@@ -217,6 +219,76 @@ fn array_builtin_entries(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Optio
         values: input.clone(),
         index: 0,
     })
+}
+
+/// # `.fill(x[, y[, z]])`
+/// No params = fill with `undefined`<br>
+/// `.fill(x)` fill the array with x<br>
+/// `fill(x, y)` -> fill the array with x from y `[0,1,2,3].fill(9,1)` -> `[0,9,9,9]`<br>
+/// `fill(x, y, z)` -> fill the array with x from y to z `[0,1,2,3,5].fill(9,1,4)` -> `[0,9,9,9,5]`
+fn array_builtin_fill(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let fill_with = if args.is_empty() {
+        Undefined
+    } else {
+        args[0].clone()
+    };
+
+    let start = if args.len() >= 2 {
+        match args[1].as_js_num() {
+            Raw(Num(n)) => n as usize,
+            NaN => 0usize,
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    } else {
+        0usize
+    };
+
+    let end = if args.len() >= 3 {
+        match args[2].as_js_num() {
+            Raw(Num(n)) => n as usize,
+            NaN => 0usize,
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    } else {
+        input.len()
+    };
+
+    let mut array = input.clone();
+    for i in start..end {
+        array[i] = fill_with.clone();
+    }
+
+    Some(Array(array))
+}
+
+/// # `.flat(x)`
+///  No args -> `.flat(1)`<br>
+/// recursively unpack x times arrays in arrays `[0,1,[2,[3,[4,5]]]].flat(2)` -> `[0,1,2,3,[4,5]]`
+fn array_builtin_flat(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let depth = if args.is_empty() {
+        1usize
+    } else {
+        match args[0].as_js_num() {
+            Raw(Num(n)) => n as usize,
+            NaN => 0usize,
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    };
+
+    Some(Array(unpack_array(input, depth)))
+}
+
+fn unpack_array(values: &[JavaScript], depth: usize) -> Vec<JavaScript> {
+    let mut out = Vec::new();
+    for value in values {
+        match value {
+            Array(arr) if depth > 0 => {
+                out.extend(unpack_array(arr, depth - 1));
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    out
 }
 
 /// Infers `+` on two arrays
@@ -748,7 +820,7 @@ mod tests_js_array {
             ArrayBuiltins::default(),
             IteratorBuiltins::default(),
             PosNeg::default(),
-            //ObjectField::default(),
+            ObjectField::default(),
             GetArrayElement::default(),
             ArrayPlusMinus::default(),
             AddSubSpecials::default(),
@@ -878,6 +950,75 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0, 1, 2].entries().next().value"),
             "var x = [0, 0]"
+        );
+    }
+
+    #[test]
+    fn test_builtin_fill() {
+        assert_eq!(deobfuscate("var x = [].fill()"), "var x = []");
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3].fill()"),
+            "var x = [undefined, undefined, undefined]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3].fill(0)"),
+            "var x = [0, 0, 0]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3].fill(0, 1)"),
+            "var x = [1, 0, 0]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3].fill(0, '??')"),
+            "var x = [0, 0, 0]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3, 4, 5].fill(0, 1, 4)"),
+            "var x = [1, 0, 0, 0, 5]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3, 4, 5].fill(0, 1, '??')"),
+            "var x = [1, 2, 3, 4, 5]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3, 4, 5].fill(0, '??', 4)"),
+            "var x = [0, 0, 0, 0, 5]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3, 4, 5].fill(0, '??', '??')"),
+            "var x = [1, 2, 3, 4, 5]"
+        );
+    }
+
+    #[test]
+    fn test_builtin_flat() {
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat()"),
+            "var x = [0, 1, 2, [3, [4, 5]]]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat(0)"),
+            "var x = [0, 1, [2, [3, [4, 5]]]]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat(1)"),
+            "var x = [0, 1, 2, [3, [4, 5]]]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat(2)"),
+            "var x = [0, 1, 2, 3, [4, 5]]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat('??')"),
+            "var x = [0, 1, [2, [3, [4, 5]]]]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat(-1)"),
+            "var x = [0, 1, [2, [3, [4, 5]]]]"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat(Infinity)"),
+            "var x = [0, 1, 2, 3, 4, 5]"
         );
     }
 }
