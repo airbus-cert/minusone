@@ -4,6 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
+use crate::js::comparator::strict_eq;
 use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
@@ -58,6 +59,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("entries", array_builtin_entries),
     ("fill", array_builtin_fill),
     ("flat", array_builtin_flat),
+    ("includes", array_builtin_includes),
 ];
 
 #[derive(Default)]
@@ -289,6 +291,23 @@ fn unpack_array(values: &[JavaScript], depth: usize) -> Vec<JavaScript> {
         }
     }
     out
+}
+
+fn array_builtin_includes(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let to_search = if args.is_empty() {
+        Undefined
+    } else {
+        args[0].clone()
+    };
+
+    for value in input {
+        match strict_eq(value, &to_search, "===") {
+            Some(true) => return Some(Raw(Bool(true))),
+            _ => {}
+        }
+    }
+
+    Some(Raw(Bool(false)))
 }
 
 /// Infers `+` on two arrays
@@ -1019,6 +1038,16 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0, 1, [2, [3, [4, 5]]]].flat(Infinity)"),
             "var x = [0, 1, 2, 3, 4, 5]"
+        );
+    }
+
+    #[test]
+    fn test_builtin_includes() {
+        assert_eq!(deobfuscate("var x = [0,1,2].includes()"), "var x = false");
+        assert_eq!(deobfuscate("var x = [0,1,2].includes(2)"), "var x = true");
+        assert_eq!(
+            deobfuscate("var x = [0,1,2].includes('2')"),
+            "var x = false"
         );
     }
 }
