@@ -62,6 +62,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("includes", array_builtin_includes),
     ("indexOf", array_builtin_index_of),
     ("join", array_builtin_join),
+    ("lastIndexOf", array_builtin_last_index_of),
 ];
 
 #[derive(Default)]
@@ -337,6 +338,50 @@ fn array_builtin_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     }
 
     Some(Raw(Num(-1f64)))
+}
+
+fn array_builtin_last_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let to_search = if args.is_empty() {
+        Undefined
+    } else {
+        args[0].clone()
+    };
+
+    let len = input.len();
+    if len == 0 {
+        return Some(Raw(Num(-1.0)));
+    }
+
+    let from_index = if args.len() >= 2 {
+        match args[1].as_js_num() {
+            Raw(Num(n)) => {
+                let n = n.trunc() as isize;
+                if n >= len as isize {
+                    len as isize - 1
+                } else if n < 0 {
+                    let idx = len as isize + n;
+                    if idx < 0 {
+                        return Some(Raw(Num(-1.0)));
+                    }
+                    idx
+                } else {
+                    n
+                }
+            }
+            NaN => 0,
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    } else {
+        len as isize - 1
+    };
+
+    for i in (0..=from_index as usize).rev() {
+        if let Some(true) = strict_eq(&input[i], &to_search, "===") {
+            return Some(Raw(Num(i as f64)));
+        }
+    }
+
+    Some(Raw(Num(-1.0)))
 }
 
 fn array_builtin_join(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1041,6 +1086,36 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0, 1, 2, 0, 1, 2].indexOf(2, '??')"),
             "var x = 2"
+        );
+    }
+
+    #[test]
+    fn test_builtin_last_index_of() {
+        assert_eq!(deobfuscate("var x = [0, 1, 2].lastIndexOf()"), "var x = -1");
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, undefined].lastIndexOf()"),
+            "var x = 3"
+        );
+        assert_eq!(deobfuscate("var x = [0, 1, 2].lastIndexOf(2)"), "var x = 2");
+        assert_eq!(
+            deobfuscate("var x = [0,1,2].lastIndexOf('2')"),
+            "var x = -1"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].lastIndexOf(2)"),
+            "var x = 5"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].lastIndexOf(2, 2)"),
+            "var x = 2"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].lastIndexOf(2, 3)"),
+            "var x = 2"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].lastIndexOf(2, '??')"),
+            "var x = -1"
         );
     }
 }
