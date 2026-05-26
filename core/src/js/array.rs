@@ -5,9 +5,9 @@ use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
 use crate::js::comparator::strict_eq;
-use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
+use crate::js::utils::*;
 use crate::rule::RuleMut;
-use crate::tree::{ControlFlow, NodeMut};
+use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{trace, warn};
 
 /// Parses JavaScript array literals into `Array(_)`.
@@ -67,6 +67,77 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("push", array_builtin_push),
 ];
 
+fn is_array_builtin(method: &str) -> bool {
+    ARRAY_BUILTINS.iter().any(|(name, _)| *name == method)
+}
+
+fn property_name(node: &Node<JavaScript>) -> Option<String> {
+    match node.kind() {
+        "member_expression" => method_name(node),
+        "subscript_expression" => {
+            let index = node.child(2).or_else(|| node.named_child("index"))?;
+            let Some(Raw(Str(name))) = index.data() else {
+                return None;
+            };
+            Some(name.clone())
+        }
+        _ => None,
+    }
+}
+
+fn property_object<'a>(node: &'a Node<'a, JavaScript>) -> Option<Node<'a, JavaScript>> {
+    match node.kind() {
+        "member_expression" | "subscript_expression" => {
+            node.child(0).or_else(|| node.named_child("object"))
+        }
+        _ => None,
+    }
+}
+
+fn array_builtin_name_from_ref(node: &Node<JavaScript>) -> Option<String> {
+    let method = property_name(node)?;
+    if !is_array_builtin(&method) {
+        return None;
+    }
+
+    let object = property_object(node)?;
+    let Some(Array(_)) = object.data() else {
+        return None;
+    };
+
+    Some(method)
+}
+
+fn array_builtin_native_source(node: &Node<JavaScript>) -> Option<String> {
+    let method = array_builtin_name_from_ref(node)?;
+    Some(format!("function {method}() {{ [native code] }}"))
+}
+
+fn is_array_builtin_constructor_name_chain(node: &Node<JavaScript>) -> bool {
+    let Some(last_prop) = property_name(node) else {
+        return false;
+    };
+    if last_prop != "name" {
+        return false;
+    }
+
+    let Some(constructor_node) = property_object(node) else {
+        return false;
+    };
+    let Some(constructor_prop) = property_name(&constructor_node) else {
+        return false;
+    };
+    if constructor_prop != "constructor" {
+        return false;
+    }
+
+    let Some(base_node) = property_object(&constructor_node) else {
+        return false;
+    };
+
+    array_builtin_name_from_ref(&base_node).is_some()
+}
+
 #[derive(Default)]
 pub struct ArrayBuiltins;
 
@@ -87,45 +158,100 @@ impl<'a> RuleMut<'a> for ArrayBuiltins {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
-        if view.kind() != "call_expression" {
-            return Ok(());
-        }
 
-        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
-            return Ok(());
-        };
-        let Some(method) = method_name(&callee) else {
-            return Ok(());
-        };
-
-        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
-            return Ok(());
-        };
-        let Some(Array(input)) = object.data() else {
-            return Ok(());
-        };
-
-        let args = view.named_child("arguments");
-        let positional_args = get_positional_arguments(args);
-        let mut arg_values = Vec::with_capacity(positional_args.len());
-        for arg in positional_args {
-            let Some(value) = arg.data().cloned() else {
+        if view.kind() == "call_expression" {
+            let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
                 return Ok(());
             };
-            arg_values.push(value);
+            let Some(method) = method_name(&callee) else {
+                return Ok(());
+            };
+            let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+                return Ok(());
+            };
+            let Some(Array(input)) = object.data() else {
+                return Ok(());
+            };
+
+            let args = view.named_child("arguments");
+            let positional_args = get_positional_arguments(args);
+            let mut arg_values = Vec::with_capacity(positional_args.len());
+            for arg in positional_args {
+                let Some(value) = arg.data().cloned() else {
+                    return Ok(());
+                };
+                arg_values.push(value);
+            }
+
+            let Some(result) = dispatch_array_builtin(&method, input, &arg_values) else {
+                return Ok(());
+            };
+
+            trace!(
+                "ArrayBuiltins: reducing '{}'.{}(...) to {}",
+                Array(input.clone()),
+                method,
+                result
+            );
+            node.reduce(result);
+            return Ok(());
         }
 
-        let Some(result) = dispatch_array_builtin(&method, input, &arg_values) else {
+        if is_array_builtin_constructor_name_chain(&view) {
+            let result = Raw(Str("Function".to_string()));
+            trace!(
+                "ArrayBuiltins: reducing array builtin constructor.name chain to {}",
+                result
+            );
+            node.reduce(result);
             return Ok(());
-        };
+        }
 
-        trace!(
-            "ArrayBuiltins: reducing '{}'.{}(...) to {}",
-            Array(input.clone()),
-            method,
-            result
-        );
-        node.reduce(result);
+        if view.kind() == "binary_expression" {
+            let left = view.child(0);
+            let right = view.child(2);
+            let operator = view.child(1);
+
+            let (Some(left), Some(right), Some(operator)) = (left, right, operator) else {
+                return Ok(());
+            };
+
+            if operator.kind() != "+" && operator.text()? != "+" {
+                return Ok(());
+            }
+
+            let left_data = left.data().cloned();
+            let right_data = right.data().cloned();
+
+            if let (Some(left_src), Some(right_value)) =
+                (array_builtin_native_source(&left), right_data.as_ref())
+            {
+                let result = Raw(Str(
+                    format!("{}{}", left_src, as_known_string(right_value),),
+                ));
+                trace!(
+                    "ArrayBuiltins: reducing builtin string concat to {}",
+                    result
+                );
+                node.reduce(result);
+                return Ok(());
+            }
+
+            if let (Some(left_value), Some(right_src)) =
+                (left_data.as_ref(), array_builtin_native_source(&right))
+            {
+                let result = Raw(Str(
+                    format!("{}{}", as_known_string(left_value), right_src,),
+                ));
+                trace!(
+                    "ArrayBuiltins: reducing builtin string concat to {}",
+                    result
+                );
+                node.reduce(result);
+                return Ok(());
+            }
+        }
+
         Ok(())
     }
 }
@@ -1171,6 +1297,19 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0,1,2,3].push(4,5,6,7,8,9)"),
             "var x = 10"
+        );
+    }
+
+    #[test]
+    // todo: implements for other builtins
+    fn test_convert_builtin_to_string() {
+        assert_eq!(
+            deobfuscate("var x = [0].pop + ''"),
+            "var x = 'function pop() { [native code] }'"
+        );
+        assert_eq!(
+            deobfuscate("var x = undefined + [0].pop"),
+            "var x = 'undefinedfunction pop() { [native code] }'"
         );
     }
 }

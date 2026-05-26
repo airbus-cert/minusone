@@ -1,5 +1,5 @@
 use crate::js::JavaScript;
-use crate::js::JavaScript::{NaN, Raw};
+use crate::js::JavaScript::{Function, NaN, Raw};
 use crate::js::Value::{Num, Str};
 use crate::tree::Node;
 
@@ -78,5 +78,19 @@ pub fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
             Raw(Num(_)) | NaN => 0,
             _ => 0,
         },
+    }
+}
+
+pub fn as_known_string(value: &JavaScript) -> String {
+    match value {
+        Raw(Str(s)) => s.clone(),
+        any => any.to_string(),
+    }
+}
+
+pub fn native_function(name: &str) -> JavaScript {
+    Function {
+        source: format!("function {name}() {{ [native code] }}"),
+        return_value: None,
     }
 }

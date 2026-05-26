@@ -1,14 +1,8 @@
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
+use crate::js::utils::native_function;
 use std::collections::HashMap;
-
-fn native_function(name: &str) -> JavaScript {
-    Function {
-        source: format!("function {name}() {{ [native code] }}"),
-        return_value: None,
-    }
-}
 
 fn function_name_from_source(source: &str) -> String {
     let trimmed = source.trim();
@@ -126,18 +120,6 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
             Function {
                 source: "function toString() {}".to_string(),
                 return_value: Some(Box::new(Raw(Str(value.to_string())))),
-            },
-        );
-    }
-
-    if let Array(array) = value {
-        map.insert("at".to_string(), native_function("at"));
-        let reversed_array = array.clone().iter().rev().cloned().collect();
-        map.insert(
-            "reverse".to_string(),
-            Function {
-                source: "function reverse() {}".to_string(),
-                return_value: Some(Box::new(Array(reversed_array))),
             },
         );
     }

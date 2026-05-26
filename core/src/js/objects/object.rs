@@ -516,7 +516,7 @@ impl<'a> RuleMut<'a> for ObjectField {
 
 #[cfg(test)]
 mod tests {
-    use crate::js::array::{GetArrayElement, ParseArray};
+    use crate::js::array::{ArrayBuiltins, GetArrayElement, ParseArray};
     use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
@@ -542,6 +542,7 @@ mod tests {
                 ParseFunction::default(),
                 ParseObject::default(),
                 ParseSpecials::default(),
+                ArrayBuiltins::default(),
                 Forward::default(),
                 GetArrayElement::default(),
                 ObjectField::default(),
