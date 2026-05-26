@@ -68,6 +68,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("reverse", array_builtin_reverse),
     ("shift", array_builtin_shift),
     ("slice", array_builtin_slice),
+    ("sort", array_builtin_sort),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -621,6 +622,16 @@ fn array_builtin_slice(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<J
     let end = end.min(input.len());
     let result = input[start..end].to_vec();
     Some(Array(result))
+}
+
+/// # `.sort([customSortFn])`
+/// Sort the array (`to_string` based ??)<br>
+/// _(mutates array)_
+fn array_builtin_sort(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    let mut new_array = input.clone();
+    new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
+    Some(Array(new_array))
 }
 
 /// Infers `+` on two arrays
@@ -1421,5 +1432,19 @@ mod tests_js_array {
             deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice();"),
             "var x = [0, 1, 2, 3, 4, 5];"
         );
+    }
+
+    #[test]
+    fn test_builtin_sort() {
+        assert_eq!(
+            deobfuscate("var x = [0, 8, 7, 3].sort()"),
+            "var x = [0, 3, 7, 8]"
+        );
+        assert_eq!(deobfuscate("var x = [0].sort()"), "var x = [0]");
+        assert_eq!(deobfuscate("var x = [].sort()"), "var x = []");
+        assert_eq!(
+            deobfuscate("var x = [9, 10, 11].sort()"),
+            "var x = [10, 11, 9]"
+        ); // to_string moment...
     }
 }
