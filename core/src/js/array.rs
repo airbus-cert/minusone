@@ -66,6 +66,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("pop", array_builtin_pop),
     ("push", array_builtin_push),
     ("reverse", array_builtin_reverse),
+    ("shift", array_builtin_shift),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -569,6 +570,18 @@ fn array_builtin_reverse(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Optio
     // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
     let new_array = input.iter().rev().cloned().collect();
     Some(Array(new_array))
+}
+
+/// # `.shift()`
+/// Removes and returns first element<br>
+/// _(mutates array)_
+fn array_builtin_shift(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    if input.is_empty() {
+        Some(Undefined)
+    } else {
+        Some(input[0].clone())
+    }
 }
 
 /// Infers `+` on two arrays
@@ -1331,5 +1344,11 @@ mod tests_js_array {
         );
         assert_eq!(deobfuscate("var x = [0].reverse()"), "var x = [0]");
         assert_eq!(deobfuscate("var x = [].reverse()"), "var x = []");
+    }
+
+    #[test]
+    fn test_builtin_shift() {
+        assert_eq!(deobfuscate("var x = [0].shift()"), "var x = 0");
+        assert_eq!(deobfuscate("var x = [].shift()"), "var x = undefined");
     }
 }
