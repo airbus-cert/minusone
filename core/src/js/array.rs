@@ -63,6 +63,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("indexOf", array_builtin_index_of),
     ("join", array_builtin_join),
     ("lastIndexOf", array_builtin_last_index_of),
+    ("pop", array_builtin_pop),
 ];
 
 #[derive(Default)]
@@ -398,6 +399,16 @@ fn array_builtin_join(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<Ja
 
     let flatten = flatten_array(input, separator);
     Some(Raw(Str(flatten)))
+}
+
+fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    if input.is_empty() {
+        Some(Undefined)
+    } else {
+        // todo the inpue must me mutbale or we need to find a way to alter the var manager
+        //Some(input.remove(input.len() - 1).clone())
+        Some(input[input.len() - 1].clone())
+    }
 }
 
 /// Infers `+` on two arrays
@@ -1117,5 +1128,11 @@ mod tests_js_array {
             deobfuscate("var x = [0, 1, 2, 0, 1, 2].lastIndexOf(2, '??')"),
             "var x = -1"
         );
+    }
+
+    #[test]
+    fn test_builtin_poo() {
+        assert_eq!(deobfuscate("var x = [0].pop()"), "var x = 0");
+        assert_eq!(deobfuscate("var x = [].pop()"), "var x = undefined");
     }
 }
