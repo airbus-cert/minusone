@@ -80,8 +80,9 @@ fn string_builtins(s: &str) -> HashMap<String, JavaScript> {
     map
 }
 
-fn array_builtins(_v: Vec<JavaScript>) -> HashMap<String, JavaScript> {
+fn array_builtins(array: Vec<JavaScript>) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
+    map.insert("length".to_string(), Raw(Num(array.len() as f64)));
 
     map.insert(
         "flat".to_string(),

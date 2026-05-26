@@ -1548,4 +1548,10 @@ mod tests_js_array {
             "var x = 0"
         );
     }
+
+    #[test]
+    fn test_builtin_length() {
+        assert_eq!(deobfuscate("var x = [0, 1, 2].length"), "var x = 3");
+        assert_eq!(deobfuscate("var x = [].length"), "var x = 0");
+    }
 }
