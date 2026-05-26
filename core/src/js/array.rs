@@ -67,6 +67,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("push", array_builtin_push),
     ("reverse", array_builtin_reverse),
     ("shift", array_builtin_shift),
+    ("slice", array_builtin_slice),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -582,6 +583,44 @@ fn array_builtin_shift(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<
     } else {
         Some(input[0].clone())
     }
+}
+
+/// # `.slice(start[, end])`
+///  Handles negative indices<br>
+/// no params = `.slice(0)`<br>
+/// Extracts from `n1` to `n2` (exclusive)<br>
+/// returns a copy
+fn array_builtin_slice(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    let start = match args.first().map(|a| a.as_js_num()) {
+        Some(Raw(Num(n))) => n as isize,
+        _ => 0,
+    };
+
+    let end = match args.get(1).map(|a| a.as_js_num()) {
+        Some(Raw(Num(n))) => n as isize,
+        _ => len,
+    };
+
+    let start = if start < 0 {
+        (len + start).max(0) as usize
+    } else {
+        start as usize
+    };
+    let end = if end < 0 {
+        (len + end).max(0) as usize
+    } else {
+        end as usize
+    };
+
+    if start >= end || start >= input.len() {
+        return Some(Array(vec![]));
+    }
+
+    let end = end.min(input.len());
+    let result = input[start..end].to_vec();
+    Some(Array(result))
 }
 
 /// Infers `+` on two arrays
@@ -1350,5 +1389,37 @@ mod tests_js_array {
     fn test_builtin_shift() {
         assert_eq!(deobfuscate("var x = [0].shift()"), "var x = 0");
         assert_eq!(deobfuscate("var x = [].shift()"), "var x = undefined");
+    }
+
+    #[test]
+    fn test_builtin_slice() {
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice(1, 4);"),
+            "var x = [1, 2, 3];"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice(2);"),
+            "var x = [2, 3, 4, 5];"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice(-3);"),
+            "var x = [3, 4, 5];"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice(-4, -1);"),
+            "var x = [2, 3, 4];"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice(2, 1);"),
+            "var x = [];"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice(10);"),
+            "var x = [];"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 3, 4, 5].slice();"),
+            "var x = [0, 1, 2, 3, 4, 5];"
+        );
     }
 }
