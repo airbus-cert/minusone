@@ -64,6 +64,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("join", array_builtin_join),
     ("lastIndexOf", array_builtin_last_index_of),
     ("pop", array_builtin_pop),
+    ("push", array_builtin_push),
 ];
 
 #[derive(Default)]
@@ -297,6 +298,9 @@ fn unpack_array(values: &[JavaScript], depth: usize) -> Vec<JavaScript> {
     out
 }
 
+/// # `.includes(x)`
+/// No params = .includes(undefined)<br>
+/// Only returns Raw(Bool(b))
 fn array_builtin_includes(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     let to_search = if args.is_empty() {
         Undefined
@@ -314,6 +318,10 @@ fn array_builtin_includes(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     Some(Raw(Bool(false)))
 }
 
+/// # `.indexOf(x, y)`
+/// Default start = 0<br>
+/// returns -1 if not found<br>
+/// Only returns Raw(Num(n))
 fn array_builtin_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     let to_search = if args.is_empty() {
         Undefined
@@ -341,6 +349,10 @@ fn array_builtin_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     Some(Raw(Num(-1f64)))
 }
 
+/// # ``
+/// `.indexOf(x, y)` but searches backward<br>
+/// returns -1 if not found<br>
+/// Only returns Raw(Num(n))
 fn array_builtin_last_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     let to_search = if args.is_empty() {
         Undefined
@@ -401,14 +413,26 @@ fn array_builtin_join(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<Ja
     Some(Raw(Str(flatten)))
 }
 
+/// # `.pop()`
+/// Removes and returns the last element <br>
+/// _(mutates array)_
 fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
     if input.is_empty() {
         Some(Undefined)
     } else {
-        // todo the inpue must me mutbale or we need to find a way to alter the var manager
+        // todo the input must be mutable or we need to find a way to alter the var manager
         //Some(input.remove(input.len() - 1).clone())
         Some(input[input.len() - 1].clone())
     }
+}
+
+/// # `.push(thing1, ..., thingX)`
+/// Adds elements to end<br>
+/// returns the new length<br>
+/// _(mutates array)_
+fn array_builtin_push(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    Some(Raw(Num((input.len() + args.len()) as f64)))
 }
 
 /// Infers `+` on two arrays
@@ -1131,8 +1155,22 @@ mod tests_js_array {
     }
 
     #[test]
-    fn test_builtin_poo() {
+    fn test_builtin_pop() {
         assert_eq!(deobfuscate("var x = [0].pop()"), "var x = 0");
         assert_eq!(deobfuscate("var x = [].pop()"), "var x = undefined");
+    }
+
+    #[test]
+    fn test_builtin_push() {
+        assert_eq!(deobfuscate("var x = [0,1,2,3].push()"), "var x = 4");
+        assert_eq!(deobfuscate("var x = [0,1,2,3].push(4)"), "var x = 5");
+        assert_eq!(
+            deobfuscate("var x = [0,1,2,3].push(undefined)"),
+            "var x = 5"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0,1,2,3].push(4,5,6,7,8,9)"),
+            "var x = 10"
+        );
     }
 }
