@@ -75,6 +75,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("toString", |arr, _| {
         Some(Raw(Str(flatten_array(arr, None))))
     }),
+    ("unshift", array_builtin_unshift),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -655,6 +656,15 @@ fn array_builtin_to_sorted(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Opt
     let mut new_array = input.clone();
     new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
     Some(Array(new_array))
+}
+
+/// # `.unshift(thing1, ..., thingX)`
+/// Adds elements to start<br>
+/// returns new length<br>
+/// _(mutates array)_
+fn array_builtin_unshift(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    Some(Raw(Num((args.len() + input.len()) as f64)))
 }
 
 /// Infers `+` on two arrays
@@ -1493,5 +1503,19 @@ mod tests_js_array {
             deobfuscate("var x = [9, 10, 11].toSorted()"),
             "var x = [10, 11, 9]"
         ); // to_string moment...
+    }
+
+    #[test]
+    fn test_builtin_unshift() {
+        assert_eq!(deobfuscate("var x = [0,1,2,3].unshift()"), "var x = 4");
+        assert_eq!(deobfuscate("var x = [0,1,2,3].unshift(4)"), "var x = 5");
+        assert_eq!(
+            deobfuscate("var x = [0,1,2,3].unshift(undefined)"),
+            "var x = 5"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0,1,2,3].unshift(4,5,6,7,8,9)"),
+            "var x = 10"
+        );
     }
 }
