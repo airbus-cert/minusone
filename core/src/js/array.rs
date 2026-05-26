@@ -1,11 +1,11 @@
 use crate::error::MinusOneResult;
-use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
 use crate::js::comparator::strict_eq;
 use crate::js::utils::*;
+use crate::js::{IteratorKind, JavaScript};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{trace, warn};
@@ -76,6 +76,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
         Some(Raw(Str(flatten_array(arr, None))))
     }),
     ("unshift", array_builtin_unshift),
+    ("values", array_builtin_values),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -358,10 +359,19 @@ fn array_builtin_copy_within(input: &Vec<JavaScript>, args: &[JavaScript]) -> Op
     Some(Array(array))
 }
 
+fn array_builtin_values(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    Some(Iterator {
+        values: input.clone(),
+        index: 0,
+        kind: IteratorKind::Values,
+    })
+}
+
 fn array_builtin_entries(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
     Some(Iterator {
         values: input.clone(),
         index: 0,
+        kind: IteratorKind::Entries,
     })
 }
 
@@ -1516,6 +1526,26 @@ mod tests_js_array {
         assert_eq!(
             deobfuscate("var x = [0,1,2,3].unshift(4,5,6,7,8,9)"),
             "var x = 10"
+        );
+    }
+
+    #[test]
+    fn test_builtin_values() {
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2].values()"),
+            "var x = [object Array Iterator]"
+        );
+
+        let result = deobfuscate("var x = [0, 1, 2].values().next()");
+        if result.starts_with("var x = {v") {
+            assert_eq!(result, "var x = {value: 0, done: false}");
+        } else {
+            assert_eq!(result, "var x = {done: false, value: 0}");
+        }
+
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2].values().next().value"),
+            "var x = 0"
         );
     }
 }

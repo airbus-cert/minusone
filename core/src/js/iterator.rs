@@ -1,8 +1,8 @@
 use crate::error::MinusOneResult;
-use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
 use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::{IteratorKind, JavaScript};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
@@ -89,13 +89,26 @@ fn dispatch_iterator_builtin(
 }
 
 fn iterator_builtin_next(iter: &mut JavaScript, _args: &[JavaScript]) -> Option<JavaScript> {
-    if let Iterator { values, index } = iter {
+    if let Iterator {
+        values,
+        index,
+        kind,
+    } = iter
+    {
         if *index < values.len() {
-            let value = Array(vec![Raw(Num(*index as f64)), values[*index].clone()]);
+            let value = match kind {
+                IteratorKind::Values => values[*index].clone(),
+                IteratorKind::Entries => {
+                    Array(vec![Raw(Num(*index as f64)), values[*index].clone()])
+                }
+            };
+
             *index += 1;
+
             let mut map = HashMap::new();
             map.insert("value".to_string(), value);
             map.insert("done".to_string(), Raw(Bool(false)));
+
             Some(Object {
                 map,
                 to_string_override: None,
@@ -104,6 +117,7 @@ fn iterator_builtin_next(iter: &mut JavaScript, _args: &[JavaScript]) -> Option<
             let mut map = HashMap::new();
             map.insert("value".to_string(), Undefined);
             map.insert("done".to_string(), Raw(Bool(true)));
+
             Some(Object {
                 map,
                 to_string_override: None,

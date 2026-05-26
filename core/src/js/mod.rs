@@ -64,6 +64,12 @@ pub enum Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum IteratorKind {
+    Values,
+    Entries,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum JavaScript {
     Raw(Value),
     Array(Vec<JavaScript>),
@@ -90,6 +96,7 @@ pub enum JavaScript {
     Iterator {
         values: Vec<JavaScript>,
         index: usize,
+        kind: IteratorKind,
     },
 }
 
