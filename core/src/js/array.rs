@@ -70,6 +70,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("slice", array_builtin_slice),
     ("sort", array_builtin_sort),
     ("toReversed", array_builtin_to_reversed),
+    ("toSorted", array_builtin_to_sorted),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -637,6 +638,16 @@ fn array_builtin_slice(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<J
 /// _(mutates array)_
 fn array_builtin_sort(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
     // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    // todo: in the future handle arrow fn as sort arg
+    let mut new_array = input.clone();
+    new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
+    Some(Array(new_array))
+}
+
+/// # `.toSorted([customSortFn])`
+/// `.sort([customSortFn])` but create a copy so it does *not mutate* the original array
+fn array_builtin_to_sorted(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    // todo: in the future handle arrow fn as sort arg
     let mut new_array = input.clone();
     new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
     Some(Array(new_array))
@@ -1462,6 +1473,20 @@ mod tests_js_array {
         assert_eq!(deobfuscate("var x = [].sort()"), "var x = []");
         assert_eq!(
             deobfuscate("var x = [9, 10, 11].sort()"),
+            "var x = [10, 11, 9]"
+        ); // to_string moment...
+    }
+
+    #[test]
+    fn test_builtin_to_sorted() {
+        assert_eq!(
+            deobfuscate("var x = [0, 8, 7, 3].toSorted()"),
+            "var x = [0, 3, 7, 8]"
+        );
+        assert_eq!(deobfuscate("var x = [0].toSorted()"), "var x = [0]");
+        assert_eq!(deobfuscate("var x = [].toSorted()"), "var x = []");
+        assert_eq!(
+            deobfuscate("var x = [9, 10, 11].toSorted()"),
             "var x = [10, 11, 9]"
         ); // to_string moment...
     }
