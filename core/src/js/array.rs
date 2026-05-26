@@ -61,6 +61,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("flat", array_builtin_flat),
     ("includes", array_builtin_includes),
     ("indexOf", array_builtin_index_of),
+    ("join", array_builtin_join),
 ];
 
 #[derive(Default)]
@@ -336,6 +337,22 @@ fn array_builtin_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     }
 
     Some(Raw(Num(-1f64)))
+}
+
+fn array_builtin_join(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let separator = if args.is_empty() {
+        None
+    } else {
+        match args[0].clone() {
+            Undefined => None,
+            Raw(Str(s)) => Some(s.clone()),
+            Array(a) => Some(flatten_array(&a, None)),
+            any => Some(any.to_string()),
+        }
+    };
+
+    let flatten = flatten_array(input, separator);
+    Some(Raw(Str(flatten)))
 }
 
 /// Infers `+` on two arrays
@@ -755,90 +772,6 @@ fn recursive_array_number_extraction(arr: &Vec<JavaScript>) -> Option<f64> {
         Raw(Num(n)) => Some(n),
         NaN => None,
         _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
-    }
-}
-
-/// Infers join calls on arrays
-///
-/// # Example
-/// ```
-/// use minusone::js::build_javascript_tree;
-/// use minusone::js::string::{ParseString, ToString};
-/// use minusone::js::integer::ParseInt;
-/// use minusone::js::array::{ParseArray, ArrayJoin};
-/// use minusone::js::linter::Linter;
-///
-/// let mut tree = build_javascript_tree("var x = ['a', 'b'].join();").unwrap();
-/// tree.apply_mut(&mut (
-///     ParseString::default(), ParseInt::default(), ParseArray::default(), ToString::default(), ArrayJoin::default()
-/// )).unwrap();
-///
-/// let mut linter = Linter::default();
-/// tree.apply(&mut linter).unwrap();
-/// assert_eq!(linter.output, "var x = 'a,b';");
-/// ```
-#[derive(Default)]
-pub struct ArrayJoin;
-
-impl<'a> RuleMut<'a> for ArrayJoin {
-    type Language = JavaScript;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() != "call_expression" {
-            return Ok(());
-        }
-
-        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
-            return Ok(());
-        };
-
-        let Some(method) = method_name(&callee) else {
-            return Ok(());
-        };
-        if method != "join" {
-            return Ok(());
-        }
-
-        let Some(object) = callee.named_child("object") else {
-            return Ok(());
-        };
-        let Some(Array(input)) = object.data() else {
-            return Ok(());
-        };
-
-        let args = view.named_child("arguments");
-        let positional_args = get_positional_arguments(args);
-
-        let separator: Option<String> = match positional_args.first().and_then(|a| a.data()) {
-            None => None,
-            Some(Undefined) => None,
-            Some(Raw(Str(s))) => Some(s.clone()),
-            _ => return Ok(()),
-        };
-
-        let flatten = flatten_array(input, separator);
-        trace!(
-            "ArrayJoin: reducing {:?}.join({:?}) to '{}'",
-            input,
-            positional_args.first().and_then(|a| a.data()),
-            flatten
-        );
-        node.reduce(Raw(Str(flatten)));
-
-        Ok(())
     }
 }
 

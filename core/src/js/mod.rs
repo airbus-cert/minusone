@@ -174,7 +174,6 @@ impl_javascript_ruleset!(
     StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
     Forward,    // Forward inferred type in the most simple cases
     ArrayPlusMinus, // Infer unary plus and minus on arrays
-    ArrayJoin,  // Infer array join calls on literal arrays and reduce them to string literals
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
