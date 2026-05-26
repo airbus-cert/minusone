@@ -69,6 +69,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("shift", array_builtin_shift),
     ("slice", array_builtin_slice),
     ("sort", array_builtin_sort),
+    ("toReversed", array_builtin_to_reversed),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -570,6 +571,13 @@ fn array_builtin_push(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<Ja
 /// _(mutates array)_
 fn array_builtin_reverse(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
     // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    let new_array = input.iter().rev().cloned().collect();
+    Some(Array(new_array))
+}
+
+/// # `.toReversed()`
+/// `.reverse()` but create a copy so it does *not mutate* the original array
+fn array_builtin_to_reversed(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
     let new_array = input.iter().rev().cloned().collect();
     Some(Array(new_array))
 }
@@ -1394,6 +1402,16 @@ mod tests_js_array {
         );
         assert_eq!(deobfuscate("var x = [0].reverse()"), "var x = [0]");
         assert_eq!(deobfuscate("var x = [].reverse()"), "var x = []");
+    }
+
+    #[test]
+    fn test_builtin_to_reversed() {
+        assert_eq!(
+            deobfuscate("var x = [0,1,2,3].toReversed()"),
+            "var x = [3, 2, 1, 0]"
+        );
+        assert_eq!(deobfuscate("var x = [0].toReversed()"), "var x = [0]");
+        assert_eq!(deobfuscate("var x = [].toReversed()"), "var x = []");
     }
 
     #[test]
