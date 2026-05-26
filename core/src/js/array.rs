@@ -65,6 +65,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("lastIndexOf", array_builtin_last_index_of),
     ("pop", array_builtin_pop),
     ("push", array_builtin_push),
+    ("reverse", array_builtin_reverse),
 ];
 
 fn is_array_builtin(method: &str) -> bool {
@@ -559,6 +560,15 @@ fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<Ja
 fn array_builtin_push(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
     Some(Raw(Num((input.len() + args.len()) as f64)))
+}
+
+/// # `.reverse()`
+/// Reverse othe order of the array and also return it<br>
+/// _(mutates array)_
+fn array_builtin_reverse(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
+    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
+    let new_array = input.iter().rev().cloned().collect();
+    Some(Array(new_array))
 }
 
 /// Infers `+` on two arrays
@@ -1311,5 +1321,15 @@ mod tests_js_array {
             deobfuscate("var x = undefined + [0].pop"),
             "var x = 'undefinedfunction pop() { [native code] }'"
         );
+    }
+
+    #[test]
+    fn test_builtin_reverse() {
+        assert_eq!(
+            deobfuscate("var x = [0,1,2,3].reverse()"),
+            "var x = [3, 2, 1, 0]"
+        );
+        assert_eq!(deobfuscate("var x = [0].reverse()"), "var x = [0]");
+        assert_eq!(deobfuscate("var x = [].reverse()"), "var x = []");
     }
 }
