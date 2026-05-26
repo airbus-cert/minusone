@@ -60,6 +60,7 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("fill", array_builtin_fill),
     ("flat", array_builtin_flat),
     ("includes", array_builtin_includes),
+    ("indexOf", array_builtin_index_of),
 ];
 
 #[derive(Default)]
@@ -308,6 +309,33 @@ fn array_builtin_includes(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     }
 
     Some(Raw(Bool(false)))
+}
+
+fn array_builtin_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
+    let to_search = if args.is_empty() {
+        Undefined
+    } else {
+        args[0].clone()
+    };
+
+    let start = if args.len() >= 2 {
+        match args[1].as_js_num() {
+            Raw(Num(n)) => n as usize,
+            NaN => 0usize,
+            _ => unreachable!("The result of as_js_num should be either Raw(Num(x)) or NaN"),
+        }
+    } else {
+        0usize
+    };
+
+    for (i, value) in input.iter().skip(start).enumerate() {
+        match strict_eq(value, &to_search, "===") {
+            Some(true) => return Some(Raw(Num((i + start) as f64))),
+            _ => {}
+        }
+    }
+
+    Some(Raw(Num(-1f64)))
 }
 
 /// Infers `+` on two arrays
@@ -823,7 +851,7 @@ mod tests_js_array {
     use crate::js::iterator::IteratorBuiltins;
     use crate::js::linter::Linter;
     use crate::js::objects::object::ObjectField;
-    use crate::js::specials::AddSubSpecials;
+    use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::string::BracketCharAt;
     use crate::js::string::ParseString;
 
@@ -833,6 +861,7 @@ mod tests_js_array {
             ParseInt::default(),
             ParseString::default(),
             ParseArray::default(),
+            ParseSpecials::default(),
             CombineArrays::default(),
             Forward::default(),
             Substract::default(),
@@ -1043,11 +1072,42 @@ mod tests_js_array {
 
     #[test]
     fn test_builtin_includes() {
-        assert_eq!(deobfuscate("var x = [0,1,2].includes()"), "var x = false");
-        assert_eq!(deobfuscate("var x = [0,1,2].includes(2)"), "var x = true");
+        assert_eq!(deobfuscate("var x = [0, 1, 2].includes()"), "var x = false");
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, undefined].includes()"),
+            "var x = true"
+        );
+        assert_eq!(deobfuscate("var x = [0, 1, 2].includes(2)"), "var x = true");
         assert_eq!(
             deobfuscate("var x = [0,1,2].includes('2')"),
             "var x = false"
+        );
+    }
+
+    #[test]
+    fn test_builtin_index_of() {
+        assert_eq!(deobfuscate("var x = [0, 1, 2].indexOf()"), "var x = -1");
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, undefined].indexOf()"),
+            "var x = 3"
+        );
+        assert_eq!(deobfuscate("var x = [0, 1, 2].indexOf(2)"), "var x = 2");
+        assert_eq!(deobfuscate("var x = [0,1,2].indexOf('2')"), "var x = -1");
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].indexOf(2)"),
+            "var x = 2"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].indexOf(2, 2)"),
+            "var x = 2"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].indexOf(2, 3)"),
+            "var x = 5"
+        );
+        assert_eq!(
+            deobfuscate("var x = [0, 1, 2, 0, 1, 2].indexOf(2, '??')"),
+            "var x = 2"
         );
     }
 }
