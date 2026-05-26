@@ -9,6 +9,7 @@ use crate::js::utils::*;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{trace, warn};
+use std::clone::Clone;
 
 /// Parses JavaScript array literals into `Array(_)`.
 #[derive(Default)]
@@ -71,6 +72,9 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("sort", array_builtin_sort),
     ("toReversed", array_builtin_to_reversed),
     ("toSorted", array_builtin_to_sorted),
+    ("toString", |arr, _| {
+        Some(Raw(Str(flatten_array(arr, None))))
+    }),
 ];
 
 fn is_array_builtin(method: &str) -> bool {

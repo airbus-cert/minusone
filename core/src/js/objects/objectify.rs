@@ -114,7 +114,10 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         "constructor".to_string(),
         native_function(constructor_name(value)),
     );
-    if !matches!(value, NaN | Undefined | Buffer(_)) {
+    if !matches!(
+        value,
+        NaN | Undefined | Buffer(_) | Array(_) | Iterator { .. }
+    ) {
         map.insert(
             "toString".to_string(),
             Function {
