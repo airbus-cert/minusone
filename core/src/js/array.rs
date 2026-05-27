@@ -592,10 +592,6 @@ fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<Ja
     if input.is_empty() {
         Some(Undefined)
     } else {
-        // todo the input must be mutable or we need to find a way to alter the var manager
-        warn!(
-            "The pop() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-        );
         Some(input[input.len() - 1].clone())
     }
 }
@@ -605,33 +601,15 @@ fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<Ja
 /// returns the new length<br>
 /// _(mutates array)_
 fn array_builtin_push(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
-    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
-    if args.is_empty() {
-        Some(Raw(Num((input.len()) as f64)))
-    } else {
-        warn!(
-            "The push() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-        );
-        Some(Raw(Num((input.len() + args.len()) as f64)))
-    }
+    Some(Raw(Num((input.len() + args.len()) as f64)))
 }
 
 /// # `.reverse()`
 /// Reverse othe order of the array and also return it<br>
 /// _(mutates array)_
 fn array_builtin_reverse(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
-    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
-    if input.is_empty() {
-        Some(Array(vec![]))
-    } else {
-        let new_array: Vec<JavaScript> = input.iter().rev().cloned().collect();
-        if Array(new_array.clone()) != Array(input.clone()) {
-            warn!(
-                "The reverse() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-            );
-        }
-        Some(Array(new_array))
-    }
+    let new_array = input.iter().rev().cloned().collect();
+    Some(Array(new_array))
 }
 
 /// # `.toReversed()`
@@ -645,13 +623,9 @@ fn array_builtin_to_reversed(input: &Vec<JavaScript>, _args: &[JavaScript]) -> O
 /// Removes and returns first element<br>
 /// _(mutates array)_
 fn array_builtin_shift(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
-    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
     if input.is_empty() {
         Some(Undefined)
     } else {
-        warn!(
-            "The shift() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-        );
         Some(input[0].clone())
     }
 }
@@ -698,34 +672,19 @@ fn array_builtin_slice(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<J
 /// Sort the array (`to_string` based ??)<br>
 /// _(mutates array)_
 fn array_builtin_sort(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
-    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
-    // todo: in the future handle arrow fn as sort arg
-    if input.is_empty() {
-        Some(Array(vec![]))
-    } else {
-        if args.first().is_some() {
-            warn!(
-                "The sort() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-            );
-            warn!("The sort() builtin does not handle custom comparator functions. Skipping...");
-            return None;
-        }
-        let mut new_array = input.clone();
-        new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
-        if Array(new_array.clone()) != Array(input.clone()) {
-            warn!(
-                "The sort() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-            );
-        }
-        Some(Array(new_array))
+    if let Some(Function { .. }) = args.first() {
+        warn!("The sort() builtin does not handle custom comparator functions. Skipping...");
+        return None;
     }
+    let mut new_array = input.clone();
+    new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
+    Some(Array(new_array))
 }
 
 /// # `.toSorted([customSortFn])`
 /// `.sort([customSortFn])` but create a copy so it does *not mutate* the original array
 fn array_builtin_to_sorted(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
-    // todo: in the future handle arrow fn as sort arg
-    if args.first().is_some() {
+    if let Some(Function { .. }) = args.first() {
         warn!("The sort() builtin does not handle custom comparator functions. Skipping...");
         return None;
     }
@@ -739,15 +698,7 @@ fn array_builtin_to_sorted(input: &Vec<JavaScript>, args: &[JavaScript]) -> Opti
 /// returns new length<br>
 /// _(mutates array)_
 fn array_builtin_unshift(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
-    // todo the input must be mutable or we need to find a way to alter the var manager. since it's not possible atm, we just return the expected value
-    if args.is_empty() {
-        Some(Raw(Num((input.len()) as f64)))
-    } else {
-        warn!(
-            "The unshift() builtin is not full implemented yet due to is mutability. This means that the final output might not be correct."
-        );
-        Some(Raw(Num((args.len() + input.len()) as f64)))
-    }
+    Some(Raw(Num((args.len() + input.len()) as f64)))
 }
 
 /// Infers `+` on two arrays
