@@ -100,17 +100,83 @@ pub enum JavaScript {
     },
 }
 
+fn js_eq(a: &JavaScript, b: &JavaScript) -> bool {
+    use JavaScript::*;
+    use Value::*;
+
+    match (a, b) {
+        (Undefined, Undefined) => true,
+        (NaN, _) | (_, NaN) => false,
+        (Null, Null) => true,
+        (Raw(Num(n1)), Raw(Num(n2))) => n1 == n2,
+        (Raw(Str(s1)), Raw(Str(s2))) => s1 == s2,
+        (Raw(Bool(b1)), Raw(Bool(b2))) => b1 == b2,
+        (Raw(BigInt(b1)), Raw(BigInt(b2))) => b1 == b2,
+        (Array(arr1), Array(arr2)) => {
+            arr1.len() == arr2.len() && arr1.iter().zip(arr2.iter()).all(|(a, b)| js_eq(a, b))
+        }
+        (Bytes(b1), Bytes(b2)) => b1 == b2,
+        (Buffer(b1), Buffer(b2)) => b1 == b2,
+        (
+            Regex {
+                pattern: p1,
+                flags: f1,
+            },
+            Regex {
+                pattern: p2,
+                flags: f2,
+            },
+        ) => p1 == p2 && f1 == f2,
+        (
+            Function {
+                source: s1,
+                return_value: r1,
+            },
+            Function {
+                source: s2,
+                return_value: r2,
+            },
+        ) => s1 == s2 && r1 == r2,
+        (
+            Object {
+                map: m1,
+                to_string_override: t1,
+            },
+            Object {
+                map: m2,
+                to_string_override: t2,
+            },
+        ) => {
+            t1 == t2
+                && m1.len() == m2.len()
+                && m1
+                    .iter()
+                    .all(|(k, v)| m2.get(k).map_or(false, |v2| js_eq(v, v2)))
+        }
+        (
+            Iterator {
+                values: v1,
+                index: i1,
+                kind: k1,
+            },
+            Iterator {
+                values: v2,
+                index: i2,
+                kind: k2,
+            },
+        ) => {
+            i1 == i2
+                && k1 == k2
+                && v1.len() == v2.len()
+                && v1.iter().zip(v2.iter()).all(|(a, b)| js_eq(a, b))
+        }
+        _ => false,
+    }
+}
+
 impl PartialEq<JavaScript> for &JavaScript {
     fn eq(&self, other: &JavaScript) -> bool {
-        match (self, other) {
-            (Undefined, Undefined) => true,
-            (NaN, NaN) => true,
-            (Array(arr1), Array(arr2)) => arr1 == arr2,
-            (Raw(Num(n1)), Raw(Num(n2))) => n1 == n2,
-            (Raw(Str(s1)), Raw(Str(s2))) => s1 == s2,
-            (Raw(Bool(b1)), Raw(Bool(b2))) => b1 == b2,
-            _ => false,
-        }
+        js_eq(self, other)
     }
 }
 

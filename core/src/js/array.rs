@@ -3,7 +3,6 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
-use crate::js::comparator::strict_eq;
 use crate::js::utils::*;
 use crate::js::{IteratorKind, JavaScript};
 use crate::rule::RuleMut;
@@ -456,8 +455,8 @@ fn array_builtin_includes(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     };
 
     for value in input {
-        match strict_eq(value, &to_search, "===") {
-            Some(true) => return Some(Raw(Bool(true))),
+        match value == &to_search {
+            true => return Some(Raw(Bool(true))),
             _ => {}
         }
     }
@@ -487,8 +486,8 @@ fn array_builtin_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> Optio
     };
 
     for (i, value) in input.iter().skip(start).enumerate() {
-        match strict_eq(value, &to_search, "===") {
-            Some(true) => return Some(Raw(Num((i + start) as f64))),
+        match value == &to_search {
+            true => return Some(Raw(Num((i + start) as f64))),
             _ => {}
         }
     }
@@ -536,7 +535,7 @@ fn array_builtin_last_index_of(input: &Vec<JavaScript>, args: &[JavaScript]) -> 
     };
 
     for i in (0..=from_index as usize).rev() {
-        if let Some(true) = strict_eq(&input[i], &to_search, "===") {
+        if &input[i] == &to_search {
             return Some(Raw(Num(i as f64)));
         }
     }
