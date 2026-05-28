@@ -171,6 +171,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("lastIndexOf", string_builtin_last_index_of),
     ("link", string_builtin_link),
     ("match", string_builtin_match),
+    ("matchAll", string_builtin_match_all),
     ("padEnd", string_builtin_pad_end),
     ("padStart", string_builtin_pad_start),
     ("repeat", string_builtin_repeat),
@@ -703,6 +704,56 @@ pub fn string_builtin_match(input: &str, args: &[JavaScript]) -> Option<JavaScri
             }
         }
     }
+}
+
+pub fn string_builtin_match_all(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let first_arg = args.first()?;
+
+    let regex = match first_arg {
+        Regex { pattern, flags } => {
+            if !flags.contains('g') {
+                error!("String.prototype.matchAll called with a non-global RegExp argument",);
+            }
+            RegexExec::compile(pattern, flags)?
+        }
+
+        Raw(Str(s)) => RegexExec::compile(&regex::escape(s), "g")?,
+        js => RegexExec::compile(&regex::escape(&js.to_string()), "g")?,
+    };
+
+    let mut all_matches: Vec<JavaScript> = Vec::new();
+    let chars: Vec<char> = input.chars().collect();
+    let mut pos = 0;
+
+    while pos <= chars.len() {
+        let remaining = &input[pos..];
+
+        match regex.captures(remaining) {
+            None => break,
+            Some(caps) => {
+                let match_arr: Vec<JavaScript> = caps
+                    .iter()
+                    .map(|m| match m {
+                        None => Undefined,
+                        Some(m) => Raw(Str(m.as_str().to_string())),
+                    })
+                    .collect();
+
+                let full_match = caps.get(0).map(|m| m.as_str()).unwrap_or("");
+                let match_len = full_match.len();
+
+                all_matches.push(Array(match_arr));
+
+                if match_len == 0 {
+                    pos += chars[pos].len_utf8();
+                } else {
+                    pos += match_len;
+                }
+            }
+        }
+    }
+
+    Some(Array(all_matches))
 }
 
 /// Infers charAt with bracket calls on string literals and reduces them to single-character string
