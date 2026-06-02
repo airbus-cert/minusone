@@ -5,13 +5,9 @@ use crate::js::JavaScriptRuleSet;
 use crate::js::Value::{Bool, Num, Str};
 use crate::js::backend::JavaScriptBackend;
 use crate::js::build_javascript_tree;
-use crate::js::forward::Forward;
 use crate::js::functions::function::function_value_from_node;
-use crate::js::integer::{AddInt, ParseInt};
-use crate::js::recursion::{GlobalRecursionGuard, RecursionExt, RecursionTracker};
-use crate::js::specials::ParseSpecials;
+use crate::js::recursion::GlobalRecursionGuard;
 use crate::js::strategy::JavaScriptStrategy;
-use crate::js::string::{Concat, ParseString};
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::{RuleMut, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -50,7 +46,6 @@ pub struct FnCall {
     var_shapes: HashMap<String, FunctionShape>,
     object_field_shapes: HashMap<(String, String), FunctionShape>,
     shapes_by_source: HashMap<String, FunctionShape>,
-    recursion: RecursionTracker,
     // All top-level function declarations as raw source, prepended to every
     // synthesised sub-program so sub-FnCall can hoist + resolve nested calls.
     fn_decl_prelude: String,
@@ -409,7 +404,10 @@ impl FnCall {
         Self::run_subtree_pipeline(&program)
     }
 
-    fn run_subtree_pipeline(program: &str) -> Option<JavaScript> {
+    /// Run the full minusone JavaScript pipeline on `program` and return the
+    /// stabilised source. Shared by every subtree-based resolver (function
+    /// calls, eval) so they all see exactly the same rules.
+    fn stabilise_via_minusone(program: &str) -> Option<String> {
         // 1. Pre-process: InlineIife, ExpandAugmentedAssignment, ReduceSequence,
         //    UnusedVar+RemoveUnused (which does the constant-condition `if` collapsing).
         let cleaned = JavaScriptBackend::remove_extra(program).ok()?;
@@ -443,8 +441,13 @@ impl FnCall {
             current = post_cleaned;
         }
 
-        // 3. Final pass to attach data on the stabilised tree.
-        let mut tree = build_javascript_tree(&current).ok()?;
+        Some(current)
+    }
+
+    fn run_subtree_pipeline(program: &str) -> Option<JavaScript> {
+        let stable = Self::stabilise_via_minusone(program)?;
+        // Final pass to attach data on the stabilised tree.
+        let mut tree = build_javascript_tree(&stable).ok()?;
         tree.apply_mut_with_strategy(
             &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
             JavaScriptStrategy,
@@ -633,184 +636,6 @@ impl FnCall {
         Self::evaluate_shape_via_subtree(&shape, &args, &prelude)
     }
 
-    fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
-        let return_idx = source.find("return")?;
-        let after_return = &source[return_idx + "return".len()..];
-        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
-        let literal = after_return[..end_idx].trim();
-
-        if literal.starts_with('"') && literal.ends_with('"') && literal.len() >= 2 {
-            return Some(JavaScript::Raw(Str(
-                literal[1..literal.len() - 1].to_string()
-            )));
-        }
-
-        if literal.starts_with('\'') && literal.ends_with('\'') && literal.len() >= 2 {
-            return Some(JavaScript::Raw(Str(
-                literal[1..literal.len() - 1].to_string()
-            )));
-        }
-
-        literal.parse::<f64>().ok().map(|n| JavaScript::Raw(Num(n)))
-    }
-
-    fn extract_return_expr(source: &str) -> Option<String> {
-        let return_idx = source.find("return")?;
-        let after_return = &source[return_idx + "return".len()..];
-        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
-        Some(after_return[..end_idx].trim().to_string())
-    }
-
-    fn extract_first_param_name(source: &str) -> Option<String> {
-        let open = source.find('(')?;
-        let close = source[open + 1..].find(')')? + open + 1;
-        let first = source[open + 1..close].split(',').next()?.trim();
-        if first.is_empty() {
-            None
-        } else {
-            Some(first.to_string())
-        }
-    }
-
-    fn extract_first_numeric_arg(call: &Node<JavaScript>) -> Option<f64> {
-        if let Some(args) = call.named_child("arguments") {
-            for child in args.iter() {
-                if let Some(JavaScript::Raw(Num(n))) = child.data() {
-                    return Some(*n);
-                }
-            }
-        }
-
-        let text = call.text().ok()?;
-        let open = text.find('(')?;
-        let close = text[open + 1..].find(')')? + open + 1;
-        let first = text[open + 1..close].split(',').next()?.trim();
-        first.parse::<f64>().ok()
-    }
-
-    fn eval_simple_numeric_expr(expr: &str, param: &str, arg: f64) -> Option<f64> {
-        let expr = expr.replace(' ', "");
-        if expr == param {
-            return Some(arg);
-        }
-
-        for op in ['+', '-', '*', '/'] {
-            if let Some(idx) = expr.find(op) {
-                let left = &expr[..idx];
-                let right = &expr[idx + 1..];
-
-                if left == param {
-                    let rhs = right.parse::<f64>().ok()?;
-                    return Some(match op {
-                        '+' => arg + rhs,
-                        '-' => arg - rhs,
-                        '*' => arg * rhs,
-                        '/' => arg / rhs,
-                        _ => return None,
-                    });
-                }
-
-                if right == param {
-                    let lhs = left.parse::<f64>().ok()?;
-                    return Some(match op {
-                        '+' => lhs + arg,
-                        '-' => lhs - arg,
-                        '*' => lhs * arg,
-                        '/' => lhs / arg,
-                        _ => return None,
-                    });
-                }
-            }
-        }
-
-        None
-    }
-
-    fn parse_simple_return_with_arg(source: &str, call: &Node<JavaScript>) -> Option<JavaScript> {
-        let param = Self::extract_first_param_name(source)?;
-        let arg = Self::extract_first_numeric_arg(call)?;
-        let expr = Self::extract_return_expr(source)?;
-        let value = Self::eval_simple_numeric_expr(&expr, &param, arg)?;
-        Some(JavaScript::Raw(Num(value)))
-    }
-
-    fn find_initializer_source(prefix: &str, name: &str) -> Option<String> {
-        fn extract_function_source(rhs: &str) -> Option<String> {
-            let trimmed = rhs.trim_start();
-            if !(trimmed.starts_with("function")
-                || trimmed.starts_with("async function")
-                || trimmed.contains("=>"))
-            {
-                return None;
-            }
-
-            if let Some(open_idx) = trimmed.find('{') {
-                let mut depth = 0usize;
-                for (i, ch) in trimmed.char_indices().skip(open_idx) {
-                    match ch {
-                        '{' => depth += 1,
-                        '}' => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                return Some(trimmed[..=i].trim().to_string());
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            let end = trimmed.find(';').unwrap_or(trimmed.len());
-            Some(trimmed[..end].trim().to_string())
-        }
-
-        for kw in ["let", "var", "const"] {
-            let pattern = format!("{kw} {name} =");
-            if let Some(idx) = prefix.rfind(&pattern) {
-                let rhs = &prefix[idx + pattern.len()..];
-                return extract_function_source(rhs);
-            }
-        }
-        None
-    }
-
-    fn resolve_member_call_from_source(call: &Node<JavaScript>) -> Option<JavaScript> {
-        let callee = call.named_child("function").or_else(|| call.child(0))?;
-        if callee.kind() != "member_expression" {
-            return None;
-        }
-
-        let object = callee.named_child("object")?;
-        let property = callee.named_child("property")?;
-        if object.kind() != "identifier" {
-            return None;
-        }
-
-        let base = object.text().ok()?.to_string();
-        let key = property.text().ok()?.to_string();
-        let program = Self::find_program_node(call)?;
-        let source = program.text().ok()?;
-        let prefix_end = call.start_abs().saturating_sub(program.start_abs());
-        let prefix = &source[..prefix_end];
-
-        let assign_pattern = format!("{base}.{key} =");
-        let assign_idx = prefix.rfind(&assign_pattern)?;
-        let rhs_text = {
-            let rhs = &prefix[assign_idx + assign_pattern.len()..];
-            let end = rhs.find(';')?;
-            rhs[..end].trim().to_string()
-        };
-
-        let function_source = if rhs_text.starts_with("function") || rhs_text.contains("=>") {
-            rhs_text
-        } else {
-            Self::find_initializer_source(prefix, &rhs_text)?
-        };
-
-        Self::parse_simple_return_with_arg(&function_source, call)
-            .or_else(|| Self::parse_simple_return_literal(&function_source))
-    }
-
     fn is_eval_callee(callee: &Node<JavaScript>) -> bool {
         callee.kind() == "identifier" && callee.text().map(|t| t == "eval").unwrap_or(false)
     }
@@ -875,21 +700,20 @@ impl FnCall {
         }
     }
 
+    /// Runs the full `JavaScriptRuleSet` on the eval'd source so the same
+    /// rules that reduce the host program apply inside eval. We skip
+    /// `JavaScriptBackend::remove_extra` here on purpose: it would
+    /// dead-code-remove standalone expressions like `eval('5')` before any
+    /// rule had a chance to attach data. The `GlobalRecursionGuard` at the
+    /// call site bounds eval-in-eval chains across the fresh `FnCall`
+    /// instance the inner tree spawns.
     fn evaluate_eval_source(source: &str) -> Option<JavaScript> {
         let mut tree = build_javascript_tree(source).ok()?;
-
-        // Literal-only pipeline; no FnCall/Var so eval can't trigger nested fn inlining.
-        tree.apply_mut(&mut (
-            ParseInt::default(),
-            ParseString::default(),
-            ParseSpecials::default(),
-            crate::js::bool::ParseBool::default(),
-            AddInt::default(),
-            Concat::default(),
-            Forward::default(),
-        ))
+        tree.apply_mut_with_strategy(
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
+        )
         .ok()?;
-
         let root = tree.root().ok()?;
         Self::last_statement_value(&root)
     }
@@ -909,11 +733,11 @@ impl FnCall {
 
         let source = Self::eval_source_from_argument(&positional[0])?;
 
-        call_node
-            .within_recursion(&mut self.recursion, |_| {
-                Self::evaluate_eval_source(&source)
-            })
-            .flatten()
+        // GlobalRecursionGuard caps eval-in-eval chains across nested
+        // `FnCall` instances - the per-instance tracker resets in the inner
+        // tree, so only the thread-local counter sees the full depth.
+        let _guard = GlobalRecursionGuard::enter()?;
+        Self::evaluate_eval_source(&source)
     }
 
     fn hoist_function_declaration(
@@ -968,16 +792,6 @@ impl FnCall {
         let _guard = GlobalRecursionGuard::enter()?;
         Self::resolve_member_call_semantic_fallback(view, base, key)
     }
-
-    fn try_resolve_member_call_from_source(
-        &mut self,
-        view: &Node<JavaScript>,
-    ) -> Option<JavaScript> {
-        view.within_recursion(&mut self.recursion, |node| {
-            Self::resolve_member_call_from_source(node)
-        })
-        .flatten()
-    }
 }
 
 impl<'a> RuleMut<'a> for FnCall {
@@ -996,7 +810,6 @@ impl<'a> RuleMut<'a> for FnCall {
             self.var_shapes.clear();
             self.object_field_shapes.clear();
             self.shapes_by_source.clear();
-            self.recursion.reset();
             self.fn_decl_prelude.clear();
 
             for child in view.iter() {
@@ -1264,14 +1077,6 @@ impl<'a> RuleMut<'a> for FnCall {
                             value
                         );
                         node.reduce(value);
-                    } else if let Some(return_value) =
-                        self.try_resolve_member_call_from_source(&view)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to object field function from source fallback with: {:?}",
-                            return_value
-                        );
-                        node.reduce(return_value);
                     }
                 }
             }
@@ -1412,11 +1217,14 @@ mod tests {
 
     #[test]
     fn test_fncall_object_stored_function_constant_return() {
+        // Explicit `;` after the function expression so tree-sitter parses
+        // the following `a.t = x` as a standalone assignment instead of a
+        // call/member chain glued onto the function literal (ASI quirk).
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(a.t());"
+                "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(a.t());"
             ),
-            "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(0);"
+            "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(0);"
         );
     }
 
@@ -1424,9 +1232,9 @@ mod tests {
     fn test_fncall_object_stored_function_param_dependent_return() {
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(a.t(1)); console.log(a.t(2));"
+                "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(a.t(1)); console.log(a.t(2));"
             ),
-            "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(2); console.log(3);"
+            "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(2); console.log(3);"
         );
     }
 
