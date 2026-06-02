@@ -36,6 +36,29 @@ pub fn global_depth() -> usize {
     GLOBAL_DEPTH.with(|c| c.get())
 }
 
+/// RAII bracket for the thread-local global counter. Returns `None` when
+/// the cap has been reached; otherwise releases the slot when dropped, so
+/// early returns and `?` propagation keep the counter consistent.
+pub struct GlobalRecursionGuard {
+    _private: (),
+}
+
+impl GlobalRecursionGuard {
+    pub fn enter() -> Option<Self> {
+        if try_global_bump() {
+            Some(Self { _private: () })
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for GlobalRecursionGuard {
+    fn drop(&mut self) {
+        global_unbump();
+    }
+}
+
 pub const DEFAULT_MAX_RECURSION_DEPTH: usize = 16;
 
 #[derive(Clone, Debug)]

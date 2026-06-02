@@ -8,7 +8,7 @@ use crate::js::build_javascript_tree;
 use crate::js::forward::Forward;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::integer::{AddInt, ParseInt};
-use crate::js::recursion::{RecursionExt, RecursionTracker, global_unbump, try_global_bump};
+use crate::js::recursion::{GlobalRecursionGuard, RecursionExt, RecursionTracker};
 use crate::js::specials::ParseSpecials;
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::string::{Concat, ParseString};
@@ -325,6 +325,13 @@ impl FnCall {
     /// still nested inside a surviving conditional means we couldn't
     /// statically pick a branch and we must bail.
     fn extract_top_level_return_value(root: &Node<JavaScript>) -> Option<JavaScript> {
+        // Bail when any return survives nested in a control-flow structure:
+        // an opaque condition would otherwise let us pick the later top-level
+        // return and silently drop the alternative branch.
+        if Self::has_nested_return_in_control_flow(root) {
+            return None;
+        }
+
         for child in root.iter() {
             if child.kind() == "return_statement" {
                 for c in child.iter() {
@@ -337,6 +344,35 @@ impl FnCall {
             }
         }
         None
+    }
+
+    fn has_nested_return_in_control_flow(node: &Node<JavaScript>) -> bool {
+        for child in node.iter() {
+            match child.kind() {
+                "if_statement" | "while_statement" | "do_statement" | "for_statement"
+                | "for_in_statement" | "switch_statement" | "try_statement" => {
+                    let mut count = 0;
+                    Self::count_returns_in_subtree(&child, &mut count);
+                    if count > 0 {
+                        return true;
+                    }
+                }
+                "function_declaration"
+                | "function"
+                | "function_expression"
+                | "arrow_function"
+                | "generator_function"
+                | "generator_function_declaration" => {
+                    // nested fn has its own returns; ignore
+                }
+                _ => {
+                    if Self::has_nested_return_in_control_flow(&child) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Synthesise `<prelude>; var p1 = V1; ...; <body>` and run the full
@@ -382,8 +418,9 @@ impl FnCall {
         //    pair until the source stabilises - one cycle isn't enough when
         //    a constant `if` collapse on iteration N exposes new constant
         //    folds for iteration N+1 (e.g. recursive call resolution).
+        const SUBTREE_FIXPOINT_ITER_CAP: usize = 8;
         let mut current = cleaned;
-        for _ in 0..8 {
+        for _ in 0..SUBTREE_FIXPOINT_ITER_CAP {
             let mut tree = build_javascript_tree(&current).ok()?;
             tree.apply_mut_with_strategy(
                 &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
@@ -908,15 +945,9 @@ impl FnCall {
         shape: &FunctionShape,
         view: &Node<JavaScript>,
     ) -> Option<JavaScript> {
-        if !try_global_bump() {
-            return None;
-        }
-        let result = (|| -> Option<JavaScript> {
-            let args = Self::extract_positional_call_args(view)?;
-            Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decl_prelude)
-        })();
-        global_unbump();
-        result
+        let _guard = GlobalRecursionGuard::enter()?;
+        let args = Self::extract_positional_call_args(view)?;
+        Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decl_prelude)
     }
 
     fn try_resolve_identifier_call(
@@ -924,12 +955,8 @@ impl FnCall {
         view: &Node<JavaScript>,
         fn_name: &str,
     ) -> Option<JavaScript> {
-        if !try_global_bump() {
-            return None;
-        }
-        let result = Self::resolve_identifier_call_semantic_fallback(view, fn_name);
-        global_unbump();
-        result
+        let _guard = GlobalRecursionGuard::enter()?;
+        Self::resolve_identifier_call_semantic_fallback(view, fn_name)
     }
 
     fn try_resolve_member_call(
@@ -938,12 +965,8 @@ impl FnCall {
         base: &str,
         key: &str,
     ) -> Option<JavaScript> {
-        if !try_global_bump() {
-            return None;
-        }
-        let result = Self::resolve_member_call_semantic_fallback(view, base, key);
-        global_unbump();
-        result
+        let _guard = GlobalRecursionGuard::enter()?;
+        Self::resolve_member_call_semantic_fallback(view, base, key)
     }
 
     fn try_resolve_member_call_from_source(
@@ -1414,5 +1437,20 @@ mod tests {
         );
 
         assert!(output.ends_with("console.log('minusone');"));
+    }
+
+    #[test]
+    fn test_fncall_opaque_conditional_does_not_resolve() {
+        // The if-condition refers to an undefined free identifier, so neither
+        // branch can be picked statically. The call must be left intact - we
+        // must NOT silently pick the trailing `return 'B'`.
+        let output = deobfuscate(
+            "function test(x) { if (someUnknownGlobal) { return 'A'; } return 'B'; } console.log(test(1));",
+        );
+        assert!(
+            output.ends_with("console.log(test(1));"),
+            "expected unresolved call, got: {}",
+            output
+        );
     }
 }
