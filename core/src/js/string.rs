@@ -770,11 +770,19 @@ pub fn escape_js_string(s: &str) -> String {
             '\t' => escaped.push_str("\\t"),
             '\r' => escaped.push_str("\\r"),
             '\\' => escaped.push_str("\\\\"),
-            '\'' => escaped.push_str("\\'"),
             _ => escaped.push(c),
         }
     }
-    format!("'{}'", escaped)
+    if !escaped.contains('\'') {
+        format!("'{}'", escaped)
+    } else if !escaped.contains('"') {
+        format!("\"{}\"", escaped)
+    } else if !escaped.contains('`') {
+        format!("`{}`", escaped)
+    } else {
+        escaped = escaped.replace("'", "\\'");
+        format!("'{}'", escaped)
+    }
 }
 
 #[derive(Default)]
@@ -1598,6 +1606,11 @@ mod tests_js_string {
         assert_eq!(escape_js_string("Tab\tSeparated"), r#"'Tab\tSeparated'"#);
         assert_eq!(escape_js_string("Quote: \""), r#"'Quote: "'"#);
         assert_eq!(escape_js_string("Backslash: \\"), r#"'Backslash: \\'"#);
+        assert_eq!(escape_js_string("'hello'"), r#""'hello'""#);
+        assert_eq!(escape_js_string("\"hello\""), r#"'"hello"'"#);
+        assert_eq!(escape_js_string("\"'hello'\""), r#"`"'hello'"`"#);
+        assert_eq!(escape_js_string("`hello`"), r#"'`hello`'"#);
+        assert_eq!(escape_js_string("\"'`hello`'\""), r#"'"\'`hello`\'"'"#);
     }
 
     #[test]
