@@ -160,6 +160,7 @@ impl_javascript_ruleset!(
     AddBool,              // Infer boolean addition operations
     CombineArrays,        // Infer + operations on two arrays
     StringBuiltins,       // Shared dispatcher for string literal builtins (.at, etc.)
+    NumberBuiltins,       // Shared dispatcher for string literal builtins (.toPrecision, etc.)
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments

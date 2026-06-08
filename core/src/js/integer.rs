@@ -4,6 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::*;
 use std::ops::{Shl, Shr};
 
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
@@ -292,6 +293,86 @@ fn to_int32(value: &JavaScript) -> i32 {
 fn digit_value(c: char, radix: u32) -> Option<u32> {
     let d = c.to_digit(36)?;
     if d < radix { Some(d) } else { None }
+}
+
+/// Centralized dispatcher for number literal builtins.
+///
+/// This includes :
+/// - `str.valueOf(n)` why not?
+type NumberBuiltinHandler = fn(f64, &[JavaScript]) -> Option<JavaScript>;
+
+const NUMBER_BUILTINS: &[(&str, NumberBuiltinHandler)] = &[("valueOf", number_builtin_value_of)];
+
+#[derive(Default)]
+pub struct NumberBuiltins;
+
+impl<'a> RuleMut<'a> for NumberBuiltins {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Num(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+        let mut arg_values = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data().cloned() else {
+                return Ok(());
+            };
+            arg_values.push(value);
+        }
+
+        let Some(result) = dispatch_number_builtin(&method, *input, &arg_values) else {
+            return Ok(());
+        };
+
+        trace!(
+            "NumberBuiltins: reducing '{}'.{}(...) to {}",
+            input, method, result
+        );
+        node.reduce(result);
+        Ok(())
+    }
+}
+
+fn dispatch_number_builtin(method: &str, input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    NUMBER_BUILTINS
+        .iter()
+        .find_map(|(name, handler)| (*name == method).then(|| handler(input, args)))
+        .flatten()
+}
+
+fn number_builtin_value_of(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    Some(Raw(Num(input)))
 }
 
 /// Infers unary `-` and `+` expressions applied to known values
@@ -1168,6 +1249,7 @@ mod tests_js_integer {
             ParseInt::default(),
             ParseString::default(),
             ParseArray::default(),
+            NumberBuiltins::default(),
             PosNeg::default(),
             AddInt::default(),
             Substract::default(),
@@ -1339,11 +1421,11 @@ mod tests_js_integer {
 
     #[test]
     fn test_incr_decr() {
-        assert_eq!(deobfuscate("var y = ++5;"), "var y = 6;");
-        assert_eq!(deobfuscate("var y = --5;"), "var y = 4;");
-        assert_eq!(deobfuscate("var y = 5++;"), "var y = 6;");
-        assert_eq!(deobfuscate("var y = 5--;"), "var y = 4;");
-        assert_eq!(deobfuscate("var y = ++5 + 1;"), "var y = 7;");
+        assert_eq!(deobfuscate("var x = ++5;"), "var x = 6;");
+        assert_eq!(deobfuscate("var x = --5;"), "var x = 4;");
+        assert_eq!(deobfuscate("var x = 5++;"), "var x = 6;");
+        assert_eq!(deobfuscate("var x = 5--;"), "var x = 4;");
+        assert_eq!(deobfuscate("var x = ++5 + 1;"), "var x = 7;");
         assert_eq!(
             deobfuscate("for (var i = 0; i < 10; i++) {}"),
             "for (var i = 0; i < 10; i++) {}"
@@ -1352,5 +1434,11 @@ mod tests_js_integer {
             deobfuscate("for (var i = 0; i < 10; --i) {}"),
             "for (var i = 0; i < 10; --i) {}"
         );
+    }
+
+    #[test]
+    fn test_builtin_value_of() {
+        assert_eq!(deobfuscate("var x = 12.34.valueOf();"), "var x = 12.34;");
+        assert_eq!(deobfuscate("var x = 12.34['valueOf']();"), "var x = 12.34;");
     }
 }
