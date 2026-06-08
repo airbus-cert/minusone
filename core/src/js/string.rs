@@ -194,6 +194,8 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("trimEnd", |input, _| {
         Some(Raw(Str(input.trim_end().to_string())))
     }),
+    // what is the purpose of this??
+    ("valueOf", |input, _| Some(Raw(Str(input.to_string())))),
 ];
 
 #[derive(Default)]
