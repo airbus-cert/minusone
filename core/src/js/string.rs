@@ -180,6 +180,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("repeat", string_builtin_repeat),
     ("slice", string_builtin_slice),
     ("substring", string_builtin_substring),
+    ("substr", string_builtin_substr), // lol ?
     ("toLowerCase", |input, _| {
         Some(Raw(Str(input.to_lowercase())))
     }),
@@ -546,6 +547,45 @@ pub fn string_builtin_substring(input: &str, args: &[JavaScript]) -> Option<Java
     }
 
     let end = end.min(input.len());
+    Some(Raw(Str(input[start..end].to_string())))
+}
+
+pub fn string_builtin_substr(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let start = match args.first()?.as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => 0,
+    };
+
+    let start = if start < 0 {
+        (len + start).max(0) as usize
+    } else {
+        (start as usize).min(input.len())
+    };
+
+    let extract_len = match args.get(1) {
+        None => input.len().saturating_sub(start),
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => {
+                if n <= 0.0 {
+                    return Some(Raw(Str(String::new())));
+                }
+                n as usize
+            }
+            _ => input.len().saturating_sub(start),
+        },
+    };
+
+    if start >= input.len() || extract_len == 0 {
+        return Some(Raw(Str(String::new())));
+    }
+
+    let end = (start + extract_len).min(input.len());
     Some(Raw(Str(input[start..end].to_string())))
 }
 
@@ -1880,6 +1920,64 @@ mod tests_js_string {
         );
         assert_eq!(
             deobfuscate("var x = 'abcdef'.substring();"),
+            "var x = 'abcdef';"
+        );
+    }
+
+    #[test]
+    fn test_substr() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(1, 4);"),
+            "var x = 'bcde';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(2, 99);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(2);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-3);"),
+            "var x = 'def';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-4, 2);"),
+            "var x = 'cd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(1, -1);"),
+            "var x = '';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.substr(1, 0);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.substr(10);"), "var x = '';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-99);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr();"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(0, 1);"),
+            "var x = 'a';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(0);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(NaN);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(undefined);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr('??');"),
             "var x = 'abcdef';"
         );
     }
