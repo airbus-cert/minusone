@@ -298,10 +298,13 @@ fn digit_value(c: char, radix: u32) -> Option<u32> {
 /// Centralized dispatcher for number literal builtins.
 ///
 /// This includes :
-/// - `str.valueOf(n)` why not?
+/// - `str.valueOf(n)` what is the purpose of this??
 type NumberBuiltinHandler = fn(f64, &[JavaScript]) -> Option<JavaScript>;
 
-const NUMBER_BUILTINS: &[(&str, NumberBuiltinHandler)] = &[("valueOf", number_builtin_value_of)];
+const NUMBER_BUILTINS: &[(&str, NumberBuiltinHandler)] = &[
+    ("valueOf", |value, _args| Some(Raw(Num(value)))),
+    ("toPrecision", number_builtin_to_precision),
+];
 
 #[derive(Default)]
 pub struct NumberBuiltins;
@@ -371,8 +374,76 @@ fn dispatch_number_builtin(method: &str, input: f64, args: &[JavaScript]) -> Opt
         .flatten()
 }
 
-fn number_builtin_value_of(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
-    Some(Raw(Num(input)))
+/// See [ECMA262 21.1.3.5](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.toprecision)
+pub fn number_builtin_to_precision(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Str(Raw(Num(input)).to_string())));
+    }
+
+    let precision = match args[0].as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => {
+            warn!("BuiltinToPrecision: received invalid arg, skipping...");
+            return None;
+        }
+    };
+
+    if input.is_infinite() {
+        return Some(Raw(Str(if input.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        })));
+    }
+
+    if precision < 1 || precision > 100 {
+        warn!("BuiltinToPrecision: precision out of range [1, 100], skipping...");
+        return None;
+    }
+
+    let p = precision as usize;
+
+    if input == 0.0 {
+        if p == 1 {
+            return Some(Raw(Str("0".to_string())));
+        }
+        return Some(Raw(Str(format!("0.{}", "0".repeat(p - 1)))));
+    }
+
+    let sign = if input.is_sign_negative() { "-" } else { "" };
+    let abs = input.abs();
+
+    let exp_repr = format!("{:.*e}", p - 1, abs);
+    let (mantissa, exp_part) = exp_repr.split_once('e')?;
+    let exponent: isize = exp_part.parse().ok()?;
+
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+
+    let result = if exponent < -6 || exponent >= p as isize {
+        let exp_suffix = if exponent >= 0 {
+            format!("e+{}", exponent)
+        } else {
+            format!("e{}", exponent)
+        };
+
+        if p == 1 {
+            format!("{sign}{}{}", &digits[..1], exp_suffix)
+        } else {
+            format!("{sign}{}.{}{}", &digits[..1], &digits[1..p], exp_suffix)
+        }
+    } else if exponent >= 0 {
+        let int_len = (exponent + 1) as usize;
+        if int_len >= p {
+            format!("{sign}{digits}")
+        } else {
+            format!("{sign}{}.{}", &digits[..int_len], &digits[int_len..p])
+        }
+    } else {
+        let zeros = "0".repeat((-exponent - 1) as usize);
+        format!("{sign}0.{}{}", zeros, digits)
+    };
+
+    Some(Raw(Str(result)))
 }
 
 /// Infers unary `-` and `+` expressions applied to known values
@@ -1240,6 +1311,7 @@ mod tests_js_integer {
     use super::*;
     use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
 
@@ -1251,6 +1323,7 @@ mod tests_js_integer {
             ParseArray::default(),
             NumberBuiltins::default(),
             PosNeg::default(),
+            Forward::default(),
             AddInt::default(),
             Substract::default(),
             IncrDecr::default(),
@@ -1440,5 +1513,85 @@ mod tests_js_integer {
     fn test_builtin_value_of() {
         assert_eq!(deobfuscate("var x = 12.34.valueOf();"), "var x = 12.34;");
         assert_eq!(deobfuscate("var x = 12.34['valueOf']();"), "var x = 12.34;");
+    }
+
+    #[test]
+    fn test_builtin_to_precision() {
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision();"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(1);"),
+            "var x = '1e+1';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(2);"),
+            "var x = '12';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(4);"),
+            "var x = '12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(6);"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(8);"),
+            "var x = '12.345600';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toPrecision(1);"), "var x = '0';");
+        assert_eq!(
+            deobfuscate("var x = (0).toPrecision(4);"),
+            "var x = '0.000';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toPrecision(4);"),
+            "var x = '-12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toPrecision(1);"),
+            "var x = '-1e+1';"
+        );
+        assert_eq!(
+            // output '0.0000000' instead of '0.0000012'
+            deobfuscate("var x = (0.000001234).toPrecision(2);"),
+            "var x = '0.0000012';"
+        );
+        assert_eq!(
+            // output '0e-7' instead of '1e-7'
+            deobfuscate("var x = (0.0000001).toPrecision(1);"),
+            "var x = '1e-7';"
+        );
+        assert_eq!(
+            // output '0.000000' instead of '0.000001'
+            deobfuscate("var x = (0.000001).toPrecision(1);"),
+            "var x = '0.000001';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (123456789).toPrecision(4);"),
+            "var x = '1.235e+8';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (9.9999).toPrecision(1);"),
+            "var x = '1e+1';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toPrecision(3);"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toPrecision(3);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toPrecision(0);"),
+            "var x = 1.5.toPrecision(0);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toPrecision(101);"),
+            "var x = 1.5.toPrecision(101);"
+        );
     }
 }
