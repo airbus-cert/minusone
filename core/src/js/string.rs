@@ -137,6 +137,7 @@ fn unescaped_js_string(s: &str) -> String {
 /// - `str.at(n)`
 /// - `str.charAt(n)`
 /// - `str.codePointAt(n)`
+/// - `str.concat(str1, ..., strN)`
 /// - `str.startsWith(substring)`
 /// - `str.endsWith(substring)`
 /// - `str.includes(substring)`
@@ -168,6 +169,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("link", string_builtin_link),
     ("anchor", string_builtin_anchor),
     ("codePointAt", string_builtin_code_point_at),
+    ("concat", string_builtin_concat),
     ("startsWith", string_builtin_start_with),
     ("endsWith", string_builtin_end_with),
     ("includes", string_builtin_includes),
@@ -299,6 +301,19 @@ fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<Java
     }
 
     Some(Raw(Num(chars[index as usize] as u32 as f64)))
+}
+
+fn string_builtin_concat(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let mut result = input.to_string();
+    for arg in args {
+        let arg = match arg {
+            Raw(Str(s)) => s.clone(),
+            Array(a) => flatten_array(a, None),
+            any => any.to_string(),
+        };
+        result.push_str(&arg);
+    }
+    Some(Raw(Str(result)))
 }
 
 fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
@@ -1479,7 +1494,7 @@ mod tests_js_string {
     use crate::js::linter::Linter;
     use crate::js::post_process::BracketCallToMember;
     use crate::js::regex::ParseRegex;
-    use crate::js::specials::AddSubSpecials;
+    use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::string::*;
     use crate::js::var::Var;
     use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
@@ -1497,6 +1512,7 @@ mod tests_js_string {
             ParseInt::default(),
             ParseArray::default(),
             ParseRegex::default(),
+            ParseSpecials::default(),
             StringBuiltins::default(),
             Forward::default(),
             PosNeg::default(),
@@ -1622,6 +1638,24 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("var x = 'abc'.codePointAt(3);"),
             "var x = undefined;"
+        );
+    }
+
+    #[test]
+    fn test_concat_builtin() {
+        assert_eq!(deobfuscate("var x = 'abc'.concat();"), "var x = 'abc';");
+        assert_eq!(deobfuscate("var x = 'abc'.concat('d');"), "var x = 'abcd';");
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat(123);"),
+            "var x = 'abc123';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat(undefined);"),
+            "var x = 'abcundefined';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat([1,2,3]);"),
+            "var x = 'abc1,2,3';"
         );
     }
 
