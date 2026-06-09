@@ -304,6 +304,7 @@ type NumberBuiltinHandler = fn(f64, &[JavaScript]) -> Option<JavaScript>;
 const NUMBER_BUILTINS: &[(&str, NumberBuiltinHandler)] = &[
     ("valueOf", |value, _args| Some(Raw(Num(value)))),
     ("toPrecision", number_builtin_to_precision),
+    ("toFixed", number_builtin_to_fixed),
 ];
 
 #[derive(Default)]
@@ -444,6 +445,46 @@ pub fn number_builtin_to_precision(input: f64, args: &[JavaScript]) -> Option<Ja
     };
 
     Some(Raw(Str(result)))
+}
+
+/// See [ECMA262 21.1.3.3](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.tofixed)
+pub fn number_builtin_to_fixed(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    let fraction_count = match args.first() {
+        None => 0isize,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as isize,
+            _ => 0,
+        },
+    };
+
+    if !(0..=100).contains(&fraction_count) {
+        warn!("BuiltinToFixed: fractionDigits out of range [0, 100], skipping...");
+        return None;
+    }
+
+    if input.is_infinite() {
+        return Some(Raw(Str(if input.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        })));
+    }
+
+    let f = fraction_count as usize;
+    let sign = if input.is_sign_negative() && input != 0.0 {
+        "-"
+    } else {
+        ""
+    };
+    let abs = input.abs();
+
+    if abs >= 1e21 {
+        return Some(Raw(Str(format!("{sign}{}", Raw(Num(abs)).to_string()))));
+    }
+
+    let digit_string = format!("{:.prec$}", abs, prec = f);
+
+    Some(Raw(Str(format!("{sign}{digit_string}"))))
 }
 
 /// Infers unary `-` and `+` expressions applied to known values
@@ -1592,6 +1633,69 @@ mod tests_js_integer {
         assert_eq!(
             deobfuscate("var x = (1.5).toPrecision(101);"),
             "var x = 1.5.toPrecision(101);"
+        );
+    }
+
+    #[test]
+    fn test_builtin_to_fixed() {
+        assert_eq!(deobfuscate("var x = 12.3456.toFixed();"), "var x = '12';");
+        assert_eq!(deobfuscate("var x = (1.005).toFixed();"), "var x = '1';");
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toFixed(2);"),
+            "var x = '12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toFixed(4);"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(4);"),
+            "var x = '1.5000';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toFixed(3);"), "var x = '0.000';");
+        assert_eq!(deobfuscate("var x = (1.9).toFixed(0);"), "var x = '2';");
+        assert_eq!(deobfuscate("var x = (1.1).toFixed(0);"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = (-1.5).toFixed(0);"), "var x = '-2';");
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toFixed(2);"),
+            "var x = '-12.35';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toFixed(0);"), "var x = '0';");
+        assert_eq!(
+            deobfuscate("var x = (-0).toFixed(2);"),
+            "var x = '0.00';" // -0 has no sign in output per spec step 9
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.000001).toFixed(8);"),
+            "var x = '0.00000100';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1e15).toFixed(0);"),
+            "var x = '1000000000000000';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1e21).toFixed(2);"),
+            "var x = '1e+21';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5e21).toFixed(0);"),
+            "var x = '1.5e+21';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toFixed(2);"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toFixed(2);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(-1);"),
+            "var x = 1.5.toFixed(-1);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(101);"),
+            "var x = 1.5.toFixed(101);"
         );
     }
 }
