@@ -2,13 +2,13 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
-use std::ops::{Shl, Shr};
-
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
 use num::ToPrimitive;
+use std::ops::{Shl, Shr};
+use std::string::ToString;
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 ///
@@ -298,13 +298,17 @@ fn digit_value(c: char, radix: u32) -> Option<u32> {
 /// Centralized dispatcher for number literal builtins.
 ///
 /// This includes :
-/// - `str.valueOf(n)` what is the purpose of this??
+/// - `num.valueOf()` what is the purpose of this??
+/// - `num.toPrecision(x)`
+/// - `num.toFixed(x)`
+/// - `num.toExponential(x)`
 type NumberBuiltinHandler = fn(f64, &[JavaScript]) -> Option<JavaScript>;
 
 const NUMBER_BUILTINS: &[(&str, NumberBuiltinHandler)] = &[
     ("valueOf", |value, _args| Some(Raw(Num(value)))),
     ("toPrecision", number_builtin_to_precision),
     ("toFixed", number_builtin_to_fixed),
+    ("toExponential", number_builtin_to_exponential),
 ];
 
 #[derive(Default)]
@@ -450,14 +454,14 @@ pub fn number_builtin_to_precision(input: f64, args: &[JavaScript]) -> Option<Ja
 /// See [ECMA262 21.1.3.3](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.tofixed)
 pub fn number_builtin_to_fixed(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
     let fraction_count = match args.first() {
-        None => 0isize,
+        None => 0,
         Some(arg) => match arg.as_js_num() {
-            Raw(Num(n)) => n as isize,
+            Raw(Num(n)) => n as i64,
             _ => 0,
         },
     };
 
-    if !(0..=100).contains(&fraction_count) {
+    if fraction_count < 0 || fraction_count > 100 {
         warn!("BuiltinToFixed: fractionDigits out of range [0, 100], skipping...");
         return None;
     }
@@ -485,6 +489,89 @@ pub fn number_builtin_to_fixed(input: f64, args: &[JavaScript]) -> Option<JavaSc
     let digit_string = format!("{:.prec$}", abs, prec = f);
 
     Some(Raw(Str(format!("{sign}{digit_string}"))))
+}
+
+/// See [ECMA262 21.1.3.2](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.toexponential)
+pub fn number_builtin_to_exponential(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    let fraction_digits_undefined =
+        args.is_empty() || matches!(args.first(), Some(Undefined) | Some(Null));
+
+    let fraction_count = match args.first() {
+        None => 0,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as i64,
+            _ => 0,
+        },
+    };
+
+    if input.is_infinite() {
+        return Some(Raw(Str(if input.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        })));
+    }
+
+    if !fraction_digits_undefined && (fraction_count < 0 || fraction_count > 100) {
+        warn!("BuiltinToExponential: fractionDigits out of range [0, 100], skipping...");
+        return None;
+    }
+
+    let sign = if input.is_sign_negative() && input != 0.0 {
+        "-"
+    } else {
+        ""
+    };
+    let abs = input.abs();
+
+    if abs == 0.0 {
+        let f = if fraction_digits_undefined {
+            0
+        } else {
+            fraction_count as usize
+        };
+        let significand = if f == 0 {
+            "0".to_string()
+        } else {
+            format!("0.{}", "0".repeat(f))
+        };
+        return Some(Raw(Str(format!("{sign}{significand}e+0"))));
+    }
+
+    let (significand, exponent) = if fraction_digits_undefined {
+        let repr = format!("{:e}", abs);
+        let (mantissa, exp_str) = repr.split_once('e')?;
+        let exponent: isize = exp_str.parse().ok()?;
+        let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+        let digits = digits.trim_end_matches('0');
+        let f = digits.len() - 1;
+        let sig = if f == 0 {
+            digits.to_string()
+        } else {
+            format!("{}.{}", &digits[..1], &digits[1..])
+        };
+        (sig, exponent)
+    } else {
+        let f = fraction_count as usize;
+        let repr = format!("{:.*e}", f, abs);
+        let (mantissa, exp_str) = repr.split_once('e')?;
+        let exponent: isize = exp_str.parse().ok()?;
+        let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+        let sig = if f == 0 {
+            digits[..1].to_string()
+        } else {
+            format!("{}.{}", &digits[..1], &digits[1..=f])
+        };
+        (sig, exponent)
+    };
+
+    let exp_suffix = if exponent >= 0 {
+        format!("e+{}", exponent)
+    } else {
+        format!("e{}", exponent)
+    };
+
+    Some(Raw(Str(format!("{sign}{significand}{exp_suffix}"))))
 }
 
 /// Infers unary `-` and `+` expressions applied to known values
@@ -1696,6 +1783,82 @@ mod tests_js_integer {
         assert_eq!(
             deobfuscate("var x = (1.5).toFixed(101);"),
             "var x = 1.5.toFixed(101);"
+        );
+    }
+
+    #[test]
+    fn test_builtin_to_exponential() {
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential();"),
+            "var x = '1.23456789e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (100).toExponential();"),
+            "var x = '1e+2';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential();"),
+            "var x = '1.5e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(2);"),
+            "var x = '1.23e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(6);"),
+            "var x = '1.234568e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(0);"),
+            "var x = '1e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(4);"),
+            "var x = '1.5000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0).toExponential();"),
+            "var x = '0e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0).toExponential(3);"),
+            "var x = '0.000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12345.6789).toExponential(2);"),
+            "var x = '-1.23e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-0.00123).toExponential(2);"),
+            "var x = '-1.23e-3';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.00123).toExponential(2);"),
+            "var x = '1.23e-3';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.0000001).toExponential(1);"),
+            "var x = '1.0e-7';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (5).toExponential(3);"),
+            "var x = '5.000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toExponential();"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toExponential(2);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(-1);"),
+            "var x = 1.5.toExponential(-1);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(101);"),
+            "var x = 1.5.toExponential(101);"
         );
     }
 }
