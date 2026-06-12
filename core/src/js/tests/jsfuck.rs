@@ -119,6 +119,24 @@ pub mod jsfuck_tests {
             "'\u{20ac}'",
             deobfuscate(r#"[]["flat"]["constructor"]("return '€'")()"#)
         );
+        // non-ASCII via the BMP `\uXXXX` escape (literal backslash body)
+        assert_eq!(
+            "'\u{20ac}'",
+            deobfuscate(r#"Function("return '\\u20ac'")()"#)
+        ); // €
+        assert_eq!(
+            "'\u{00e9}'",
+            deobfuscate(r#"Function("return '\\u00e9'")()"#)
+        ); // é
+        assert_eq!(
+            "'\u{4e2d}'",
+            deobfuscate(r#"Function("return '\\u4e2d'")()"#)
+        ); // 中
+        // several escapes in one body
+        assert_eq!(
+            "'\u{20ac}$'",
+            deobfuscate(r#"Function("return '\\u20ac\\u0024'")()"#)
+        );
         // code-point and hex escapes, including astral / surrogate pairs
         assert_eq!(
             "'\u{1f600}'",
