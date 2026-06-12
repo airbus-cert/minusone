@@ -10,6 +10,7 @@ pub mod forward;
 pub mod functions;
 pub mod globals;
 pub mod integer;
+pub mod jsfuck;
 pub mod linter;
 pub mod math;
 pub mod node;
