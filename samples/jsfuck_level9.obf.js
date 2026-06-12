@@ -1,0 +1,1 @@
+console.log(Function("return '\\u0048\\u0065\\u006c\\u006c\\u006f'")())

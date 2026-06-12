@@ -9,6 +9,7 @@ pub mod jsfuck_tests {
     use crate::js::functions::fncall::*;
     use crate::js::functions::function::*;
     use crate::js::integer::*;
+    use crate::js::jsfuck::*;
     use crate::js::linter::Linter;
     use crate::js::objects::object::*;
     use crate::js::post_process::BracketCallToMember;
@@ -59,6 +60,7 @@ pub mod jsfuck_tests {
             B64::default(),
             Var::default(),
             FnCall::default(),
+            JsFuckLevelNine::default(),
             StrictEq::default(),
             LooseEq::default(),
             CmpOrd,
@@ -98,6 +100,36 @@ pub mod jsfuck_tests {
         assert_eq!("'x'", deobfuscate("(+(101))['to'+String['name']](34)[1]"));
         assert_eq!("'y'", deobfuscate("(NaN+[Infinity])[10]"));
         assert_eq!("'z'", deobfuscate("(+(35))['to'+String['name']](36)"));
+    }
+
+    /// JSFuck "level 9" universal builder: `Function("return '\uXXXX'")()`.
+    /// The body is a returned string literal, so it is decoded statically
+    /// (no code execution) — covering the characters that cannot be assembled
+    /// from primitive coercions alone.
+    #[test]
+    fn test_jsfuck_level_nine() {
+        // global Function constructor
+        assert_eq!("'A'", deobfuscate(r#"Function("return 'A'")()"#));
+        assert_eq!("'AB'", deobfuscate(r#"Function("return 'AB'")()"#));
+        // body carrying a literal backslash escape (`return 'A'`), as produced
+        // by JSFuck — the `\uXXXX` is decoded by the rule itself, not the parser
+        assert_eq!("'A'", deobfuscate(r#"Function("return '\\u0041'")()"#));
+        // the JSFuck way of reaching the Function constructor
+        assert_eq!(
+            "'\u{20ac}'",
+            deobfuscate(r#"[]["flat"]["constructor"]("return '€'")()"#)
+        );
+        // code-point and hex escapes, including astral / surrogate pairs
+        assert_eq!(
+            "'\u{1f600}'",
+            deobfuscate(r#"Function("return '\u{1f600}'")()"#)
+        );
+        assert_eq!("'AB'", deobfuscate(r#"Function("return '\x41\x42'")()"#));
+        // not a string-literal body: left untouched (no eval executed)
+        assert_eq!(
+            "[]['flat'].constructor('return 1+1')()",
+            deobfuscate(r#"[]["flat"]["constructor"]("return 1+1")()"#)
+        );
     }
 
     #[test]

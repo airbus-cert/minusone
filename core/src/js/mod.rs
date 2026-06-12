@@ -10,6 +10,7 @@ pub mod forward;
 pub mod functions;
 pub mod globals;
 pub mod integer;
+pub mod jsfuck;
 pub mod linter;
 pub mod math;
 pub mod node;
@@ -34,6 +35,7 @@ use self::forward::*;
 use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
+use self::jsfuck::*;
 use self::linter::RemoveComment;
 use self::math::*;
 use self::node::buffer::*;
@@ -185,6 +187,7 @@ impl_javascript_ruleset!(
     BufferToString, // Infer Buffer.toString(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
+    JsFuckLevelNine, // Resolve the JSFuck level-9 Function("return '\uXXXX'")() universal builder
     StrictEq,       // Infer strict equality === and !==
     LooseEq,        // Infer strict equality == and !=
     CmpOrd,         // Infer comparison operators <, >, <= and >=
