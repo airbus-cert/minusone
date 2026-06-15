@@ -5,6 +5,7 @@ pub mod jsfuck_tests {
     use crate::js::bool::ParseBool;
     use crate::js::bool::*;
     use crate::js::comparator::*;
+    use crate::js::encode_decode::EncodeDecodeBuiltins;
     use crate::js::forward::*;
     use crate::js::functions::fncall::*;
     use crate::js::functions::function::*;
@@ -13,6 +14,7 @@ pub mod jsfuck_tests {
     use crate::js::linter::Linter;
     use crate::js::objects::object::*;
     use crate::js::post_process::BracketCallToMember;
+    use crate::js::regex::{ParseRegex, RegexExec};
     use crate::js::specials::*;
     use crate::js::string::*;
     use crate::js::var::*;
@@ -60,6 +62,10 @@ pub mod jsfuck_tests {
             B64::default(),
             Var::default(),
             FnCall::default(),
+            FromCharCode::default(),
+            EncodeDecodeBuiltins::default(),
+            ParseRegex::default(),
+            RegexExec::default(),
             JsFuckLevelNine::default(),
             StrictEq::default(),
             LooseEq::default(),

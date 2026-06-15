@@ -63,6 +63,35 @@ impl JsFuckLevelNine {
     }
 }
 
+/// Models the runtime string value of JSFuck's "error mining" universal builder:
+/// `Function("try{ <stmt> }catch(f){return f}")()` deliberately throws and returns
+/// the caught `Error`; pure JSFuck then reads individual characters out of its
+/// `String(error)` form (e.g. the `R`/`E` of `RangeError`, or the `'` mined from a
+/// `SyntaxError` message via `RegExp.exec`). We reproduce that string for the exact
+/// throwing snippets these encoders use.
+///
+/// These messages are V8/Node specific — this is *emulation* of the engine, not
+/// evaluation — so the table is intentionally small and matched verbatim.
+fn decode_thrown_error(body: &str) -> Option<String> {
+    let stmt = body
+        .trim()
+        .strip_prefix("try{")?
+        .rsplit_once("}catch(")?
+        .0
+        .trim();
+    let message = match stmt {
+        // `String().normalize(false)` throws a RangeError — mined for 'R' and 'E'.
+        "String().normalize(false)" => {
+            "RangeError: The normalization form should be one of NFC, NFD, NFKC, NFKD."
+        }
+        // `[]+[[]].concat([[]])` is `","`; `Function(",")()` is a SyntaxError —
+        // its message is mined (via RegExp.exec) for the quote/backslash characters.
+        "Function([]+[[]].concat([[]]))()" => "SyntaxError: Unexpected token ','",
+        _ => return None,
+    };
+    Some(message.to_string())
+}
+
 /// Decodes the *content* of a JavaScript string literal (escape sequences only;
 /// the surrounding quotes are already removed) into its runtime value.
 fn decode_js_string_literal(inner: &str) -> Option<String> {
@@ -226,6 +255,12 @@ impl<'a> RuleMut<'a> for JsFuckLevelNine {
                 body, decoded
             );
             node.reduce(Raw(Str(decoded)));
+        } else if let Some(error) = decode_thrown_error(body) {
+            trace!(
+                "JsFuckLevelNine: reducing Function(\"{}\")() (thrown) to {:?}",
+                body, error
+            );
+            node.reduce(Raw(Str(error)));
         }
 
         Ok(())

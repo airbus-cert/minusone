@@ -54,8 +54,17 @@ impl<'a> RuleMut<'a> for EncodeDecodeBuiltins {
             return Ok(());
         };
 
-        let Ok(method) = callee.text() else {
-            return Ok(());
+        // The callee is either the bare builtin identifier (`escape(s)`), or the
+        // JSFuck "level 9" universal builder that *returns* the builtin and is
+        // immediately invoked (`Function("return escape")()(s)`). The latter is how
+        // pure JSFuck reaches `escape`/`unescape` to synthesize the `'` and `\`
+        // characters that cannot be assembled from primitive coercions alone.
+        let method: String = match callee.text() {
+            Ok(name) if ENCODE_BUILTINS.iter().any(|(n, _)| *n == name) => name.to_string(),
+            _ => match builder_returned_identifier(&callee) {
+                Some(name) => name,
+                None => return Ok(()),
+            },
         };
 
         let args = view.named_child("arguments");
@@ -68,7 +77,7 @@ impl<'a> RuleMut<'a> for EncodeDecodeBuiltins {
             arg_values.push(value);
         }
 
-        let Some(result) = dispatch_encode_builtin(method, &arg_values) else {
+        let Some(result) = dispatch_encode_builtin(&method, &arg_values) else {
             return Ok(());
         };
 

@@ -3,7 +3,7 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Null, Raw, Regex, Undefined};
 use crate::js::Value::{Bool, Num, Str};
 use crate::js::string::Concat;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{builder_returned_identifier, get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -76,7 +76,11 @@ impl ParseRegex {
         args: Option<Node<JavaScript>>,
     ) -> Option<JavaScript> {
         let callee = callee?;
-        if callee.text().ok()? != "RegExp" {
+        // `RegExp(...)` directly, or reached through the JSFuck universal builder
+        // `Function("return RegExp")()(...)`.
+        let is_regexp = callee.text().ok().as_deref() == Some("RegExp")
+            || builder_returned_identifier(&callee).as_deref() == Some("RegExp");
+        if !is_regexp {
             return None;
         }
 
