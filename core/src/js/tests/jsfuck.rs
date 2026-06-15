@@ -50,29 +50,29 @@ pub mod jsfuck_tests {
             AddBool::default(),
             // grouped into a nested tuple to stay within the max RuleMut tuple arity
             (
-            CombineArrays::default(),
-            ArrayConcat::default(),
-            ArrayJoin::default(),
-            StringBuiltins::default(),
-            BracketCharAt::default(),
-            Forward::default(),
-            ArrayPlusMinus::default(),
-            Concat::default(),
-            ConcatFunction::default(),
-            GetArrayElement::default(),
-            AddSubSpecials::default(),
-            ToString::default(),
-            B64::default(),
-            Var::default(),
-            FnCall::default(),
-            FromCharCode::default(),
-            EncodeDecodeBuiltins::default(),
-            ParseRegex::default(),
-            RegexExec::default(),
-            JsFuckLevelNine::default(),
-            StrictEq::default(),
-            LooseEq::default(),
-            CmpOrd,
+                CombineArrays::default(),
+                ArrayConcat::default(),
+                ArrayJoin::default(),
+                StringBuiltins::default(),
+                BracketCharAt::default(),
+                Forward::default(),
+                ArrayPlusMinus::default(),
+                Concat::default(),
+                ConcatFunction::default(),
+                GetArrayElement::default(),
+                AddSubSpecials::default(),
+                ToString::default(),
+                B64::default(),
+                Var::default(),
+                FnCall::default(),
+                FromCharCode::default(),
+                EncodeDecodeBuiltins::default(),
+                ParseRegex::default(),
+                RegexExec::default(),
+                JsFuckLevelNine::default(),
+                StrictEq::default(),
+                LooseEq::default(),
+                CmpOrd,
             ),
         ))
         .unwrap();
@@ -112,24 +112,16 @@ pub mod jsfuck_tests {
         assert_eq!("'z'", deobfuscate("(+(35))['to'+String['name']](36)"));
     }
 
-    /// JSFuck "level 9" universal builder: `Function("return '\uXXXX'")()`.
-    /// The body is a returned string literal, so it is decoded statically
-    /// (no code execution) — covering the characters that cannot be assembled
-    /// from primitive coercions alone.
+    /// see [this](https://stackoverflow.com/a/63713987)
     #[test]
     fn test_jsfuck_level_nine() {
-        // global Function constructor
         assert_eq!("'A'", deobfuscate(r#"Function("return 'A'")()"#));
         assert_eq!("'AB'", deobfuscate(r#"Function("return 'AB'")()"#));
-        // body carrying a literal backslash escape (`return 'A'`), as produced
-        // by JSFuck — the `\uXXXX` is decoded by the rule itself, not the parser
         assert_eq!("'A'", deobfuscate(r#"Function("return '\\u0041'")()"#));
-        // the JSFuck way of reaching the Function constructor
         assert_eq!(
             "'\u{20ac}'",
             deobfuscate(r#"[]["flat"]["constructor"]("return '€'")()"#)
         );
-        // non-ASCII via the BMP `\uXXXX` escape (literal backslash body)
         assert_eq!(
             "'\u{20ac}'",
             deobfuscate(r#"Function("return '\\u20ac'")()"#)
@@ -142,45 +134,39 @@ pub mod jsfuck_tests {
             "'\u{4e2d}'",
             deobfuscate(r#"Function("return '\\u4e2d'")()"#)
         ); // 中
-        // several escapes in one body
         assert_eq!(
             "'\u{20ac}$'",
             deobfuscate(r#"Function("return '\\u20ac\\u0024'")()"#)
         );
-        // code-point and hex escapes, including astral / surrogate pairs
         assert_eq!(
             "'\u{1f600}'",
             deobfuscate(r#"Function("return '\u{1f600}'")()"#)
         );
         assert_eq!("'AB'", deobfuscate(r#"Function("return '\x41\x42'")()"#));
-        // not a string-literal body: left untouched (no eval executed)
         assert_eq!(
             "[]['flat'].constructor('return 1+1')()",
             deobfuscate(r#"[]["flat"]["constructor"]("return 1+1")()"#)
         );
     }
 
-    /// jsfuck.com builds a string body with legacy octal escapes (`\164`='t'),
-    /// reached through the Function builder; the decoder must interpret them.
+    /// jsfuck.com builds
     #[test]
     fn test_octal_string_escape() {
-        // the body reaching the builder carries literal backslash-octal (as JSFuck
-        // assembles it at runtime), so `\\164` in source => `\164` => 't'.
+        // assembles it at runtime, so `\\164` in source => `\164` => 't'.
         assert_eq!(
             "'at('",
             deobfuscate(r#"[]["fill"]["constructor"]("return'a\\164\\50'")()"#)
         );
     }
 
-    /// A regex value's `constructor` is `RegExp`, so `(/x/)["constructor"]("/")`
-    /// is `RegExp("/")` === `/\//`; JSFuck mines `\` from `([]+/\//)[1]`.
     #[test]
     fn test_regexp_via_value_constructor() {
-        assert_eq!("'\\\\'", deobfuscate(r#"([]+(/x/)["constructor"]("/"))[1]"#));
+        assert_eq!(
+            "'\\\\'",
+            deobfuscate(r#"([]+(/x/)["constructor"]("/"))[1]"#)
+        );
     }
 
-    /// `RegExp()` stringifies as `/(?:)/` (empty source is `(?:)`), so JSFuck
-    /// mines `?` and `:` from `([]+RegExp())[2]` / `[3]` — not `//`.
     #[test]
     fn test_empty_regexp_source() {
         assert_eq!("'?'", deobfuscate("([]+RegExp())[2]"));
@@ -329,7 +315,7 @@ pub mod jsfuck_tests {
         assert_eq!("'y'", deobfuscate("([][\"entries\"]()+[])[12]"));
         assert_eq!("'z'", deobfuscate("(+(35))[\"toString\"](36)"));
     }
-    /// Uppercase letters reachable without eval (constructor names and the array-iterator string).
+
     #[test]
     fn test_jsfuck_upper_alphabet() {
         assert_eq!("'A'", deobfuscate("([][\"entries\"]()+[])[8]"));
@@ -342,7 +328,7 @@ pub mod jsfuck_tests {
         assert_eq!("'N'", deobfuscate("(NaN+[])[0]"));
         assert_eq!("'S'", deobfuscate("(([]+[])[\"constructor\"]+[])[9]"));
     }
-    /// Punctuation reachable without eval (function/HTML-method strings, Array.concat, number strings).
+
     #[test]
     fn test_jsfuck_symbols() {
         assert_eq!("' '", deobfuscate("([][\"filter\"]+[])[8]"));

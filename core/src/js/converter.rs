@@ -22,9 +22,7 @@ impl Display for JavaScript {
                 write!(f, "[{}]", arr_str)
             }
             Regex { pattern, flags } => {
-                // Match JS `RegExp.prototype.source`: an empty pattern stringifies as
-                // `(?:)`, so `RegExp()` is `/(?:)/` (whose chars `?`/`:` JSFuck mines),
-                // not `//`.
+                // empty regex so, `RegExp()` is `/(?:)/` (whose chars `?`/`:`, jsfuck related)
                 let source = if pattern.is_empty() {
                     "(?:)".to_string()
                 } else {

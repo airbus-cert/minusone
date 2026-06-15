@@ -3,15 +3,8 @@ use crate::js::JavaScript::Raw;
 use crate::js::Value::Str;
 use crate::tree::Node;
 
-/// If `callee` is the JSFuck "level 9" universal builder returning a *bare
-/// identifier* and immediately invoked with no arguments — `Function("return
-/// <name>")()` or `X["constructor"]("return <name>")()` — returns `<name>`.
-///
-/// This is the indirection pure JSFuck uses to reach global objects such as
-/// `escape`, `unescape` and `RegExp`. Only a `return <identifier>` body is
-/// recognized (never a call or other expression), so nothing is executed.
+/// see [this](https://stackoverflow.com/a/63713987)
 pub fn builder_returned_identifier(callee: &Node<JavaScript>) -> Option<String> {
-    // Descend through any surrounding parentheses: `(Function("return X")())(…)`.
     if callee.kind() == "parenthesized_expression" {
         let inner = callee.iter().find(|c| !matches!(c.kind(), "(" | ")"))?;
         return builder_returned_identifier(&inner);
@@ -19,7 +12,6 @@ pub fn builder_returned_identifier(callee: &Node<JavaScript>) -> Option<String> 
     if callee.kind() != "call_expression" {
         return None;
     }
-    // The builder is invoked with no arguments: `(...)()`.
     if !get_positional_arguments(callee.named_child("arguments")).is_empty() {
         return None;
     }
@@ -29,11 +21,12 @@ pub fn builder_returned_identifier(callee: &Node<JavaScript>) -> Option<String> 
         return None;
     }
 
-    // The inner callee must be the Function constructor (`Function` or
-    // `X["constructor"]`).
     let inner_callee = inner.named_child("function").or_else(|| inner.child(0))?;
     let is_function_constructor = method_name(&inner_callee).as_deref() == Some("constructor")
-        || inner_callee.text().map(|t| t == "Function").unwrap_or(false);
+        || inner_callee
+            .text()
+            .map(|t| t == "Function")
+            .unwrap_or(false);
     if !is_function_constructor {
         return None;
     }

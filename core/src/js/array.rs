@@ -409,10 +409,7 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     }
                     Ok(())
                 } else {
-                    // A non-numeric key is a prototype member (e.g. "filter", "constructor")
-                    // when `as_object` models it — defer to object coercion so chains like
-                    // `[]["filter"]["constructor"]` resolve. Otherwise it is a genuinely
-                    // absent property and coerces to undefined.
+                    // A non-numeric key is a prototype member (e.g. "filter", "constructor"), used for jsfuck
                     let is_prototype_member = as_object(array_node.data().unwrap())
                         .map(|o| matches!(&o, Object { map, .. } if map.contains_key(index_str.as_str())))
                         .unwrap_or(false);
@@ -455,8 +452,6 @@ pub fn flatten_array(arr: &Vec<JavaScript>, separator: Option<String>) -> String
 fn flatten_value(value: &JavaScript, separator: Option<String>) -> String {
     match value {
         Array(arr) => flatten_array(arr, separator.clone()),
-        // Route through the JS-correct number formatter (handles exponential
-        // notation like 1e+100, which Rust's f64::to_string does not).
         Raw(Num(n)) => Num(*n).to_string(),
         Raw(Str(s)) => s.clone(),
         Raw(Bool(b)) => b.to_string(),

@@ -76,9 +76,7 @@ impl ParseRegex {
         args: Option<Node<JavaScript>>,
     ) -> Option<JavaScript> {
         let callee = callee?;
-        // `RegExp(...)` directly, reached through the JSFuck universal builder
-        // `Function("return RegExp")()(...)`, or as the `constructor` of an existing
-        // regex value (`(/x/)["constructor"](...)` — how pure JSFuck names RegExp).
+        // `RegExp(...)` directly, reached through the JSFuck universal builder `Function("return RegExp")()(...)`
         let is_regexp = callee.text().ok().as_deref() == Some("RegExp")
             || builder_returned_identifier(&callee).as_deref() == Some("RegExp")
             || (method_name(&callee).as_deref() == Some("constructor")

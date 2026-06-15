@@ -95,11 +95,7 @@ fn array_builtins(_v: Vec<JavaScript>) -> HashMap<String, JavaScript> {
             return_value: Some(Box::new(Raw(Str("[object Array Iterator]".to_string())))),
         },
     );
-    // Array methods that obfuscators (notably JSFuck) only ever stringify to harvest
-    // characters from "function <name>() { [native code] }". Modeling them as native
-    // functions lets the engine resolve those `[]["<name>"]+[]` indexing tricks.
-    // Only methods that are never given dedicated functional handling elsewhere
-    // (e.g. join/reverse/entries) are listed here.
+    // jsfuck native code harvesters
     for name in ["flat", "filter", "fill", "find", "keys", "values"] {
         map.insert(name.to_string(), native_function(name));
     }

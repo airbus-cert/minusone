@@ -8,7 +8,7 @@ use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
 
-/// Resolves the JSFuck "level 9" universal builder.
+/// Resolves the JSFuck ["level 9"](https://stackoverflow.com/a/63713987) universal builder.
 ///
 /// When a character cannot be assembled from primitive value coercions, JSFuck
 /// (and JSFuck-style encoders such as <https://stackoverflow.com/a/63713987>)
@@ -46,9 +46,7 @@ use log::trace;
 pub struct JsFuckLevelNine;
 
 impl JsFuckLevelNine {
-    /// Decodes a `Function` body of the form `return '<string literal>'`.
-    /// Returns the runtime value of that literal, or `None` if the body is not
-    /// exactly a `return` of a single quoted string literal.
+    /// decodes a `Function` body of the form `return '<string literal>'`.
     fn decode_return_string(body: &str) -> Option<String> {
         let rest = body.trim().strip_prefix("return")?.trim_start();
         let mut chars = rest.chars();
@@ -56,7 +54,7 @@ impl JsFuckLevelNine {
         if quote != '\'' && quote != '"' {
             return None;
         }
-        // The literal must span the whole remaining body (no trailing code).
+
         let inner = rest
             .strip_prefix(quote)
             .and_then(|s| s.strip_suffix(quote))?;
@@ -64,15 +62,7 @@ impl JsFuckLevelNine {
     }
 }
 
-/// Models the runtime string value of JSFuck's "error mining" universal builder:
-/// `Function("try{ <stmt> }catch(f){return f}")()` deliberately throws and returns
-/// the caught `Error`; pure JSFuck then reads individual characters out of its
-/// `String(error)` form (e.g. the `R`/`E` of `RangeError`, or the `'` mined from a
-/// `SyntaxError` message via `RegExp.exec`). We reproduce that string for the exact
-/// throwing snippets these encoders use.
-///
-/// These messages are V8/Node specific — this is *emulation* of the engine, not
-/// evaluation — so the table is intentionally small and matched verbatim.
+/// emulates `Function("try{ <stmt> }catch(f){return f}")()`
 fn decode_thrown_error(body: &str) -> Option<String> {
     let stmt = body
         .trim()
@@ -81,20 +71,15 @@ fn decode_thrown_error(body: &str) -> Option<String> {
         .0
         .trim();
     let message = match stmt {
-        // `String().normalize(false)` throws a RangeError — mined for 'R' and 'E'.
         "String().normalize(false)" => {
             "RangeError: The normalization form should be one of NFC, NFD, NFKC, NFKD."
         }
-        // `[]+[[]].concat([[]])` is `","`; `Function(",")()` is a SyntaxError —
-        // its message is mined (via RegExp.exec) for the quote/backslash characters.
         "Function([]+[[]].concat([[]]))()" => "SyntaxError: Unexpected token ','",
         _ => return None,
     };
     Some(message.to_string())
 }
 
-/// Decodes the *content* of a JavaScript string literal (escape sequences only;
-/// the surrounding quotes are already removed) into its runtime value.
 fn decode_js_string_literal(inner: &str) -> Option<String> {
     let chars: Vec<char> = inner.chars().collect();
     let mut units: Vec<u16> = Vec::new();
@@ -110,7 +95,6 @@ fn decode_js_string_literal(inner: &str) -> Option<String> {
     while i < chars.len() {
         let c = chars[i];
         if c != '\\' {
-            // a bare quote inside the content means it was not a single literal
             if c == '\'' || c == '"' {
                 return None;
             }
@@ -179,17 +163,12 @@ fn decode_js_string_literal(inner: &str) -> Option<String> {
                 units.push(0x0B);
                 i += 1;
             }
-            // Legacy octal escape `\ooo` (1-3 octal digits, value <= 255), e.g.
-            // `\164` -> 't'. `\0` not followed by an octal digit is NUL. JSFuck
-            // encoders (jsfuck.com) lean on these to build a program/string body.
+            // legacy octal escape `\ooo`
             '0'..='7' => {
                 let max_len = if esc <= '3' { 3 } else { 2 };
                 let start = i;
                 i += 1;
-                while i - start < max_len
-                    && i < chars.len()
-                    && ('0'..='7').contains(&chars[i])
-                {
+                while i - start < max_len && i < chars.len() && ('0'..='7').contains(&chars[i]) {
                     i += 1;
                 }
                 let octal: String = chars[start..i].iter().collect();
@@ -227,12 +206,10 @@ impl<'a> RuleMut<'a> for JsFuckLevelNine {
             return Ok(());
         }
 
-        // The outer call invokes the constructed function with no arguments: `(…)()`.
         if !get_positional_arguments(view.named_child("arguments")).is_empty() {
             return Ok(());
         }
 
-        // Its callee must itself be a call: `Function("return …")` / `X["constructor"]("return …")`.
         let Some(inner) = view.named_child("function").or_else(|| view.child(0)) else {
             return Ok(());
         };
@@ -240,7 +217,6 @@ impl<'a> RuleMut<'a> for JsFuckLevelNine {
             return Ok(());
         }
 
-        // The inner callee must be the Function constructor.
         let Some(inner_callee) = inner.named_child("function").or_else(|| inner.child(0)) else {
             return Ok(());
         };
@@ -253,7 +229,6 @@ impl<'a> RuleMut<'a> for JsFuckLevelNine {
             return Ok(());
         }
 
-        // The single argument must be the literal `return '<string literal>'`.
         let inner_args = get_positional_arguments(inner.named_child("arguments"));
         if inner_args.len() != 1 {
             return Ok(());
@@ -279,8 +254,6 @@ impl<'a> RuleMut<'a> for JsFuckLevelNine {
             .strip_prefix("return")
             .and_then(|r| ParseRegex::parse_regex_literal(r.trim_start()))
         {
-            // `Function("return/false/")()` returns a RegExp; JSFuck mines characters
-            // (notably the literals it can't coerce) out of its `String(regex)` form.
             trace!(
                 "JsFuckLevelNine: reducing Function(\"{}\")() to /{}/{}",
                 body, pattern, flags
@@ -326,7 +299,6 @@ mod tests {
 
     #[test]
     fn rejects_non_string_return() {
-        // not a string literal body -> left untouched
         assert_eq!(JsFuckLevelNine::decode_return_string("return 1+1"), None);
         assert_eq!(JsFuckLevelNine::decode_return_string("alert(1)"), None);
     }
