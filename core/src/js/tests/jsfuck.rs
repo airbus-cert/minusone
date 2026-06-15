@@ -156,6 +156,14 @@ pub mod jsfuck_tests {
         );
     }
 
+    /// `RegExp()` stringifies as `/(?:)/` (empty source is `(?:)`), so JSFuck
+    /// mines `?` and `:` from `([]+RegExp())[2]` / `[3]` — not `//`.
+    #[test]
+    fn test_empty_regexp_source() {
+        assert_eq!("'?'", deobfuscate("([]+RegExp())[2]"));
+        assert_eq!("':'", deobfuscate("([]+RegExp())[3]"));
+    }
+
     #[test]
     fn test_specials() {
         assert_eq!("false", deobfuscate("![]"));

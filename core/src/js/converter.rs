@@ -21,7 +21,17 @@ impl Display for JavaScript {
                     .join(", ");
                 write!(f, "[{}]", arr_str)
             }
-            Regex { pattern, flags } => write!(f, "/{}/{}", pattern.replace('/', "\\/"), flags),
+            Regex { pattern, flags } => {
+                // Match JS `RegExp.prototype.source`: an empty pattern stringifies as
+                // `(?:)`, so `RegExp()` is `/(?:)/` (whose chars `?`/`:` JSFuck mines),
+                // not `//`.
+                let source = if pattern.is_empty() {
+                    "(?:)".to_string()
+                } else {
+                    pattern.replace('/', "\\/")
+                };
+                write!(f, "/{}/{}", source, flags)
+            }
             Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),
             NaN => write!(f, "NaN"),
