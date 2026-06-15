@@ -31,7 +31,7 @@ use std::collections::HashSet;
 pub struct ParseRegex;
 
 impl ParseRegex {
-    fn parse_regex_literal(raw: &str) -> Option<(String, String)> {
+    pub fn parse_regex_literal(raw: &str) -> Option<(String, String)> {
         if !raw.starts_with('/') {
             return None;
         }
@@ -76,10 +76,17 @@ impl ParseRegex {
         args: Option<Node<JavaScript>>,
     ) -> Option<JavaScript> {
         let callee = callee?;
-        // `RegExp(...)` directly, or reached through the JSFuck universal builder
-        // `Function("return RegExp")()(...)`.
+        // `RegExp(...)` directly, reached through the JSFuck universal builder
+        // `Function("return RegExp")()(...)`, or as the `constructor` of an existing
+        // regex value (`(/x/)["constructor"](...)` — how pure JSFuck names RegExp).
         let is_regexp = callee.text().ok().as_deref() == Some("RegExp")
-            || builder_returned_identifier(&callee).as_deref() == Some("RegExp");
+            || builder_returned_identifier(&callee).as_deref() == Some("RegExp")
+            || (method_name(&callee).as_deref() == Some("constructor")
+                && callee
+                    .child(0)
+                    .or_else(|| callee.named_child("object"))
+                    .and_then(|o| o.data().cloned())
+                    .is_some_and(|d| matches!(d, JavaScript::Regex { .. })));
         if !is_regexp {
             return None;
         }

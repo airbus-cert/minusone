@@ -708,6 +708,12 @@ impl<'a> RuleMut<'a> for BracketCharAt {
 }
 
 pub fn escape_js_string(s: &str) -> String {
+    // Default to single quotes, but switch to double quotes when the content has
+    // single quotes and no double quotes — avoids escaping and matches common JS
+    // style, so `alert('minusone')` renders as "alert('minusone')" not
+    // 'alert(\'minusone\')'.
+    let use_double = s.contains('\'') && !s.contains('"');
+    let quote = if use_double { '"' } else { '\'' };
     let mut escaped = String::new();
     for c in s.chars() {
         match c {
@@ -715,11 +721,12 @@ pub fn escape_js_string(s: &str) -> String {
             '\t' => escaped.push_str("\\t"),
             '\r' => escaped.push_str("\\r"),
             '\\' => escaped.push_str("\\\\"),
-            '\'' => escaped.push_str("\\'"),
+            '\'' if !use_double => escaped.push_str("\\'"),
+            '"' if use_double => escaped.push_str("\\\""),
             _ => escaped.push(c),
         }
     }
-    format!("'{}'", escaped)
+    format!("{quote}{escaped}{quote}")
 }
 
 #[derive(Default)]

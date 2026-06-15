@@ -1,7 +1,8 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::Raw;
+use crate::js::JavaScript::{Raw, Regex};
 use crate::js::Value::Str;
+use crate::js::regex::ParseRegex;
 use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
@@ -178,9 +179,21 @@ fn decode_js_string_literal(inner: &str) -> Option<String> {
                 units.push(0x0B);
                 i += 1;
             }
-            '0' => {
-                units.push(0x00);
+            // Legacy octal escape `\ooo` (1-3 octal digits, value <= 255), e.g.
+            // `\164` -> 't'. `\0` not followed by an octal digit is NUL. JSFuck
+            // encoders (jsfuck.com) lean on these to build a program/string body.
+            '0'..='7' => {
+                let max_len = if esc <= '3' { 3 } else { 2 };
+                let start = i;
                 i += 1;
+                while i - start < max_len
+                    && i < chars.len()
+                    && ('0'..='7').contains(&chars[i])
+                {
+                    i += 1;
+                }
+                let octal: String = chars[start..i].iter().collect();
+                units.push(u16::from_str_radix(&octal, 8).ok()?);
             }
             // \\, \', \" and any other escaped character: take it literally
             other => {
@@ -261,6 +274,18 @@ impl<'a> RuleMut<'a> for JsFuckLevelNine {
                 body, error
             );
             node.reduce(Raw(Str(error)));
+        } else if let Some((pattern, flags)) = body
+            .trim()
+            .strip_prefix("return")
+            .and_then(|r| ParseRegex::parse_regex_literal(r.trim_start()))
+        {
+            // `Function("return/false/")()` returns a RegExp; JSFuck mines characters
+            // (notably the literals it can't coerce) out of its `String(regex)` form.
+            trace!(
+                "JsFuckLevelNine: reducing Function(\"{}\")() to /{}/{}",
+                body, pattern, flags
+            );
+            node.reduce(Regex { pattern, flags });
         }
 
         Ok(())

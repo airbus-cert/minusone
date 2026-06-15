@@ -48,8 +48,11 @@ pub mod jsfuck_tests {
             NotBool::default(),
             BoolAlgebra::default(),
             AddBool::default(),
+            // grouped into a nested tuple to stay within the max RuleMut tuple arity
+            (
             CombineArrays::default(),
             ArrayConcat::default(),
+            ArrayJoin::default(),
             StringBuiltins::default(),
             BracketCharAt::default(),
             Forward::default(),
@@ -70,6 +73,7 @@ pub mod jsfuck_tests {
             StrictEq::default(),
             LooseEq::default(),
             CmpOrd,
+            ),
         ))
         .unwrap();
 
@@ -154,6 +158,25 @@ pub mod jsfuck_tests {
             "[]['flat'].constructor('return 1+1')()",
             deobfuscate(r#"[]["flat"]["constructor"]("return 1+1")()"#)
         );
+    }
+
+    /// jsfuck.com builds a string body with legacy octal escapes (`\164`='t'),
+    /// reached through the Function builder; the decoder must interpret them.
+    #[test]
+    fn test_octal_string_escape() {
+        // the body reaching the builder carries literal backslash-octal (as JSFuck
+        // assembles it at runtime), so `\\164` in source => `\164` => 't'.
+        assert_eq!(
+            "'at('",
+            deobfuscate(r#"[]["fill"]["constructor"]("return'a\\164\\50'")()"#)
+        );
+    }
+
+    /// A regex value's `constructor` is `RegExp`, so `(/x/)["constructor"]("/")`
+    /// is `RegExp("/")` === `/\//`; JSFuck mines `\` from `([]+/\//)[1]`.
+    #[test]
+    fn test_regexp_via_value_constructor() {
+        assert_eq!("'\\\\'", deobfuscate(r#"([]+(/x/)["constructor"]("/"))[1]"#));
     }
 
     /// `RegExp()` stringifies as `/(?:)/` (empty source is `(?:)`), so JSFuck
