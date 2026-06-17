@@ -441,12 +441,15 @@ impl<'a> Rule<'a> for GlobalThisSimplifier {
             "call_expression" => {
                 if let Some(callee) = node.child(0) {
                     if callee.text()?.starts_with("globalThis.") {
-                        let replacement = node.text()?.replace("globalThis.", "");
+                        let replacement = &node.text()?[11..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("global.") {
+                        let replacement = &node.text()?[7..];
                         self.replace_node_with_text(node, &replacement);
                         return Ok(false);
                     }
                 }
-                /**/
             }
             _ => {}
         }
