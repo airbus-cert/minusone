@@ -12,7 +12,7 @@ pub struct PowershellBackend;
 impl DeobfuscationBackend for PowershellBackend {
     type Language = ps::Powershell;
 
-    fn remove_extra(src: &str) -> MinusOneResult<String> {
+    fn remove_extra(src: &str, _keep_dead_code: bool) -> MinusOneResult<String> {
         remove_powershell_extra(src)
     }
 

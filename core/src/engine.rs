@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 pub trait DeobfuscationBackend {
     type Language;
 
-    fn remove_extra(src: &str) -> MinusOneResult<String>;
+    fn remove_extra(src: &str, keep_dead_code: bool) -> MinusOneResult<String>;
     fn build_deob_tree<'a>(
         src: &'a str,
     ) -> MinusOneResult<Tree<'a, HashMapStorage<Self::Language>>>;
@@ -38,8 +38,8 @@ pub struct DeobfuscateEngine<'a, B: DeobfuscationBackend> {
 }
 
 impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
-    pub fn remove_extra(src: &str) -> MinusOneResult<String> {
-        B::remove_extra(src)
+    pub fn remove_extra(src: &str, keep_dead_code: bool) -> MinusOneResult<String> {
+        B::remove_extra(src, keep_dead_code)
     }
 
     pub fn from_source(src: &'a str) -> MinusOneResult<Self> {

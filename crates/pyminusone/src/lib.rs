@@ -28,7 +28,7 @@ pub(crate) fn run_deobf<B: DeobfuscationBackend>(
 where
     <B as DeobfuscationBackend>::Language: Debug,
 {
-    let cleaned = DeobfuscateEngine::<B>::remove_extra(source).map_err(PyMinusOneError)?;
+    let cleaned = DeobfuscateEngine::<B>::remove_extra(source, false).map_err(PyMinusOneError)?;
 
     let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned).map_err(PyMinusOneError)?;
 

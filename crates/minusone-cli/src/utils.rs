@@ -16,7 +16,7 @@ pub(crate) fn run_deobf<B: DeobfuscationBackend>(
 where
     <B as DeobfuscationBackend>::Language: Debug,
 {
-    let cleaned = DeobfuscateEngine::<B>::remove_extra(source)?;
+    let cleaned = DeobfuscateEngine::<B>::remove_extra(source, keep_dead_code)?;
 
     let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)?;
 

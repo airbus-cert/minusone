@@ -14,7 +14,7 @@ pub struct JavaScriptBackend;
 impl DeobfuscationBackend for JavaScriptBackend {
     type Language = JavaScript;
 
-    fn remove_extra(src: &str) -> MinusOneResult<String> {
+    fn remove_extra(src: &str, keep_dead_code: bool) -> MinusOneResult<String> {
         // remove comments and other non-code nodes
         let mut current = remove_javascript_extra(src)?;
 
@@ -43,30 +43,32 @@ impl DeobfuscationBackend for JavaScriptBackend {
         }
 
         // remove obvious dead code
-        let mut i = 0;
-        loop {
-            i += 1;
-            trace!(
-                "Pre-clean pass iteration {}: current code length = {}",
-                i,
-                current.len()
-            );
+        if !keep_dead_code {
+            let mut i = 0;
+            loop {
+                i += 1;
+                trace!(
+                    "Pre-clean pass iteration {}: current code length = {}",
+                    i,
+                    current.len()
+                );
 
-            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
-            let mut rule = UnusedVar::default();
-            tree.apply(&mut rule)?;
+                let mut rule = UnusedVar::default();
+                tree.apply(&mut rule)?;
 
-            let mut clean_view = RemoveUnused::new(rule);
-            tree.apply(&mut clean_view)?;
-            let next = clean_view.clear()?;
+                let mut clean_view = RemoveUnused::new(rule);
+                tree.apply(&mut clean_view)?;
+                let next = clean_view.clear()?;
 
-            if next == current {
+                if next == current {
+                    current = next;
+                    break;
+                }
+
                 current = next;
-                break;
             }
-
-            current = next;
         }
 
         // simplify bracket calls to member expressions to help some rules
