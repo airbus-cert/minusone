@@ -1245,7 +1245,7 @@ impl<'a> Rule<'a> for SanitizeVarNames {
                 self.source = node.text()?.to_string();
                 self.last_index = 0;
             }
-            "identifier" => {
+            "identifier" | "member_identifier" | "property_identifier" => {
                 if let Some(text) = node.text().ok() {
                     if text.contains("\\u") {
                         let mut real_name = String::new();
@@ -1317,6 +1317,13 @@ mod test_js_deadcode {
         let mut remover = RemoveUnused::new(unused);
         tree.apply(&mut remover).unwrap();
         remover.clear().unwrap()
+    }
+
+    fn sanitize(input: &str) -> String {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut sanitize = SanitizeVarNames::default();
+        tree.apply(&mut sanitize).unwrap();
+        sanitize.clear().unwrap()
     }
 
     #[test]
@@ -1618,6 +1625,25 @@ mod test_js_deadcode {
         assert_eq!(
             clean("console.log((foo(), \"b\"));"),
             "console.log((foo(), \"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_sanitize() {
+        assert_eq!(sanitize("let \\u0061 = 0;"), "let a = 0;");
+        assert_eq!(
+            sanitize("console.\\u006c\\u006f\\u0067();"),
+            "console.log();"
+        );
+        assert_eq!(
+            sanitize("function \\u006d\\u0069\\u006e\\u0075\\u0073\\u006f\\u006e\\u0065(){}"),
+            "function minusone(){}"
+        );
+        assert_eq!(
+            sanitize(
+                "function minusone(\\u006d\\u0069\\u006e\\u0075, \\u0073\\u006f\\u006e\\u0065){}"
+            ),
+            "function minusone(minu, sone){}"
         );
     }
 }
