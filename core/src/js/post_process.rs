@@ -439,12 +439,24 @@ impl<'a> Rule<'a> for GlobalThisSimplifier {
                 self.last_index = 0;
             }
             "call_expression" => {
+                // globalThis: browser + node
+                // global: node only
+                // self: browser only
+                // window: browser only
                 if let Some(callee) = node.child(0) {
                     if callee.text()?.starts_with("globalThis.") {
                         let replacement = &node.text()?[11..];
                         self.replace_node_with_text(node, &replacement);
                         return Ok(false);
                     } else if callee.text()?.starts_with("global.") {
+                        let replacement = &node.text()?[7..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("self.") {
+                        let replacement = &node.text()?[5..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("window.") {
                         let replacement = &node.text()?[7..];
                         self.replace_node_with_text(node, &replacement);
                         return Ok(false);
