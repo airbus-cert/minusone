@@ -89,18 +89,18 @@ const ARRAY_BUILTINS: &[(&str, ArrayBuiltinHandler)] = &[
     ("indexOf", array_builtin_index_of),
     ("join", array_builtin_join),
     ("lastIndexOf", array_builtin_last_index_of),
-    ("pop", array_builtin_pop),
-    ("push", array_builtin_push),
-    ("reverse", array_builtin_reverse),
-    ("shift", array_builtin_shift),
+    // ("pop", array_builtin_pop),
+    // ("push", array_builtin_push),
+    // ("reverse", array_builtin_reverse),
+    // ("shift", array_builtin_shift),
     ("slice", array_builtin_slice),
-    ("sort", array_builtin_sort),
+    // ("sort", array_builtin_sort),
     ("toReversed", array_builtin_to_reversed),
     ("toSorted", array_builtin_to_sorted),
     ("toString", |arr, _| {
         Some(Raw(Str(flatten_array(arr, None))))
     }),
-    ("unshift", array_builtin_unshift),
+    // ("unshift", array_builtin_unshift),
     ("values", array_builtin_values),
 ];
 
@@ -585,7 +585,7 @@ fn array_builtin_join(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<Ja
     Some(Raw(Str(flatten)))
 }
 
-/// # `.pop()`
+/*/// # `.pop()`
 /// Removes and returns the last element <br>
 /// _(mutates array)_
 fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
@@ -594,23 +594,23 @@ fn array_builtin_pop(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<Ja
     } else {
         Some(input[input.len() - 1].clone())
     }
-}
+}*/
 
-/// # `.push(thing1, ..., thingX)`
+/*/// # `.push(thing1, ..., thingX)`
 /// Adds elements to end<br>
 /// returns the new length<br>
 /// _(mutates array)_
 fn array_builtin_push(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     Some(Raw(Num((input.len() + args.len()) as f64)))
-}
+}*/
 
-/// # `.reverse()`
+/*/// # `.reverse()`
 /// Reverse othe order of the array and also return it<br>
 /// _(mutates array)_
 fn array_builtin_reverse(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
     let new_array = input.iter().rev().cloned().collect();
     Some(Array(new_array))
-}
+}*/
 
 /// # `.toReversed()`
 /// `.reverse()` but create a copy so it does *not mutate* the original array
@@ -619,7 +619,7 @@ fn array_builtin_to_reversed(input: &Vec<JavaScript>, _args: &[JavaScript]) -> O
     Some(Array(new_array))
 }
 
-/// # `.shift()`
+/*/// # `.shift()`
 /// Removes and returns first element<br>
 /// _(mutates array)_
 fn array_builtin_shift(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<JavaScript> {
@@ -628,7 +628,7 @@ fn array_builtin_shift(input: &Vec<JavaScript>, _args: &[JavaScript]) -> Option<
     } else {
         Some(input[0].clone())
     }
-}
+}*/
 
 /// # `.slice(start[, end])`
 ///  Handles negative indices<br>
@@ -668,7 +668,7 @@ fn array_builtin_slice(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<J
     Some(Array(result))
 }
 
-/// # `.sort([customSortFn])`
+/*/// # `.sort([customSortFn])`
 /// Sort the array (`to_string` based ??)<br>
 /// _(mutates array)_
 fn array_builtin_sort(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
@@ -679,7 +679,7 @@ fn array_builtin_sort(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<Ja
     let mut new_array = input.clone();
     new_array.sort_by(|a, b| as_known_string(a).cmp(&as_known_string(b)));
     Some(Array(new_array))
-}
+}*/
 
 /// # `.toSorted([customSortFn])`
 /// `.sort([customSortFn])` but create a copy so it does *not mutate* the original array
@@ -693,13 +693,13 @@ fn array_builtin_to_sorted(input: &Vec<JavaScript>, args: &[JavaScript]) -> Opti
     Some(Array(new_array))
 }
 
-/// # `.unshift(thing1, ..., thingX)`
+/*/// # `.unshift(thing1, ..., thingX)`
 /// Adds elements to start<br>
 /// returns new length<br>
 /// _(mutates array)_
 fn array_builtin_unshift(input: &Vec<JavaScript>, args: &[JavaScript]) -> Option<JavaScript> {
     Some(Raw(Num((args.len() + input.len()) as f64)))
-}
+}*/
 
 /// Infers `+` on two arrays
 ///
@@ -1420,13 +1420,13 @@ mod tests_js_array {
         );
     }
 
-    #[test]
+    /*#[test]
     fn test_builtin_pop() {
         assert_eq!(deobfuscate("var x = [0].pop()"), "var x = 0");
         assert_eq!(deobfuscate("var x = [].pop()"), "var x = undefined");
-    }
+    }*/
 
-    #[test]
+    /*#[test]
     fn test_builtin_push() {
         assert_eq!(deobfuscate("var x = [0,1,2,3].push()"), "var x = 4");
         assert_eq!(deobfuscate("var x = [0,1,2,3].push(4)"), "var x = 5");
@@ -1438,10 +1438,9 @@ mod tests_js_array {
             deobfuscate("var x = [0,1,2,3].push(4,5,6,7,8,9)"),
             "var x = 10"
         );
-    }
+    }*/
 
-    #[test]
-    // todo: implements for other builtins
+    /*#[test]
     fn test_convert_builtin_to_string() {
         assert_eq!(
             deobfuscate("var x = [0].pop + ''"),
@@ -1451,9 +1450,9 @@ mod tests_js_array {
             deobfuscate("var x = undefined + [0].pop"),
             "var x = 'undefinedfunction pop() { [native code] }'"
         );
-    }
+    }*/
 
-    #[test]
+    /*#[test]
     fn test_builtin_reverse() {
         assert_eq!(
             deobfuscate("var x = [0,1,2,3].reverse()"),
@@ -1461,7 +1460,7 @@ mod tests_js_array {
         );
         assert_eq!(deobfuscate("var x = [0].reverse()"), "var x = [0]");
         assert_eq!(deobfuscate("var x = [].reverse()"), "var x = []");
-    }
+    }*/
 
     #[test]
     fn test_builtin_to_reversed() {
@@ -1473,11 +1472,11 @@ mod tests_js_array {
         assert_eq!(deobfuscate("var x = [].toReversed()"), "var x = []");
     }
 
-    #[test]
+    /*#[test]
     fn test_builtin_shift() {
         assert_eq!(deobfuscate("var x = [0].shift()"), "var x = 0");
         assert_eq!(deobfuscate("var x = [].shift()"), "var x = undefined");
-    }
+    }*/
 
     #[test]
     fn test_builtin_slice() {
@@ -1511,7 +1510,7 @@ mod tests_js_array {
         );
     }
 
-    #[test]
+    /*#[test]
     fn test_builtin_sort() {
         assert_eq!(
             deobfuscate("var x = [0, 8, 7, 3].sort()"),
@@ -1523,7 +1522,7 @@ mod tests_js_array {
             deobfuscate("var x = [9, 10, 11].sort()"),
             "var x = [10, 11, 9]"
         ); // to_string moment...
-    }
+    }*/
 
     #[test]
     fn test_builtin_to_sorted() {
@@ -1539,7 +1538,7 @@ mod tests_js_array {
         ); // to_string moment...
     }
 
-    #[test]
+    /*#[test]
     fn test_builtin_unshift() {
         assert_eq!(deobfuscate("var x = [0,1,2,3].unshift()"), "var x = 4");
         assert_eq!(deobfuscate("var x = [0,1,2,3].unshift(4)"), "var x = 5");
@@ -1551,7 +1550,7 @@ mod tests_js_array {
             deobfuscate("var x = [0,1,2,3].unshift(4,5,6,7,8,9)"),
             "var x = 10"
         );
-    }
+    }*/
 
     #[test]
     fn test_builtin_values() {
