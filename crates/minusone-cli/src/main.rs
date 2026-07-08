@@ -1,4 +1,3 @@
-#![feature(str_from_utf16_endian)]
 extern crate clap;
 extern crate clap_help;
 extern crate minusone;
