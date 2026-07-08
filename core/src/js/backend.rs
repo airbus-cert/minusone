@@ -184,6 +184,11 @@ impl CleanBackend for JavaScriptBackend {
         tree.apply(&mut bracket_to_member)?;
         current = bracket_to_member.clear()?;
 
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+        let mut global_this_simplifier = GlobalThisSimplifier::default();
+        tree.apply(&mut global_this_simplifier)?;
+        current = global_this_simplifier.clear()?;
+
         // simplify some for loops to while loops
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
         let mut for_to_while = ForToWhile::default();
