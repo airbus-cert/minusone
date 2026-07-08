@@ -296,6 +296,25 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 };
 
+                // Skip update expressions on non-locals inside a function body
+                // - reducing them would rewrite the function source.
+                if matches!(
+                    self.scope_manager.current().is_local(&var_name),
+                    Some(false)
+                ) && view
+                    .get_parent_of_types(vec![
+                        "function_declaration",
+                        "function",
+                        "arrow_function",
+                        "method_definition",
+                        "generator_function_declaration",
+                        "generator_function",
+                    ])
+                    .is_some()
+                {
+                    return Ok(());
+                }
+
                 if let Some(current_value) =
                     self.scope_manager.current().get_var(&var_name).cloned()
                 {
@@ -329,6 +348,20 @@ impl<'a> RuleMut<'a> for Var {
                     self.scope_manager
                         .current_mut()
                         .forget(&var_name, node.is_ongoing_transaction());
+                }
+            }
+            // `eval(...)` can mutate any local; forget them all to stay sound.
+            "call_expression" => {
+                if let Some(func) = view.named_child("function").or_else(|| view.child(0))
+                    && func.kind() == "identifier"
+                    && let Ok(name) = func.text()
+                    && name == "eval"
+                {
+                    let names = self.scope_manager.current().get_var_names();
+                    let ongoing = node.is_ongoing_transaction();
+                    for var in names {
+                        self.scope_manager.current_mut().forget(&var, ongoing);
+                    }
                 }
             }
             // read

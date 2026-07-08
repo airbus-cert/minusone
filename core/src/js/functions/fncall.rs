@@ -1,9 +1,15 @@
+use crate::engine::{CleanEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::Value::{Num, Str};
+use crate::js::JavaScriptRuleSet;
+use crate::js::Value::{Bool, Num, Str};
+use crate::js::backend::JavaScriptBackend;
+use crate::js::build_javascript_tree;
 use crate::js::functions::function::function_value_from_node;
+use crate::js::recursion::GlobalRecursionGuard;
+use crate::js::strategy::JavaScriptStrategy;
 use crate::js::utils::{get_positional_arguments, method_name};
-use crate::rule::RuleMut;
+use crate::rule::{RuleMut, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
 use std::collections::HashMap;
@@ -40,33 +46,14 @@ pub struct FnCall {
     var_shapes: HashMap<String, FunctionShape>,
     object_field_shapes: HashMap<(String, String), FunctionShape>,
     shapes_by_source: HashMap<String, FunctionShape>,
-}
-
-#[derive(Clone)]
-enum ReturnExpr {
-    Literal(JavaScript),
-    Symbol(String),
-    BinOp {
-        op: String,
-        left: Box<ReturnExpr>,
-        right: Box<ReturnExpr>,
-    },
-    Subscript {
-        array: Box<ReturnExpr>,
-        index: Box<ReturnExpr>,
-    },
+    // All top-level function declarations as raw source, can hoist + resolve nested calls.
+    fn_decl_prelude: String,
 }
 
 #[derive(Clone)]
 struct FunctionShape {
     params: Vec<String>,
-    steps: Vec<EvalStep>,
-    return_expr: Option<ReturnExpr>,
-}
-
-#[derive(Clone)]
-enum EvalStep {
-    Assign { name: String, expr: ReturnExpr },
+    body_inner: String,
 }
 
 impl FnCall {
@@ -219,172 +206,6 @@ impl FnCall {
         vec![]
     }
 
-    fn parse_return_expr(node: &Node<JavaScript>) -> Option<ReturnExpr> {
-        if let Some(data) = node.data() {
-            return Some(ReturnExpr::Literal(data.clone()));
-        }
-
-        match node.kind() {
-            "identifier" => {
-                let name = node.text().ok()?.to_string();
-                Some(ReturnExpr::Symbol(name))
-            }
-            "parenthesized_expression" => {
-                for child in node.iter() {
-                    if child.kind() != "("
-                        && child.kind() != ")"
-                        && let Some(expr) = Self::parse_return_expr(&child)
-                    {
-                        return Some(expr);
-                    }
-                }
-                None
-            }
-            "binary_expression" => {
-                let left = node.child(0)?;
-                let operator = node.child(1)?.text().ok()?.to_string();
-                let right = node.child(2)?;
-
-                Some(ReturnExpr::BinOp {
-                    op: operator,
-                    left: Box::new(Self::parse_return_expr(&left)?),
-                    right: Box::new(Self::parse_return_expr(&right)?),
-                })
-            }
-            "subscript_expression" => {
-                let array = node.child(0)?;
-                let index = node.child(2)?;
-
-                Some(ReturnExpr::Subscript {
-                    array: Box::new(Self::parse_return_expr(&array)?),
-                    index: Box::new(Self::parse_return_expr(&index)?),
-                })
-            }
-            _ => None,
-        }
-    }
-
-    fn parse_return_statement_expr(return_statement: &Node<JavaScript>) -> Option<ReturnExpr> {
-        for i in 0..return_statement.child_count() {
-            if let Some(c) = return_statement.child(i)
-                && c.kind() != "return"
-                && c.kind() != ";"
-            {
-                return Self::parse_return_expr(&c);
-            }
-        }
-        None
-    }
-
-    fn find_single_return_expr(body: &Node<JavaScript>) -> Option<ReturnExpr> {
-        let mut return_expr: Option<ReturnExpr> = None;
-        let mut found_count = 0;
-
-        fn walk(
-            node: &Node<JavaScript>,
-            return_expr: &mut Option<ReturnExpr>,
-            found_count: &mut usize,
-        ) {
-            for child in node.iter() {
-                match child.kind() {
-                    "return_statement" => {
-                        *found_count += 1;
-                        if *found_count == 1 {
-                            *return_expr = FnCall::parse_return_statement_expr(&child);
-                        }
-                    }
-                    "function_declaration"
-                    | "function"
-                    | "arrow_function"
-                    | "generator_function_declaration"
-                    | "generator_function" => {}
-                    "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                    | "for_in_statement" | "switch_statement" | "try_statement" => {
-                        let mut inner_count = 0;
-                        FnCall::count_returns_in_subtree(&child, &mut inner_count);
-                        if inner_count > 0 {
-                            *found_count += inner_count;
-                        }
-                    }
-                    _ => walk(&child, return_expr, found_count),
-                }
-            }
-        }
-
-        walk(body, &mut return_expr, &mut found_count);
-        if found_count == 1 { return_expr } else { None }
-    }
-
-    fn parse_assignment_step(statement: &Node<JavaScript>) -> Option<EvalStep> {
-        if matches!(
-            statement.kind(),
-            "variable_declaration" | "lexical_declaration"
-        ) {
-            for child in statement.iter() {
-                if child.kind() == "variable_declarator"
-                    && let Some(name_node) = child.named_child("name")
-                    && name_node.kind() == "identifier"
-                    && let Some(value_node) = child.named_child("value").or_else(|| child.child(2))
-                {
-                    let name = name_node.text().ok()?.to_string();
-                    let expr = Self::parse_return_expr(&value_node)?;
-                    return Some(EvalStep::Assign { name, expr });
-                }
-            }
-            return None;
-        }
-
-        if statement.kind() == "expression_statement" {
-            for child in statement.iter() {
-                if child.kind() == "assignment_expression" {
-                    let left = child.child(0)?;
-                    let right = child.child(2)?;
-                    if left.kind() != "identifier" {
-                        return None;
-                    }
-
-                    let name = left.text().ok()?.to_string();
-                    let expr = Self::parse_return_expr(&right)?;
-                    return Some(EvalStep::Assign { name, expr });
-                }
-            }
-        }
-
-        None
-    }
-
-    fn collect_simple_steps_and_return(
-        body: &Node<JavaScript>,
-    ) -> Option<(Vec<EvalStep>, ReturnExpr)> {
-        let mut steps = vec![];
-        let mut return_expr = None;
-        let mut return_count = 0usize;
-
-        for statement in body.iter() {
-            match statement.kind() {
-                "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                | "for_in_statement" | "switch_statement" | "try_statement" => return None,
-                "return_statement" => {
-                    return_count += 1;
-                    if return_count == 1 {
-                        return_expr = Self::parse_return_statement_expr(&statement);
-                    }
-                }
-                _ => {
-                    if let Some(step) = Self::parse_assignment_step(&statement) {
-                        steps.push(step);
-                    }
-                }
-            }
-        }
-
-        if return_count == 1 {
-            return_expr.map(|ret| (steps, ret))
-        } else {
-            None
-        }
-    }
-
     fn function_shape_from_node(function_node: &Node<JavaScript>) -> Option<FunctionShape> {
         if !matches!(
             function_node.kind(),
@@ -399,101 +220,198 @@ impl FnCall {
         }
 
         let params = Self::extract_params(function_node);
-        let (steps, return_expr) = if let Some(body) = function_node.named_child("body") {
-            if body.kind() == "statement_block" {
-                if let Some((steps, ret)) = Self::collect_simple_steps_and_return(&body) {
-                    (steps, Some(ret))
-                } else {
-                    (vec![], Self::find_single_return_expr(&body))
-                }
-            } else {
-                (vec![], Self::parse_return_expr(&body))
-            }
+        let body = function_node.named_child("body")?;
+        let body_text = body.text().ok()?;
+
+        let body_inner = if body.kind() == "statement_block" {
+            let trimmed = body_text.trim();
+            let stripped = trimmed
+                .strip_prefix('{')
+                .unwrap_or(trimmed)
+                .strip_suffix('}')
+                .unwrap_or(trimmed);
+            stripped.to_string()
         } else {
-            (vec![], None)
+            format!("return ({});", body_text)
         };
 
-        Some(FunctionShape {
-            params,
-            steps,
-            return_expr,
-        })
+        Some(FunctionShape { params, body_inner })
     }
 
-    fn extract_call_args(call_node: &Node<JavaScript>) -> Vec<JavaScript> {
+    fn js_value_to_source(value: &JavaScript) -> Option<String> {
+        match value {
+            JavaScript::Raw(Num(n)) => {
+                if n.is_nan() {
+                    Some("NaN".to_string())
+                } else if n.is_infinite() {
+                    Some(if *n > 0.0 { "Infinity" } else { "-Infinity" }.to_string())
+                } else if *n == n.trunc() && n.abs() < 1e16 {
+                    Some(format!("{}", *n as i64))
+                } else {
+                    Some(format!("{}", n))
+                }
+            }
+            JavaScript::Raw(Str(s)) => Some(format!("'{}'", Self::escape_js_string(s))),
+            JavaScript::Raw(Bool(b)) => Some(b.to_string()),
+            JavaScript::Array(items) => {
+                let parts: Option<Vec<String>> =
+                    items.iter().map(Self::js_value_to_source).collect();
+                Some(format!("[{}]", parts?.join(",")))
+            }
+            JavaScript::Function { source, .. } => Some(format!("({})", source)),
+            _ => None,
+        }
+    }
+
+    fn escape_js_string(s: &str) -> String {
+        let mut out = String::with_capacity(s.len() + 2);
+        for c in s.chars() {
+            match c {
+                '\\' => out.push_str("\\\\"),
+                '\'' => out.push_str("\\'"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                '\0' => out.push_str("\\0"),
+                c if (c as u32) < 0x20 => {
+                    out.push_str(&format!("\\x{:02x}", c as u32));
+                }
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    fn extract_positional_call_args(call_node: &Node<JavaScript>) -> Option<Vec<JavaScript>> {
+        let arguments_node = call_node.named_child("arguments")?;
         let mut args = Vec::new();
-        if let Some(arguments_node) = call_node.named_child("arguments") {
-            for child in arguments_node.iter() {
-                if let Some(data) = child.data() {
-                    args.push(data.clone());
+        for child in arguments_node.iter() {
+            if matches!(child.kind(), "(" | ")" | ",") {
+                continue;
+            }
+            args.push(child.data()?.clone());
+        }
+        Some(args)
+    }
+
+    fn extract_top_level_return_value(root: &Node<JavaScript>) -> Option<JavaScript> {
+        if Self::has_nested_return_in_control_flow(root) {
+            return None;
+        }
+
+        for child in root.iter() {
+            if child.kind() == "return_statement" {
+                for c in child.iter() {
+                    if matches!(c.kind(), "return" | ";") {
+                        continue;
+                    }
+                    return c.data().cloned();
+                }
+                return None;
+            }
+        }
+        None
+    }
+
+    fn has_nested_return_in_control_flow(node: &Node<JavaScript>) -> bool {
+        for child in node.iter() {
+            match child.kind() {
+                "if_statement" | "while_statement" | "do_statement" | "for_statement"
+                | "for_in_statement" | "switch_statement" | "try_statement" => {
+                    let mut count = 0;
+                    Self::count_returns_in_subtree(&child, &mut count);
+                    if count > 0 {
+                        return true;
+                    }
+                }
+                "function_declaration"
+                | "function"
+                | "function_expression"
+                | "arrow_function"
+                | "generator_function"
+                | "generator_function_declaration" => {
+                    // nested fn has its own returns; ignore
+                }
+                _ => {
+                    if Self::has_nested_return_in_control_flow(&child) {
+                        return true;
+                    }
                 }
             }
         }
-        args
+        false
     }
 
-    fn eval_return_expr(
-        expr: &ReturnExpr,
-        env: &HashMap<String, JavaScript>,
+    fn evaluate_shape_via_subtree(
+        shape: &FunctionShape,
+        args: &[JavaScript],
+        prelude: &str,
     ) -> Option<JavaScript> {
-        match expr {
-            ReturnExpr::Literal(value) => Some(value.clone()),
-            ReturnExpr::Symbol(name) => env.get(name).cloned(),
-            ReturnExpr::BinOp { op, left, right } => {
-                let lhs = Self::eval_return_expr(left, env)?;
-                let rhs = Self::eval_return_expr(right, env)?;
-                match (lhs, rhs) {
-                    (JavaScript::Raw(Num(a)), JavaScript::Raw(Num(b))) => {
-                        let result = match op.as_str() {
-                            "+" => a + b,
-                            "-" => a - b,
-                            "*" => a * b,
-                            "/" => a / b,
-                            _ => return None,
-                        };
-                        Some(JavaScript::Raw(Num(result)))
-                    }
-                    _ => None,
-                }
-            }
-            ReturnExpr::Subscript { array, index } => {
-                let array = Self::eval_return_expr(array, env)?;
-                let index = Self::eval_return_expr(index, env)?;
-
-                match (array, index) {
-                    (JavaScript::Array(arr), JavaScript::Raw(Num(i))) if i >= 0.0 => {
-                        arr.get(i as usize).cloned()
-                    }
-                    (JavaScript::Array(arr), JavaScript::Raw(Str(i))) => {
-                        let idx = i.parse::<usize>().ok()?;
-                        arr.get(idx).cloned()
-                    }
-                    _ => None,
-                }
-            }
+        if args.len() > shape.params.len() {
+            return None;
         }
+
+        let mut program = String::new();
+        if !prelude.is_empty() {
+            program.push_str(prelude);
+            program.push('\n');
+        }
+
+        for (i, param) in shape.params.iter().enumerate() {
+            let value_src = match args.get(i) {
+                Some(value) => Self::js_value_to_source(value)?,
+                None => "undefined".to_string(),
+            };
+            program.push_str(&format!("var {} = {};\n", param, value_src));
+        }
+
+        program.push_str(&shape.body_inner);
+        program.push('\n');
+
+        Self::run_subtree_pipeline(&program)
     }
 
-    fn eval_shape(shape: &FunctionShape, call_node: &Node<JavaScript>) -> Option<JavaScript> {
-        let args = Self::extract_call_args(call_node);
-        let mut env: HashMap<String, JavaScript> = HashMap::new();
-        for (idx, param) in shape.params.iter().enumerate() {
-            if let Some(arg) = args.get(idx) {
-                env.insert(param.clone(), arg.clone());
+    fn stabilise_via_minusone(program: &str) -> Option<String> {
+        let cleaned = JavaScriptBackend::remove_extra(program).ok()?;
+        const SUBTREE_FIXPOINT_ITER_CAP: usize = 8;
+        let mut current = cleaned;
+        for _ in 0..SUBTREE_FIXPOINT_ITER_CAP {
+            let mut tree = build_javascript_tree(&current).ok()?;
+            tree.apply_mut_with_strategy(
+                &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+                JavaScriptStrategy,
+            )
+            .ok()?;
+
+            let mut linter = crate::js::linter::Linter::default();
+            tree.apply(&mut linter).ok()?;
+            let linted = linter.output;
+
+            let post_cleaned = match CleanEngine::<JavaScriptBackend>::from_source(&linted) {
+                Ok(mut e) => e.clean().unwrap_or(linted),
+                Err(_) => return None,
+            };
+
+            if post_cleaned == current {
+                break;
             }
+            current = post_cleaned;
         }
 
-        for step in &shape.steps {
-            match step {
-                EvalStep::Assign { name, expr } => {
-                    let value = Self::eval_return_expr(expr, &env)?;
-                    env.insert(name.clone(), value);
-                }
-            }
-        }
+        Some(current)
+    }
 
-        let expr = shape.return_expr.as_ref()?;
-        Self::eval_return_expr(expr, &env)
+    fn run_subtree_pipeline(program: &str) -> Option<JavaScript> {
+        let stable = Self::stabilise_via_minusone(program)?;
+        // Final pass to attach data on the stabilised tree.
+        let mut tree = build_javascript_tree(&stable).ok()?;
+        tree.apply_mut_with_strategy(
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
+        )
+        .ok()?;
+        let root = tree.root().ok()?;
+        Self::extract_top_level_return_value(&root)
     }
 
     fn shape_from_value(&self, value: &JavaScript) -> Option<FunctionShape> {
@@ -598,7 +516,7 @@ impl FnCall {
         }
 
         let mut current = name;
-        for _ in 0..16 {
+        for _ in 0..crate::js::recursion::DEFAULT_MAX_RECURSION_DEPTH {
             let next = aliases.get(current)?;
             if let Some(shape) = var_shapes.get(next) {
                 return Some(shape.clone());
@@ -607,6 +525,21 @@ impl FnCall {
         }
 
         None
+    }
+
+    fn build_program_prelude(program: &Node<JavaScript>) -> String {
+        let mut prelude = String::new();
+        for child in program.iter() {
+            if matches!(
+                child.kind(),
+                "function_declaration" | "generator_function_declaration"
+            ) && let Ok(src) = child.text()
+            {
+                prelude.push_str(src);
+                prelude.push('\n');
+            }
+        }
+        prelude
     }
 
     fn resolve_member_call_semantic_fallback<'a>(
@@ -628,7 +561,9 @@ impl FnCall {
         );
 
         let shape = object_field_shapes.get(&(base.to_string(), key.to_string()))?;
-        Self::eval_shape(shape, call_node)
+        let args = Self::extract_positional_call_args(call_node)?;
+        let prelude = Self::build_program_prelude(&program);
+        Self::evaluate_shape_via_subtree(shape, &args, &prelude)
     }
 
     fn resolve_identifier_call_semantic_fallback<'a>(
@@ -653,185 +588,156 @@ impl FnCall {
         }
 
         let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
-        Self::eval_shape(&shape, call_node)
+        let args = Self::extract_positional_call_args(call_node)?;
+        let prelude = Self::build_program_prelude(&program);
+        Self::evaluate_shape_via_subtree(&shape, &args, &prelude)
     }
 
-    fn parse_simple_return_literal(source: &str) -> Option<JavaScript> {
-        let return_idx = source.find("return")?;
-        let after_return = &source[return_idx + "return".len()..];
-        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
-        let literal = after_return[..end_idx].trim();
-
-        if literal.starts_with('"') && literal.ends_with('"') && literal.len() >= 2 {
-            return Some(JavaScript::Raw(Str(
-                literal[1..literal.len() - 1].to_string()
-            )));
-        }
-
-        if literal.starts_with('\'') && literal.ends_with('\'') && literal.len() >= 2 {
-            return Some(JavaScript::Raw(Str(
-                literal[1..literal.len() - 1].to_string()
-            )));
-        }
-
-        literal.parse::<f64>().ok().map(|n| JavaScript::Raw(Num(n)))
+    fn is_eval_callee(callee: &Node<JavaScript>) -> bool {
+        callee.kind() == "identifier" && callee.text().map(|t| t == "eval").unwrap_or(false)
     }
 
-    fn extract_return_expr(source: &str) -> Option<String> {
-        let return_idx = source.find("return")?;
-        let after_return = &source[return_idx + "return".len()..];
-        let end_idx = after_return.find(';').or_else(|| after_return.find('}'))?;
-        Some(after_return[..end_idx].trim().to_string())
-    }
-
-    fn extract_first_param_name(source: &str) -> Option<String> {
-        let open = source.find('(')?;
-        let close = source[open + 1..].find(')')? + open + 1;
-        let first = source[open + 1..close].split(',').next()?.trim();
-        if first.is_empty() {
-            None
-        } else {
-            Some(first.to_string())
-        }
-    }
-
-    fn extract_first_numeric_arg(call: &Node<JavaScript>) -> Option<f64> {
-        if let Some(args) = call.named_child("arguments") {
-            for child in args.iter() {
-                if let Some(JavaScript::Raw(Num(n))) = child.data() {
-                    return Some(*n);
-                }
-            }
+    fn eval_source_from_argument(arg: &Node<JavaScript>) -> Option<String> {
+        if let Some(JavaScript::Raw(Str(s))) = arg.data() {
+            return Some(s.clone());
         }
 
-        let text = call.text().ok()?;
-        let open = text.find('(')?;
-        let close = text[open + 1..].find(')')? + open + 1;
-        let first = text[open + 1..close].split(',').next()?.trim();
-        first.parse::<f64>().ok()
-    }
-
-    fn eval_simple_numeric_expr(expr: &str, param: &str, arg: f64) -> Option<f64> {
-        let expr = expr.replace(' ', "");
-        if expr == param {
-            return Some(arg);
+        let text = arg.text().ok()?.trim();
+        if text.len() < 2 {
+            return None;
         }
 
-        for op in ['+', '-', '*', '/'] {
-            if let Some(idx) = expr.find(op) {
-                let left = &expr[..idx];
-                let right = &expr[idx + 1..];
-
-                if left == param {
-                    let rhs = right.parse::<f64>().ok()?;
-                    return Some(match op {
-                        '+' => arg + rhs,
-                        '-' => arg - rhs,
-                        '*' => arg * rhs,
-                        '/' => arg / rhs,
-                        _ => return None,
-                    });
-                }
-
-                if right == param {
-                    let lhs = left.parse::<f64>().ok()?;
-                    return Some(match op {
-                        '+' => lhs + arg,
-                        '-' => lhs - arg,
-                        '*' => lhs * arg,
-                        '/' => lhs / arg,
-                        _ => return None,
-                    });
-                }
-            }
+        let bytes = text.as_bytes();
+        let first = bytes[0];
+        let last = bytes[text.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return Some(text[1..text.len() - 1].to_string());
         }
 
         None
     }
 
-    fn parse_simple_return_with_arg(source: &str, call: &Node<JavaScript>) -> Option<JavaScript> {
-        let param = Self::extract_first_param_name(source)?;
-        let arg = Self::extract_first_numeric_arg(call)?;
-        let expr = Self::extract_return_expr(source)?;
-        let value = Self::eval_simple_numeric_expr(&expr, &param, arg)?;
-        Some(JavaScript::Raw(Num(value)))
-    }
-
-    fn find_initializer_source(prefix: &str, name: &str) -> Option<String> {
-        fn extract_function_source(rhs: &str) -> Option<String> {
-            let trimmed = rhs.trim_start();
-            if !(trimmed.starts_with("function")
-                || trimmed.starts_with("async function")
-                || trimmed.contains("=>"))
-            {
-                return None;
+    fn last_statement_value(program: &Node<JavaScript>) -> Option<JavaScript> {
+        let mut last_stmt: Option<Node<JavaScript>> = None;
+        for child in program.iter() {
+            match child.kind() {
+                "expression_statement" | "variable_declaration" | "lexical_declaration"
+                | "return_statement" => {
+                    last_stmt = Some(child);
+                }
+                _ => {}
             }
+        }
+        let stmt = last_stmt?;
 
-            if let Some(open_idx) = trimmed.find('{') {
-                let mut depth = 0usize;
-                for (i, ch) in trimmed.char_indices().skip(open_idx) {
-                    match ch {
-                        '{' => depth += 1,
-                        '}' => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                return Some(trimmed[..=i].trim().to_string());
-                            }
-                        }
-                        _ => {}
+        match stmt.kind() {
+            "expression_statement" => {
+                for child in stmt.iter() {
+                    if child.kind() != ";"
+                        && let Some(data) = child.data()
+                    {
+                        return Some(data.clone());
                     }
                 }
+                None
             }
-
-            let end = trimmed.find(';').unwrap_or(trimmed.len());
-            Some(trimmed[..end].trim().to_string())
-        }
-
-        for kw in ["let", "var", "const"] {
-            let pattern = format!("{kw} {name} =");
-            if let Some(idx) = prefix.rfind(&pattern) {
-                let rhs = &prefix[idx + pattern.len()..];
-                return extract_function_source(rhs);
+            "variable_declaration" | "lexical_declaration" => None,
+            "return_statement" => {
+                for i in 0..stmt.child_count() {
+                    if let Some(c) = stmt.child(i)
+                        && c.kind() != "return"
+                        && c.kind() != ";"
+                    {
+                        return c.data().cloned();
+                    }
+                }
+                None
             }
+            _ => None,
         }
-        None
     }
 
-    fn resolve_member_call_from_source(call: &Node<JavaScript>) -> Option<JavaScript> {
-        let callee = call.named_child("function").or_else(|| call.child(0))?;
-        if callee.kind() != "member_expression" {
+    fn evaluate_eval_source(source: &str) -> Option<JavaScript> {
+        let mut tree = build_javascript_tree(source).ok()?;
+        tree.apply_mut_with_strategy(
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
+        )
+        .ok()?;
+        let root = tree.root().ok()?;
+        Self::last_statement_value(&root)
+    }
+
+    fn try_resolve_eval(&mut self, call_node: &Node<JavaScript>) -> Option<JavaScript> {
+        let callee = call_node
+            .named_child("function")
+            .or_else(|| call_node.child(0))?;
+        if !Self::is_eval_callee(&callee) {
             return None;
         }
 
-        let object = callee.named_child("object")?;
-        let property = callee.named_child("property")?;
-        if object.kind() != "identifier" {
+        let positional = get_positional_arguments(call_node.named_child("arguments"));
+        if positional.is_empty() {
             return None;
         }
 
-        let base = object.text().ok()?.to_string();
-        let key = property.text().ok()?.to_string();
-        let program = Self::find_program_node(call)?;
-        let source = program.text().ok()?;
-        let prefix_end = call.start_abs().saturating_sub(program.start_abs());
-        let prefix = &source[..prefix_end];
+        let source = Self::eval_source_from_argument(&positional[0])?;
 
-        let assign_pattern = format!("{base}.{key} =");
-        let assign_idx = prefix.rfind(&assign_pattern)?;
-        let rhs_text = {
-            let rhs = &prefix[assign_idx + assign_pattern.len()..];
-            let end = rhs.find(';')?;
-            rhs[..end].trim().to_string()
+        let _guard = GlobalRecursionGuard::enter()?;
+        Self::evaluate_eval_source(&source)
+    }
+
+    fn hoist_function_declaration(
+        node: &Node<JavaScript>,
+        var_shapes: &mut HashMap<String, FunctionShape>,
+    ) {
+        if !matches!(
+            node.kind(),
+            "function_declaration" | "generator_function_declaration"
+        ) {
+            return;
+        }
+        let Some(name_node) = node.named_child("name") else {
+            return;
         };
-
-        let function_source = if rhs_text.starts_with("function") || rhs_text.contains("=>") {
-            rhs_text
-        } else {
-            Self::find_initializer_source(prefix, &rhs_text)?
+        if name_node.kind() != "identifier" {
+            return;
+        }
+        let Ok(name) = name_node.text() else {
+            return;
         };
+        if let Some(shape) = Self::function_shape_from_node(node) {
+            var_shapes.insert(name.to_string(), shape);
+        }
+    }
 
-        Self::parse_simple_return_with_arg(&function_source, call)
-            .or_else(|| Self::parse_simple_return_literal(&function_source))
+    fn try_eval_shape(
+        &mut self,
+        shape: &FunctionShape,
+        view: &Node<JavaScript>,
+    ) -> Option<JavaScript> {
+        let _guard = GlobalRecursionGuard::enter()?;
+        let args = Self::extract_positional_call_args(view)?;
+        Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decl_prelude)
+    }
+
+    fn try_resolve_identifier_call(
+        &mut self,
+        view: &Node<JavaScript>,
+        fn_name: &str,
+    ) -> Option<JavaScript> {
+        let _guard = GlobalRecursionGuard::enter()?;
+        Self::resolve_identifier_call_semantic_fallback(view, fn_name)
+    }
+
+    fn try_resolve_member_call(
+        &mut self,
+        view: &Node<JavaScript>,
+        base: &str,
+        key: &str,
+    ) -> Option<JavaScript> {
+        let _guard = GlobalRecursionGuard::enter()?;
+        Self::resolve_member_call_semantic_fallback(view, base, key)
     }
 }
 
@@ -851,6 +757,21 @@ impl<'a> RuleMut<'a> for FnCall {
             self.var_shapes.clear();
             self.object_field_shapes.clear();
             self.shapes_by_source.clear();
+            self.fn_decl_prelude.clear();
+
+            for child in view.iter() {
+                // Hoist top-level function_declarations so forward calls resolve.
+                Self::hoist_function_declaration(&child, &mut self.var_shapes);
+                // Collect function declaration source for sub-program prelude.
+                if matches!(
+                    child.kind(),
+                    "function_declaration" | "generator_function_declaration"
+                ) && let Ok(src) = child.text()
+                {
+                    self.fn_decl_prelude.push_str(src);
+                    self.fn_decl_prelude.push('\n');
+                }
+            }
         }
         Ok(())
     }
@@ -885,6 +806,11 @@ impl<'a> RuleMut<'a> for FnCall {
 
                         if let Some(shape) = Self::function_shape_from_node(&value_node) {
                             self.var_shapes.insert(name.clone(), shape);
+                        } else if value_node.kind() == "identifier"
+                            && let Ok(rhs_name) = value_node.text()
+                            && let Some(shape) = self.var_shapes.get(rhs_name).cloned()
+                        {
+                            self.var_shapes.insert(name.clone(), shape);
                         } else if let Some(value) = value.as_ref()
                             && let Some(shape) = self.shape_from_value(value)
                         {
@@ -902,6 +828,10 @@ impl<'a> RuleMut<'a> for FnCall {
                     && name_node.kind() == "identifier"
                 {
                     let fn_name = name_node.text()?.to_string();
+
+                    if let Some(shape) = Self::function_shape_from_node(&view) {
+                        self.var_shapes.insert(fn_name.clone(), shape);
+                    }
 
                     if let Some(body) = view.named_child("body")
                         && let Some(return_data) = Self::find_single_return_value(&body)
@@ -990,6 +920,14 @@ impl<'a> RuleMut<'a> for FnCall {
             "call_expression" => {
                 // check known fn
                 if let Some(func_node) = view.named_child("function").or_else(|| view.child(0)) {
+                    if Self::is_eval_callee(&func_node)
+                        && let Some(value) = self.try_resolve_eval(&view)
+                    {
+                        trace!("FnCall (L): Resolving eval call to: {:?}", value);
+                        node.reduce(value);
+                        return Ok(());
+                    }
+
                     let is_tostring_method = method_name(&func_node).as_deref() == Some("toString");
                     let has_args =
                         !get_positional_arguments(view.named_child("arguments")).is_empty();
@@ -1007,22 +945,22 @@ impl<'a> RuleMut<'a> for FnCall {
                     if func_node.kind() == "identifier" {
                         let fn_name = func_node.text()?.to_string();
 
-                        if let Some(return_data) = self.functions.get(&fn_name) {
+                        if let Some(return_data) = self.functions.get(&fn_name).cloned() {
                             trace!(
                                 "FnCall (L): Resolving call to '{}' with: {:?}",
                                 fn_name, return_data
                             );
-                            node.reduce(return_data.clone());
-                        } else if let Some(shape) = self.var_shapes.get(&fn_name)
-                            && let Some(value) = Self::eval_shape(shape, &view)
+                            node.reduce(return_data);
+                        } else if let Some(shape) = self.var_shapes.get(&fn_name).cloned()
+                            && let Some(value) = self.try_eval_shape(&shape, &view)
                         {
                             trace!(
                                 "FnCall (L): Resolving call to semantic variable function with: {:?}",
                                 value
                             );
                             node.reduce(value);
-                        } else if let Some(value) = self.vars.get(&fn_name)
-                            && let Some(return_value) = Self::function_return_from_value(value)
+                        } else if let Some(value) = self.vars.get(&fn_name).cloned()
+                            && let Some(return_value) = Self::function_return_from_value(&value)
                         {
                             trace!(
                                 "FnCall (L): Resolving call to variable function value with: {:?}",
@@ -1030,7 +968,7 @@ impl<'a> RuleMut<'a> for FnCall {
                             );
                             node.reduce(return_value);
                         } else if let Some(value) =
-                            Self::resolve_identifier_call_semantic_fallback(&view, &fn_name)
+                            self.try_resolve_identifier_call(&view, &fn_name)
                         {
                             trace!(
                                 "FnCall (L): Resolving call to semantic identifier fallback with: {:?}",
@@ -1057,9 +995,11 @@ impl<'a> RuleMut<'a> for FnCall {
                         );
                         node.reduce(return_value);
                     } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(shape) =
-                            self.object_field_shapes.get(&(base.clone(), key.clone()))
-                        && let Some(value) = Self::eval_shape(shape, &view)
+                        && let Some(shape) = self
+                            .object_field_shapes
+                            .get(&(base.clone(), key.clone()))
+                            .cloned()
+                        && let Some(value) = self.try_eval_shape(&shape, &view)
                     {
                         trace!(
                             "FnCall (L): Resolving call to semantic object field function with: {:?}",
@@ -1067,8 +1007,9 @@ impl<'a> RuleMut<'a> for FnCall {
                         );
                         node.reduce(value);
                     } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(value) = self.object_fields.get(&(base, key))
-                        && let Some(return_value) = Self::function_return_from_value(value)
+                        && let Some(value) =
+                            self.object_fields.get(&(base.clone(), key.clone())).cloned()
+                        && let Some(return_value) = Self::function_return_from_value(&value)
                     {
                         trace!(
                             "FnCall (L): Resolving call to object field function with: {:?}",
@@ -1076,21 +1017,13 @@ impl<'a> RuleMut<'a> for FnCall {
                         );
                         node.reduce(return_value);
                     } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(value) =
-                            Self::resolve_member_call_semantic_fallback(&view, &base, &key)
+                        && let Some(value) = self.try_resolve_member_call(&view, &base, &key)
                     {
                         trace!(
                             "FnCall (L): Resolving call to semantic fallback object field function with: {:?}",
                             value
                         );
                         node.reduce(value);
-                    } else if let Some(return_value) = Self::resolve_member_call_from_source(&view)
-                    {
-                        trace!(
-                            "FnCall (L): Resolving call to object field function from source fallback with: {:?}",
-                            return_value
-                        );
-                        node.reduce(return_value);
                     }
                 }
             }
@@ -1099,6 +1032,7 @@ impl<'a> RuleMut<'a> for FnCall {
         Ok(())
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -1161,10 +1095,10 @@ mod tests {
     }
 
     #[test]
-    fn test_fncall_does_not_resolve_param_dependent_return() {
+    fn test_fncall_resolves_param_dependent_return() {
         assert_eq!(
             deobfuscate("function test(x) { return x; } console.log(test('hello'));"),
-            "function test(x) { return x; } console.log(test('hello'));"
+            "function test(x) { return x; } console.log('hello');"
         );
     }
 
@@ -1185,12 +1119,12 @@ mod tests {
     }
 
     #[test]
-    fn test_fncall_multiple_returns_not_resolved() {
+    fn test_fncall_constant_conditional_resolves() {
         assert_eq!(
             deobfuscate(
                 "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
             ),
-            "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
+            "function test() { if (true) { return 'a'; } return 'b'; } console.log('a');"
         );
     }
 
@@ -1230,11 +1164,14 @@ mod tests {
 
     #[test]
     fn test_fncall_object_stored_function_constant_return() {
+        // Explicit `;` after the function expression so tree-sitter parses
+        // the following `a.t = x` as a standalone assignment instead of a
+        // call/member chain glued onto the function literal (ASI quirk).
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(a.t());"
+                "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(a.t());"
             ),
-            "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(0);"
+            "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(0);"
         );
     }
 
@@ -1242,9 +1179,9 @@ mod tests {
     fn test_fncall_object_stored_function_param_dependent_return() {
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(a.t(1)); console.log(a.t(2));"
+                "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(a.t(1)); console.log(a.t(2));"
             ),
-            "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(2); console.log(3);"
+            "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(2); console.log(3);"
         );
     }
 
@@ -1255,5 +1192,20 @@ mod tests {
         );
 
         assert!(output.ends_with("console.log('minusone');"));
+    }
+
+    #[test]
+    fn test_fncall_opaque_conditional_does_not_resolve() {
+        // The if-condition refers to an undefined free identifier, so neither
+        // branch can be picked statically. The call must be left intact - we
+        // must NOT silently pick the trailing `return 'B'`.
+        let output = deobfuscate(
+            "function test(x) { if (someUnknownGlobal) { return 'A'; } return 'B'; } console.log(test(1));",
+        );
+        assert!(
+            output.ends_with("console.log(test(1));"),
+            "expected unresolved call, got: {}",
+            output
+        );
     }
 }

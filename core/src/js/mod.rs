@@ -15,6 +15,7 @@ pub mod math;
 pub mod node;
 pub mod objects;
 pub mod post_process;
+pub mod recursion;
 pub mod regex;
 pub mod specials;
 pub mod strategy;
