@@ -4,6 +4,7 @@ use crate::js::array::flatten_array;
 use crate::js::b64::js_bytes_to_string;
 use crate::js::string::escape_js_string;
 use crate::js::{JavaScript, Value};
+use log::warn;
 use num::{ToPrimitive, Zero};
 use std::fmt::Display;
 
@@ -35,14 +36,20 @@ impl Display for JavaScript {
             NaN => write!(f, "NaN"),
             Bytes(b) => write!(f, "{}", js_bytes_to_string(b)),
             Null => write!(f, "null"),
-            Object { map, .. } => {
-                let obj_str = map
-                    .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                write!(f, "{{{}}}", obj_str)
-            }
+            Object {
+                map,
+                to_string_override,
+            } => match to_string_override {
+                Some(override_str) => write!(f, "'{}'", override_str),
+                None => {
+                    let obj_str = map
+                        .iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    write!(f, "{{{}}}", obj_str)
+                }
+            },
             Buffer(b) => {
                 let hex = b
                     .iter()
@@ -50,6 +57,7 @@ impl Display for JavaScript {
                     .collect::<String>();
                 write!(f, "Buffer.from('{}', 'hex')", hex)
             }
+            Iterator { .. } => write!(f, "[object Array Iterator]"),
         }
     }
 }
@@ -109,6 +117,8 @@ impl JavaScript {
                 }
                 Bool(b) => Raw(Num(if *b { 1.0 } else { 0.0 })),
                 BigInt(b) => {
+                    warn!("Casting BigInt to a Number should crash the JS runtime, casting anyway");
+
                     if b.is_zero() {
                         Raw(Num(0.0))
                     } else if let Some(n) = b.to_f64() {
@@ -123,9 +133,14 @@ impl JavaScript {
                 if array.is_empty() {
                     Raw(Num(0.0))
                 } else {
-                    match flatten_array(array, None).parse::<f64>() {
-                        Ok(n) => Raw(Num(n)),
-                        Err(_) => NaN,
+                    let flat = flatten_array(array, None);
+                    if flat.trim().is_empty() {
+                        Raw(Num(0.0))
+                    } else {
+                        match flat.parse::<f64>() {
+                            Ok(n) => Raw(Num(n)),
+                            Err(_) => NaN,
+                        }
                     }
                 }
             }
@@ -140,6 +155,7 @@ impl JavaScript {
                 Ok(s) => Raw(Str(s)).as_js_num(),
                 Err(_) => NaN,
             },
+            Iterator { .. } => NaN,
         }
     }
 
@@ -168,6 +184,7 @@ impl JavaScript {
             }
             Object { .. } => true,
             Buffer(_) => true,
+            Iterator { .. } => true,
         }
     }
 
@@ -189,6 +206,7 @@ impl JavaScript {
             Bytes(_) => "string",
             Object { .. } => "object",
             Buffer(_) => "object",
+            Iterator { .. } => "object",
         }
     }
 }
