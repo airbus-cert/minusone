@@ -30,7 +30,6 @@ mod tests_js_string {
             BracketCharAt::default(),
             CharCodeAt::default(),
             FromCharCode::default(),
-            StringConstructor::default(),
             Concat::default(),
             AddInt::default(),
             StringRaw::default(),
