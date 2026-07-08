@@ -195,6 +195,7 @@ pub fn unescaped_js_string(s: &str) -> String {
 /// - `str.at(n)`
 /// - `str.charAt(n)`
 /// - `str.codePointAt(n)`
+/// - `str.concat(str1, ..., strN)`
 /// - `str.startsWith(substring)`
 /// - `str.endsWith(substring)`
 /// - `str.includes(substring)`
@@ -223,6 +224,8 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("at", string_builtin_at),
     ("charAt", string_builtin_char_at),
     ("codePointAt", string_builtin_code_point_at),
+    ("concat", string_builtin_concat),
+    ("startsWith", string_builtin_start_with),
     ("endsWith", string_builtin_end_with),
     ("includes", string_builtin_includes),
     ("indexOf", string_builtin_index_of),
@@ -239,6 +242,7 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("split", string_builtin_split),
     ("startsWith", string_builtin_start_with),
     ("substring", string_builtin_substring),
+    ("substr", string_builtin_substr), // lol ?
     ("toLowerCase", |input, _| {
         Some(Raw(Str(input.to_lowercase())))
     }),
@@ -249,6 +253,8 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("trimEnd", |input, _| {
         Some(Raw(Str(input.trim_end().to_string())))
     }),
+    // what is the purpose of this??
+    ("valueOf", |input, _| Some(Raw(Str(input.to_string())))),
     ("trimStart", |input, _| {
         Some(Raw(Str(input.trim_start().to_string())))
     }),
@@ -360,6 +366,19 @@ fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<Java
     }
 
     Some(Raw(Num(chars[index as usize] as u32 as f64)))
+}
+
+fn string_builtin_concat(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let mut result = input.to_string();
+    for arg in args {
+        let arg = match arg {
+            Raw(Str(s)) => s.clone(),
+            Array(a) => flatten_array(a, None),
+            any => any.to_string(),
+        };
+        result.push_str(&arg);
+    }
+    Some(Raw(Str(result)))
 }
 
 fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -581,6 +600,45 @@ pub fn string_builtin_substring(input: &str, args: &[JavaScript]) -> Option<Java
     }
 
     let end = end.min(input.len());
+    Some(Raw(Str(input[start..end].to_string())))
+}
+
+pub fn string_builtin_substr(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let len = input.len() as isize;
+
+    if args.is_empty() {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let start = match args.first()?.as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => 0,
+    };
+
+    let start = if start < 0 {
+        (len + start).max(0) as usize
+    } else {
+        (start as usize).min(input.len())
+    };
+
+    let extract_len = match args.get(1) {
+        None => input.len().saturating_sub(start),
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => {
+                if n <= 0.0 {
+                    return Some(Raw(Str(String::new())));
+                }
+                n as usize
+            }
+            _ => input.len().saturating_sub(start),
+        },
+    };
+
+    if start >= input.len() || extract_len == 0 {
+        return Some(Raw(Str(String::new())));
+    }
+
+    let end = (start + extract_len).min(input.len());
     Some(Raw(Str(input[start..end].to_string())))
 }
 
@@ -882,11 +940,19 @@ pub fn escape_js_string(s: &str) -> String {
             '\t' => escaped.push_str("\\t"),
             '\r' => escaped.push_str("\\r"),
             '\\' => escaped.push_str("\\\\"),
-            '\'' => escaped.push_str("\\'"),
             _ => escaped.push(c),
         }
     }
-    format!("'{}'", escaped)
+    if !escaped.contains('\'') {
+        format!("'{}'", escaped)
+    } else if !escaped.contains('"') {
+        format!("\"{}\"", escaped)
+    } else if !escaped.contains('`') {
+        format!("`{}`", escaped)
+    } else {
+        escaped = escaped.replace("'", "\\'");
+        format!("'{}'", escaped)
+    }
 }
 
 #[derive(Default)]
@@ -1591,7 +1657,7 @@ mod tests_js_string {
     use crate::js::linter::Linter;
     use crate::js::post_process::BracketCallToMember;
     use crate::js::regex::ParseRegex;
-    use crate::js::specials::AddSubSpecials;
+    use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::string::*;
     use crate::js::var::Var;
     use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
@@ -1609,6 +1675,7 @@ mod tests_js_string {
             ParseInt::default(),
             ParseArray::default(),
             ParseRegex::default(),
+            ParseSpecials::default(),
             StringBuiltins::default(),
             Forward::default(),
             PosNeg::default(),
@@ -1653,6 +1720,11 @@ mod tests_js_string {
         assert_eq!(escape_js_string("Tab\tSeparated"), r#"'Tab\tSeparated'"#);
         assert_eq!(escape_js_string("Quote: \""), r#"'Quote: "'"#);
         assert_eq!(escape_js_string("Backslash: \\"), r#"'Backslash: \\'"#);
+        assert_eq!(escape_js_string("'hello'"), r#""'hello'""#);
+        assert_eq!(escape_js_string("\"hello\""), r#"'"hello"'"#);
+        assert_eq!(escape_js_string("\"'hello'\""), r#"`"'hello'"`"#);
+        assert_eq!(escape_js_string("`hello`"), r#"'`hello`'"#);
+        assert_eq!(escape_js_string("\"'`hello`'\""), r#"'"\'`hello`\'"'"#);
     }
 
     #[test]
@@ -1733,6 +1805,24 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("var x = 'abc'.codePointAt(3);"),
             "var x = undefined;"
+        );
+    }
+
+    #[test]
+    fn test_concat_builtin() {
+        assert_eq!(deobfuscate("var x = 'abc'.concat();"), "var x = 'abc';");
+        assert_eq!(deobfuscate("var x = 'abc'.concat('d');"), "var x = 'abcd';");
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat(123);"),
+            "var x = 'abc123';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat(undefined);"),
+            "var x = 'abcundefined';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat([1,2,3]);"),
+            "var x = 'abc1,2,3';"
         );
     }
 
@@ -1957,6 +2047,64 @@ mod tests_js_string {
         );
         assert_eq!(
             deobfuscate("var x = 'abcdef'.substring();"),
+            "var x = 'abcdef';"
+        );
+    }
+
+    #[test]
+    fn test_substr() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(1, 4);"),
+            "var x = 'bcde';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(2, 99);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(2);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-3);"),
+            "var x = 'def';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-4, 2);"),
+            "var x = 'cd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(1, -1);"),
+            "var x = '';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.substr(1, 0);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.substr(10);"), "var x = '';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-99);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr();"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(0, 1);"),
+            "var x = 'a';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(0);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(NaN);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(undefined);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr('??');"),
             "var x = 'abcdef';"
         );
     }

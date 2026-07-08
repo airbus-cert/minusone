@@ -1,6 +1,7 @@
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
+use crate::js::array::flatten_array;
 use crate::js::utils::native_function;
 use std::collections::HashMap;
 
@@ -132,7 +133,11 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
             "toString".to_string(),
             Function {
                 source: "function toString() {}".to_string(),
-                return_value: Some(Box::new(Raw(Str(value.to_string())))),
+                return_value: Some(Box::new(Raw(Str(match value {
+                    Raw(Str(s)) => s.clone(),
+                    Array(a) => flatten_array(a, None),
+                    any => any.to_string(),
+                })))),
             },
         );
     }
