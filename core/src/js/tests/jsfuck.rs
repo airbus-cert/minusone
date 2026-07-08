@@ -47,6 +47,7 @@ pub mod jsfuck_tests {
             AddBool::default(),
             CombineArrays::default(),
             StringBuiltins::default(),
+            ArrayBuiltins::default(),
             BracketCharAt::default(),
             Forward::default(),
             ArrayPlusMinus::default(),
