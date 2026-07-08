@@ -135,7 +135,7 @@ impl<'a> RuleMut<'a> for ForStatementCondition {
 ///
 /// let mut ps_litter_view = Linter::default();
 /// tree.apply(&mut ps_litter_view).unwrap();
-/// let clean = CleanEngine::from_powershell(&ps_litter_view.output).unwrap().clean().unwrap();
+/// let clean = CleanEngine::from_powershell(&ps_litter_view.output).unwrap().clean(false).unwrap();
 ///
 /// assert_eq!(clean.trim(), "42");
 /// ```
