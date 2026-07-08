@@ -11,11 +11,12 @@ pub(crate) fn run_deobf<B: DeobfuscationBackend>(
     cli: Cli,
     rule_set: Option<Vec<String>>,
     skip_rule_set: Option<Vec<String>>,
+    keep_dead_code: bool,
 ) -> MinusOneResult<()>
 where
     <B as DeobfuscationBackend>::Language: Debug,
 {
-    let cleaned = DeobfuscateEngine::<B>::remove_extra(source)?;
+    let cleaned = DeobfuscateEngine::<B>::remove_extra(source, keep_dead_code)?;
 
     let mut engine = DeobfuscateEngine::<B>::from_source(&cleaned)?;
 
@@ -40,7 +41,7 @@ where
         println!("\n\n");
     }
 
-    println!("{}", engine.lint()?);
+    println!("{}", engine.lint(keep_dead_code)?);
     Ok(())
 }
 
