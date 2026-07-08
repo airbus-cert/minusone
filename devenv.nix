@@ -1,4 +1,5 @@
-{pkgs, ...}: {
+{ pkgs, ... }:
+{
   packages = [
     pkgs.maturin
     pkgs.wget
@@ -31,6 +32,7 @@
         "cargo"
         "rust-src"
         "rustc"
+        "rustfmt"
         "rust-analyzer"
         "clippy"
         "miri"

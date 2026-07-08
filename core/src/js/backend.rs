@@ -14,7 +14,7 @@ pub struct JavaScriptBackend;
 impl DeobfuscationBackend for JavaScriptBackend {
     type Language = JavaScript;
 
-    fn remove_extra(src: &str) -> MinusOneResult<String> {
+    fn remove_extra(src: &str, keep_dead_code: bool) -> MinusOneResult<String> {
         // remove comments and other non-code nodes
         let mut current = remove_javascript_extra(src)?;
 
@@ -40,6 +40,58 @@ impl DeobfuscationBackend for JavaScriptBackend {
             let mut reduce_sequence = ReduceSequenceExpression::default();
             tree.apply(&mut reduce_sequence)?;
             current = reduce_sequence.clear()?;
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            let debug_dir = std::path::Path::new("./debug");
+            if !debug_dir.exists() {
+                std::fs::create_dir_all(debug_dir).expect("Failed to create debug directory");
+            }
+        }
+
+        // sanitize var names
+        {
+            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+            let mut sanitize = SanitizeVarNames::default();
+            tree.apply(&mut sanitize)?;
+            current = sanitize.clear()?;
+        }
+
+        // remove obvious dead code
+        if !keep_dead_code {
+            let mut i = 0;
+            loop {
+                i += 1;
+                trace!(
+                    "Pre-clean pass iteration {}: current code length = {}",
+                    i,
+                    current.len()
+                );
+
+                #[cfg(debug_assertions)]
+                {
+                    let debug_dir = std::path::Path::new("./debug");
+                    let debug_file = debug_dir.join(format!("debug_pre_pass_{}.js", i));
+                    std::fs::write(debug_file, &current).expect("Failed to write debug file");
+                }
+
+                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+
+                let mut rule = UnusedVar::default();
+                tree.apply(&mut rule)?;
+
+                let mut clean_view = RemoveUnused::new(rule);
+                tree.apply(&mut clean_view)?;
+                let next = clean_view.clear()?;
+
+                if next == current {
+                    current = next;
+                    break;
+                }
+
+                current = next;
+            }
         }
 
         // simplify bracket calls to member expressions to help some rules
@@ -92,13 +144,14 @@ impl DeobfuscationBackend for JavaScriptBackend {
     fn lint_tree<'a>(
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         _tab_chr: &str,
+        keep_dead_code: bool,
     ) -> MinusOneResult<String> {
         let mut linter = crate::js::linter::Linter::default();
         root.apply(&mut linter)?;
 
         // fallback to returning the linted output without cleaning if the clean pass fails
         match CleanEngine::<JavaScriptBackend>::from_source(&linter.output)
-            .and_then(|mut e| e.clean())
+            .and_then(|mut e| e.clean(keep_dead_code))
         {
             Ok(cleaned) => Ok(cleaned),
             Err(e) => {
@@ -121,34 +174,43 @@ impl CleanBackend for JavaScriptBackend {
         build_javascript_tree_for_storage(src)
     }
 
-    fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String> {
+    fn clean_tree(root: &Tree<EmptyStorage>, keep_dead_code: bool) -> MinusOneResult<String> {
         let mut current = root.root()?.text()?.to_string();
 
         // remove remaining dead code
-        let mut i = 0;
-        loop {
-            i += 1;
-            trace!(
-                "Post-lean pass iteration {}: current code length = {}",
-                i,
-                current.len()
-            );
+        if !keep_dead_code {
+            let mut i = 0;
+            loop {
+                i += 1;
+                trace!(
+                    "Post-lean pass iteration {}: current code length = {}",
+                    i,
+                    current.len()
+                );
 
-            let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+                #[cfg(debug_assertions)]
+                {
+                    let debug_dir = std::path::Path::new("./debug");
+                    let debug_file = debug_dir.join(format!("debug_post_pass_{}.js", i));
+                    std::fs::write(debug_file, &current).expect("Failed to write debug file");
+                }
 
-            let mut rule = UnusedVar::default();
-            tree.apply(&mut rule)?;
+                let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
 
-            let mut clean_view = RemoveUnused::new(rule);
-            tree.apply(&mut clean_view)?;
-            let next = clean_view.clear()?;
+                let mut rule = UnusedVar::default();
+                tree.apply(&mut rule)?;
 
-            if next == current {
+                let mut clean_view = RemoveUnused::new(rule);
+                tree.apply(&mut clean_view)?;
+                let next = clean_view.clear()?;
+
+                if next == current {
+                    current = next;
+                    break;
+                }
+
                 current = next;
-                break;
             }
-
-            current = next;
         }
 
         // simplify bracket calls to member expressions to make it more "human readable"
@@ -156,6 +218,11 @@ impl CleanBackend for JavaScriptBackend {
         let mut bracket_to_member = BracketCallToMember::default();
         tree.apply(&mut bracket_to_member)?;
         current = bracket_to_member.clear()?;
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+        let mut global_this_simplifier = GlobalThisSimplifier::default();
+        tree.apply(&mut global_this_simplifier)?;
+        current = global_this_simplifier.clear()?;
 
         // simplify some for loops to while loops
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;

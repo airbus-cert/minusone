@@ -12,7 +12,7 @@ pub struct PowershellBackend;
 impl DeobfuscationBackend for PowershellBackend {
     type Language = ps::Powershell;
 
-    fn remove_extra(src: &str) -> MinusOneResult<String> {
+    fn remove_extra(src: &str, _keep_dead_code: bool) -> MinusOneResult<String> {
         remove_powershell_extra(src)
     }
 
@@ -55,11 +55,12 @@ impl DeobfuscationBackend for PowershellBackend {
     fn lint_tree<'a>(
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         tab_chr: &str,
+        keep_dead_code: bool,
     ) -> MinusOneResult<String> {
         let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
         root.apply(&mut ps_linter_view)?;
 
-        CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?.clean()
+        CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?.clean(keep_dead_code)
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {
@@ -72,12 +73,17 @@ impl CleanBackend for PowershellBackend {
         build_powershell_tree_for_storage(src)
     }
 
-    fn clean_tree(root: &Tree<EmptyStorage>) -> MinusOneResult<String> {
-        let mut rule = ps::var::UnusedVar::default();
-        root.apply(&mut rule)?;
-        let mut clean_view = RemoveUnusedVar::new(rule);
-        root.apply(&mut clean_view)?;
-        clean_view.clear()
+    fn clean_tree(root: &Tree<EmptyStorage>, keep_dead_code: bool) -> MinusOneResult<String> {
+        if !keep_dead_code {
+            let mut rule = ps::var::UnusedVar::default();
+            root.apply(&mut rule)?;
+            let mut clean_view = RemoveUnusedVar::new(rule);
+            root.apply(&mut clean_view)?;
+
+            clean_view.clear()
+        } else {
+            Ok(root.root()?.text()?.to_string())
+        }
     }
 }
 
