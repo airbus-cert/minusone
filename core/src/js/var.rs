@@ -84,6 +84,23 @@ impl Var {
         }
         Ok(())
     }
+
+    fn parse_array_index(node: &Node<JavaScript>) -> Option<usize> {
+        if let Some(data) = node.data() {
+            return match data {
+                Raw(Num(n)) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 => Some(*n as usize),
+                Raw(Str(s)) => s.parse::<usize>().ok(),
+                _ => None,
+            };
+        }
+
+        let text = node.text().ok()?;
+        if text.chars().all(|c| c.is_ascii_digit()) {
+            text.parse::<usize>().ok()
+        } else {
+            None
+        }
+    }
 }
 
 impl<'a> RuleMut<'a> for Var {
@@ -200,22 +217,69 @@ impl<'a> RuleMut<'a> for Var {
             }
             // reassignment
             "assignment_expression" => {
-                if let (Some(left), Some(right)) = (view.child(0), view.child(2))
-                    && left.kind() == "identifier"
-                {
-                    let var_name = left.text()?.to_string();
-                    if let Some(data) = right.data() {
-                        trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
-                        self.scope_manager.current_mut().assign(
-                            &var_name,
-                            data.clone(),
-                            node.is_ongoing_transaction(),
-                        );
-                    } else {
-                        // unknown, forget the variable
-                        self.scope_manager
-                            .current_mut()
-                            .forget(&var_name, node.is_ongoing_transaction());
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
+                    if left.kind() == "identifier" {
+                        let var_name = left.text()?.to_string();
+                        if let Some(data) = right.data() {
+                            trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
+                            self.scope_manager.current_mut().assign(
+                                &var_name,
+                                data.clone(),
+                                node.is_ongoing_transaction(),
+                            );
+                        } else {
+                            // unknown, forget the variable
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
+                        }
+                    } else if left.kind() == "subscript_expression" {
+                        let Some(base_node) = left.named_child("object").or_else(|| left.child(0))
+                        else {
+                            return Ok(());
+                        };
+                        if base_node.kind() != "identifier" {
+                            return Ok(());
+                        }
+
+                        let base_name = base_node.text()?.to_string();
+                        let index_node = left.named_child("index").or_else(|| left.child(2));
+                        let index = index_node.and_then(|node| Self::parse_array_index(&node));
+                        let rhs_data = right.data().cloned().or_else(|| {
+                            if right.kind() == "identifier" {
+                                right.text().ok().and_then(|name| {
+                                    self.scope_manager.current().get_var(name).cloned()
+                                })
+                            } else {
+                                None
+                            }
+                        });
+
+                        match (index, rhs_data) {
+                            (Some(index), Some(value)) => {
+                                if let Some(Array(arr)) =
+                                    self.scope_manager.current_mut().get_var_mut(&base_name)
+                                {
+                                    if index >= arr.len() {
+                                        arr.resize(index + 1, Undefined);
+                                    }
+                                    arr[index] = value;
+                                    trace!(
+                                        "Var (L): Updating array '{}' index {}",
+                                        base_name, index
+                                    );
+                                } else {
+                                    self.scope_manager
+                                        .current_mut()
+                                        .forget(&base_name, node.is_ongoing_transaction());
+                                }
+                            }
+                            _ => {
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&base_name, node.is_ongoing_transaction());
+                            }
+                        }
                     }
                 }
             }

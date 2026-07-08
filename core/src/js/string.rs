@@ -624,6 +624,14 @@ fn string_builtin_replace_like(
     let replacement = match args.get(1) {
         None => "undefined".to_string(),
         Some(Raw(Str(s))) => s.clone(),
+        Some(object @ Object { .. }) => {
+            let obj_string = object.to_string();
+            if obj_string.eq("{name: 'String'}") {
+                String::new()
+            } else {
+                obj_string
+            }
+        }
         Some(js) => js.to_string(),
     };
 
@@ -2069,6 +2077,26 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("let a = 1; console.log(String.raw`${a + 1}`);"),
             "let a = 1; console.log('2');"
+        );
+    }
+
+    #[test]
+    fn test_replace_with_literal_escape() {
+        assert_eq!(
+            deobfuscate("console.log(('aZbZc').replace(/\\Z/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aZbZc').replace(/Z/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aXbXc').replace(/\\X/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aXbXc').replace(/X/g, \"\"))"),
+            "console.log('abc')"
         );
     }
 

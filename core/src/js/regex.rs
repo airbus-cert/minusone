@@ -181,7 +181,8 @@ pub struct RegexExec;
 
 impl RegexExec {
     pub fn compile(pattern: &str, flags: &str) -> Option<regex::Regex> {
-        let mut builder = RegexBuilder::new(pattern);
+        let normalized = normalize_js_pattern_for_rust(pattern)?;
+        let mut builder = RegexBuilder::new(&normalized);
         for flag in flags.chars() {
             match flag {
                 'i' => {
@@ -203,6 +204,95 @@ impl RegexExec {
 
         builder.build().ok()
     }
+}
+
+fn normalize_js_pattern_for_rust(pattern: &str) -> Option<String> {
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        let Some(next) = chars.next() else {
+            out.push('\\');
+            break;
+        };
+
+        match next {
+            // js supported escapes
+            'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'b' | 'B' | 'f' | 'n' | 'r' | 't' | 'v' | '0'
+            | 'p' | 'P' => {
+                out.push('\\');
+                out.push(next);
+            }
+            // escaped regex punctuation
+            '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '/'
+            | '\\' => {
+                out.push('\\');
+                out.push(next);
+            }
+            // control escape \cX
+            'c' => {
+                out.push('\\');
+                out.push('c');
+                if let Some(control) = chars.next() {
+                    out.push(control);
+                } else {
+                    return None;
+                }
+            }
+            // hex escape
+            'x' => {
+                out.push('\\');
+                out.push('x');
+                for _ in 0..2 {
+                    if let Some(hex) = chars.next() {
+                        out.push(hex);
+                    } else {
+                        return None;
+                    }
+                }
+            }
+            // unicode escapes
+            'u' => {
+                if matches!(chars.peek(), Some('{')) {
+                    out.push('\\');
+                    out.push('u');
+                    out.push('{');
+                    chars.next();
+                    while let Some(ch) = chars.next() {
+                        out.push(ch);
+                        if ch == '}' {
+                            break;
+                        }
+                    }
+                } else {
+                    let mut hex = String::new();
+                    for _ in 0..4 {
+                        if let Some(h) = chars.next() {
+                            hex.push(h);
+                        } else {
+                            return None;
+                        }
+                    }
+                    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                        return None;
+                    }
+                    out.push_str("\\x{");
+                    out.push_str(&hex);
+                    out.push('}');
+                }
+            }
+            // back references and named does not seem supported by rust-lang/regex
+            '1'..='9' | 'k' => return None,
+            // unknown escape -> treat as literal
+            other => out.push(other),
+        }
+    }
+
+    Some(out)
 }
 
 impl<'a> RuleMut<'a> for RegexExec {
