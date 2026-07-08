@@ -438,7 +438,28 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .unwrap_or(false)
                             && !get_positional_arguments(parent.named_child("arguments")).is_empty()
                         {
-                            // let the dedicated ToString rule resolve radix-aware calls for integers
+                            return Ok(());
+                        }
+
+                        let is_callee = view
+                            .parent()
+                            .filter(|p| p.kind() == "call_expression")
+                            .and_then(|p| p.named_child("function").or_else(|| p.child(0)))
+                            .map(|callee| {
+                                callee.start_abs() == view.start_abs()
+                                    && callee.end_abs() == view.end_abs()
+                            })
+                            .unwrap_or(false);
+
+                        if is_callee
+                            && !matches!(
+                                &value,
+                                Function {
+                                    return_value: Some(_),
+                                    ..
+                                }
+                            )
+                        {
                             return Ok(());
                         }
 
@@ -450,7 +471,6 @@ impl<'a> RuleMut<'a> for ObjectField {
                             } if source.contains("[native code]")
                         ) && !Self::is_string_concat_target(&view)
                         {
-                            // keep original constructor/at access except in + coercion contexts.
                             return Ok(());
                         }
 
@@ -463,6 +483,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                     }
                 }
             }
+
             "identifier" => {
                 if !is_write_target(&view) {
                     if let Some(parent) = view.parent()
@@ -495,7 +516,7 @@ impl<'a> RuleMut<'a> for ObjectField {
 
 #[cfg(test)]
 mod tests {
-    use crate::js::array::{GetArrayElement, ParseArray};
+    use crate::js::array::{ArrayBuiltins, GetArrayElement, ParseArray};
     use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
@@ -521,6 +542,7 @@ mod tests {
                 ParseFunction::default(),
                 ParseObject::default(),
                 ParseSpecials::default(),
+                ArrayBuiltins::default(),
                 Forward::default(),
                 GetArrayElement::default(),
                 ObjectField::default(),

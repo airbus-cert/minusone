@@ -2,12 +2,13 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
-use std::ops::{Shl, Shr};
-
+use crate::js::utils::{get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
 use num::ToPrimitive;
+use std::ops::{Shl, Shr};
+use std::string::ToString;
 
 /// Parses JavaScript numeric literals (decimal, hex, octal, binary) into `Raw(Num(_))`.
 ///
@@ -292,6 +293,285 @@ fn to_int32(value: &JavaScript) -> i32 {
 fn digit_value(c: char, radix: u32) -> Option<u32> {
     let d = c.to_digit(36)?;
     if d < radix { Some(d) } else { None }
+}
+
+/// Centralized dispatcher for number literal builtins.
+///
+/// This includes :
+/// - `num.valueOf()` what is the purpose of this??
+/// - `num.toPrecision(x)`
+/// - `num.toFixed(x)`
+/// - `num.toExponential(x)`
+type NumberBuiltinHandler = fn(f64, &[JavaScript]) -> Option<JavaScript>;
+
+const NUMBER_BUILTINS: &[(&str, NumberBuiltinHandler)] = &[
+    ("valueOf", |value, _args| Some(Raw(Num(value)))),
+    ("toPrecision", number_builtin_to_precision),
+    ("toFixed", number_builtin_to_fixed),
+    ("toExponential", number_builtin_to_exponential),
+];
+
+#[derive(Default)]
+pub struct NumberBuiltins;
+
+impl<'a> RuleMut<'a> for NumberBuiltins {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        let Some(method) = method_name(&callee) else {
+            return Ok(());
+        };
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Raw(Num(input))) = object.data() else {
+            return Ok(());
+        };
+
+        let args = view.named_child("arguments");
+        let positional_args = get_positional_arguments(args);
+        let mut arg_values = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data().cloned() else {
+                return Ok(());
+            };
+            arg_values.push(value);
+        }
+
+        let Some(result) = dispatch_number_builtin(&method, *input, &arg_values) else {
+            return Ok(());
+        };
+
+        trace!(
+            "NumberBuiltins: reducing '{}'.{}(...) to {}",
+            input, method, result
+        );
+        node.reduce(result);
+        Ok(())
+    }
+}
+
+fn dispatch_number_builtin(method: &str, input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    NUMBER_BUILTINS
+        .iter()
+        .find_map(|(name, handler)| (*name == method).then(|| handler(input, args)))
+        .flatten()
+}
+
+/// See [ECMA262 21.1.3.5](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.toprecision)
+pub fn number_builtin_to_precision(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    if args.is_empty() {
+        return Some(Raw(Str(Raw(Num(input)).to_string())));
+    }
+
+    let precision = match args[0].as_js_num() {
+        Raw(Num(n)) => n as isize,
+        _ => {
+            warn!("BuiltinToPrecision: received invalid arg, skipping...");
+            return None;
+        }
+    };
+
+    if input.is_infinite() {
+        return Some(Raw(Str(if input.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        })));
+    }
+
+    if precision < 1 || precision > 100 {
+        warn!("BuiltinToPrecision: precision out of range [1, 100], skipping...");
+        return None;
+    }
+
+    let p = precision as usize;
+
+    if input == 0.0 {
+        if p == 1 {
+            return Some(Raw(Str("0".to_string())));
+        }
+        return Some(Raw(Str(format!("0.{}", "0".repeat(p - 1)))));
+    }
+
+    let sign = if input.is_sign_negative() { "-" } else { "" };
+    let abs = input.abs();
+
+    let exp_repr = format!("{:.*e}", p - 1, abs);
+    let (mantissa, exp_part) = exp_repr.split_once('e')?;
+    let exponent: isize = exp_part.parse().ok()?;
+
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+
+    let result = if exponent < -6 || exponent >= p as isize {
+        let exp_suffix = if exponent >= 0 {
+            format!("e+{}", exponent)
+        } else {
+            format!("e{}", exponent)
+        };
+
+        if p == 1 {
+            format!("{sign}{}{}", &digits[..1], exp_suffix)
+        } else {
+            format!("{sign}{}.{}{}", &digits[..1], &digits[1..p], exp_suffix)
+        }
+    } else if exponent >= 0 {
+        let int_len = (exponent + 1) as usize;
+        if int_len >= p {
+            format!("{sign}{digits}")
+        } else {
+            format!("{sign}{}.{}", &digits[..int_len], &digits[int_len..p])
+        }
+    } else {
+        let zeros = "0".repeat((-exponent - 1) as usize);
+        format!("{sign}0.{}{}", zeros, digits)
+    };
+
+    Some(Raw(Str(result)))
+}
+
+/// See [ECMA262 21.1.3.3](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.tofixed)
+pub fn number_builtin_to_fixed(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    let fraction_count = match args.first() {
+        None => 0,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as i64,
+            _ => 0,
+        },
+    };
+
+    if fraction_count < 0 || fraction_count > 100 {
+        warn!("BuiltinToFixed: fractionDigits out of range [0, 100], skipping...");
+        return None;
+    }
+
+    if input.is_infinite() {
+        return Some(Raw(Str(if input.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        })));
+    }
+
+    let f = fraction_count as usize;
+    let sign = if input.is_sign_negative() && input != 0.0 {
+        "-"
+    } else {
+        ""
+    };
+    let abs = input.abs();
+
+    if abs >= 1e21 {
+        return Some(Raw(Str(format!("{sign}{}", Raw(Num(abs)).to_string()))));
+    }
+
+    let digit_string = format!("{:.prec$}", abs, prec = f);
+
+    Some(Raw(Str(format!("{sign}{digit_string}"))))
+}
+
+/// See [ECMA262 21.1.3.2](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-number.prototype.toexponential)
+pub fn number_builtin_to_exponential(input: f64, args: &[JavaScript]) -> Option<JavaScript> {
+    let fraction_digits_undefined =
+        args.is_empty() || matches!(args.first(), Some(Undefined) | Some(Null));
+
+    let fraction_count = match args.first() {
+        None => 0,
+        Some(arg) => match arg.as_js_num() {
+            Raw(Num(n)) => n as i64,
+            _ => 0,
+        },
+    };
+
+    if input.is_infinite() {
+        return Some(Raw(Str(if input.is_sign_negative() {
+            "-Infinity".to_string()
+        } else {
+            "Infinity".to_string()
+        })));
+    }
+
+    if !fraction_digits_undefined && (fraction_count < 0 || fraction_count > 100) {
+        warn!("BuiltinToExponential: fractionDigits out of range [0, 100], skipping...");
+        return None;
+    }
+
+    let sign = if input.is_sign_negative() && input != 0.0 {
+        "-"
+    } else {
+        ""
+    };
+    let abs = input.abs();
+
+    if abs == 0.0 {
+        let f = if fraction_digits_undefined {
+            0
+        } else {
+            fraction_count as usize
+        };
+        let significand = if f == 0 {
+            "0".to_string()
+        } else {
+            format!("0.{}", "0".repeat(f))
+        };
+        return Some(Raw(Str(format!("{sign}{significand}e+0"))));
+    }
+
+    let (significand, exponent) = if fraction_digits_undefined {
+        let repr = format!("{:e}", abs);
+        let (mantissa, exp_str) = repr.split_once('e')?;
+        let exponent: isize = exp_str.parse().ok()?;
+        let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+        let digits = digits.trim_end_matches('0');
+        let f = digits.len() - 1;
+        let sig = if f == 0 {
+            digits.to_string()
+        } else {
+            format!("{}.{}", &digits[..1], &digits[1..])
+        };
+        (sig, exponent)
+    } else {
+        let f = fraction_count as usize;
+        let repr = format!("{:.*e}", f, abs);
+        let (mantissa, exp_str) = repr.split_once('e')?;
+        let exponent: isize = exp_str.parse().ok()?;
+        let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+        let sig = if f == 0 {
+            digits[..1].to_string()
+        } else {
+            format!("{}.{}", &digits[..1], &digits[1..=f])
+        };
+        (sig, exponent)
+    };
+
+    let exp_suffix = if exponent >= 0 {
+        format!("e+{}", exponent)
+    } else {
+        format!("e{}", exponent)
+    };
+
+    Some(Raw(Str(format!("{sign}{significand}{exp_suffix}"))))
 }
 
 /// Infers unary `-` and `+` expressions applied to known values
@@ -633,6 +913,8 @@ impl<'a> RuleMut<'a> for Substract {
                     let right = r.as_js_num();
                     if left == NaN || right == NaN {
                         trace!("Substract (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
                     }
 
                     if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
@@ -1137,19 +1419,452 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                 if let (Some(op), Some(operand)) = (view.child(0), view.child(1))
                     && op.text()? == "~"
                 {
-                    if let Some(Raw(Num(n))) = operand.data() {
-                        let n = *n as i64;
-                        trace!("BitwiseInt (L): ~{} = {}", n, !n);
-                        node.reduce(Raw(Num((!n) as f64)));
-                    } else if let Some(Raw(BigInt(n))) = operand.data() {
+                    if let Some(Raw(BigInt(n))) = operand.data() {
                         let result = !n;
                         trace!("BitwiseInt (L): ~{}n = {}n", n, result);
                         node.reduce(Raw(BigInt(result)));
+                    } else if let Some(js) = operand.data() {
+                        let result = match js.as_js_num() {
+                            Raw(Num(n)) => Raw(Num((!(n as i64)) as f64)),
+                            NaN => NaN,
+                            _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
+                        };
+                        trace!("BitwiseInt (L): ~{} = {}", js, result);
+                        node.reduce(result);
                     }
                 }
             }
             _ => (),
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests_js_integer {
+    use super::*;
+    use crate::js::array::ParseArray;
+    use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
+    use crate::js::linter::Linter;
+    use crate::js::string::ParseString;
+
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            ParseString::default(),
+            ParseArray::default(),
+            NumberBuiltins::default(),
+            PosNeg::default(),
+            Forward::default(),
+            AddInt::default(),
+            Substract::default(),
+            IncrDecr::default(),
+            MultDivMod::default(),
+            PowInt::default(),
+            ShiftInt::default(),
+            BitwiseInt::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
+
+    #[test]
+    fn test_parse_int() {
+        assert_eq!(deobfuscate("var x = 31;"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = 0x1F;"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = 0o37;"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = 0b11111;"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = 017;"), "var x = 15;");
+        assert_eq!(deobfuscate("var x = 0017;"), "var x = 15;");
+        assert_eq!(deobfuscate("var x = 019;"), "var x = 19;");
+        assert_eq!(deobfuscate("var x = parseInt('10');"), "var x = 10;");
+        assert_eq!(deobfuscate("var x = parseInt('10*3', 10);"), "var x = 10;");
+        assert_eq!(
+            deobfuscate("var x = parseInt('    3     ', 10);"),
+            "var x = 3;"
+        );
+        assert_eq!(deobfuscate("var x = Number('10');"), "var x = 10;");
+        assert_eq!(deobfuscate("var x = Number('10*3');"), "var x = NaN;");
+        assert_eq!(deobfuscate("var x = Number('0x1f');"), "var x = 31;");
+        assert_eq!(deobfuscate("var x = Number('');"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = parseInt('');"), "var x = NaN;");
+    }
+
+    #[test]
+    fn test_parse_bigint() {
+        assert_eq!(deobfuscate("var x = 31n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0x1Fn;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0o37n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0b11111n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = 0b1_1111n;"), "var x = 31n;");
+        assert_eq!(deobfuscate("var x = BigInt('0x1f');"), "var x = 31n;");
+    }
+
+    #[test]
+    fn test_pos_neg_int() {
+        assert_eq!(deobfuscate("var x = +42 + +5;"), "var x = 47;");
+        assert_eq!(deobfuscate("var x = -42 - -5;"), "var x = -37;");
+    }
+
+    #[test]
+    fn test_add_sub_int() {
+        assert_eq!(deobfuscate("var x = 1 + 1;"), "var x = 2;");
+        assert_eq!(deobfuscate("var x = 5 - 2;"), "var x = 3;");
+        assert_eq!(
+            deobfuscate("var x = 1 - 25 + 47 - 6 - 2 -99 + 120 + 33;"),
+            "var x = 69;"
+        );
+    }
+
+    #[test]
+    fn test_add_sub_bigint() {
+        assert_eq!(deobfuscate("var x = 1n + 1n;"), "var x = 2n;");
+        assert_eq!(deobfuscate("var x = 5n - 2n;"), "var x = 3n;");
+        assert_eq!(
+            deobfuscate("var x = 1n - 25n + 47n - 6n - 2n -99n + 120n + 33n;"),
+            "var x = 69n;"
+        );
+    }
+
+    #[test]
+    fn test_mult_div_mod_int() {
+        assert_eq!(deobfuscate("var x = 3 * 4;"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = 10 / 2;"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = 10 / 0;"), "var x = Infinity;");
+        assert_eq!(deobfuscate("var x = 0 / 0;"), "var x = NaN;");
+        assert_eq!(deobfuscate("var x = 10 % 3;"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = 10 * 2 / 5 % 2;"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_wierd_mult_div_mod_int() {
+        assert_eq!(deobfuscate("var x = '3' * [4];"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = '10' / [2];"), "var x = 5;");
+        assert_eq!(deobfuscate("var x = '10' % [3];"), "var x = 1;");
+        assert_eq!(deobfuscate("var x = '10' * [2] / 5 % 2;"), "var x = 0;");
+    }
+
+    #[test]
+    fn test_mult_div_mod_bigint() {
+        assert_eq!(deobfuscate("var x = 3n * 4n;"), "var x = 12n;");
+        assert_eq!(deobfuscate("var x = 10n / 2n;"), "var x = 5n;");
+        assert_eq!(deobfuscate("var x = 10n % 3n;"), "var x = 1n;");
+        assert_eq!(deobfuscate("var x = 10n * 2n / 5n % 2n;"), "var x = 0n;");
+    }
+
+    #[test]
+    fn test_op_priority() {
+        assert_eq!(deobfuscate("var x = 1 + 3 * 36;"), "var x = 109;");
+        assert_eq!(deobfuscate("var x = 1 + 9 * 6 % 28 - 3 * 7;"), "var x = 6;");
+    }
+
+    #[test]
+    fn test_pow_int() {
+        assert_eq!(deobfuscate("var x = 50 ** 8;"), "var x = 39062500000000;");
+    }
+
+    #[test]
+    fn test_pow_bigint() {
+        let mut excepted_value = String::from("1");
+        for _ in 0..1000 {
+            excepted_value = excepted_value + "0";
+        }
+
+        assert_eq!(
+            deobfuscate("var x = 10n ** 1000n;"),
+            format!("var x = {}n;", excepted_value)
+        );
+    }
+
+    #[test]
+    fn test_shift_int() {
+        assert_eq!(deobfuscate("var x = 1 << 3;"), "var x = 8;");
+        assert_eq!(deobfuscate("var x = 16 >> 2;"), "var x = 4;");
+        assert_eq!(deobfuscate("let x = -16 >>> 2;"), "let x = 1073741820;"); // test fails
+        assert_eq!(deobfuscate("var x = 1 << 3 >> 2;"), "var x = 2;");
+        assert_eq!(deobfuscate("var x = 2 >> 31;"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = 2 >> 32;"), "var x = 2;");
+        assert_eq!(deobfuscate("var x = 2 >> 33;"), "var x = 1;");
+        assert_eq!(deobfuscate("let x = -16 >> 2;"), "let x = -4;");
+    }
+
+    #[test]
+    fn test_shift_bigint() {
+        assert_eq!(deobfuscate("var x = 1n << 3n;"), "var x = 8n;");
+        assert_eq!(deobfuscate("var x = 16n >> 2n;"), "var x = 4n;");
+        assert_eq!(deobfuscate("var x = 1n << 3n >> 2n;"), "var x = 2n;");
+        assert_eq!(deobfuscate("var x = 2n >> 31n;"), "var x = 0n;");
+        assert_eq!(deobfuscate("let x = -16n >> 2n;"), "let x = -4n;");
+    }
+
+    #[test]
+    fn test_bitwise_int() {
+        assert_eq!(deobfuscate("var x = 0x4 & 0x8;"), "var x = 0;");
+        assert_eq!(deobfuscate("var x = 0x4 | 0x8;"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = 0x4 ^ 0x8;"), "var x = 12;");
+        assert_eq!(deobfuscate("var x = ~0x4;"), "var x = -5;");
+        assert_eq!(
+            deobfuscate("var x = 0x15487596 ^ 0x5216598 | 0x36598745 & ~0x21215487;"),
+            "var x = 377066318;",
+        );
+    }
+
+    #[test]
+    fn test_bitwise_bigint() {
+        assert_eq!(deobfuscate("var x = 0x4n & 0x8n;"), "var x = 0n;");
+        assert_eq!(deobfuscate("var x = 0x4n | 0x8n;"), "var x = 12n;");
+        assert_eq!(deobfuscate("var x = 0x4n ^ 0x8n;"), "var x = 12n;");
+        assert_eq!(deobfuscate("var x = ~0x4n;"), "var x = -5n;");
+        assert_eq!(
+            deobfuscate("var x = 0x15487596n ^ 0x5216598n | 0x36598745n & ~0x21215487n;"),
+            "var x = 377066318n;",
+        );
+    }
+
+    #[test]
+    fn test_incr_decr() {
+        assert_eq!(deobfuscate("var x = ++5;"), "var x = 6;");
+        assert_eq!(deobfuscate("var x = --5;"), "var x = 4;");
+        assert_eq!(deobfuscate("var x = 5++;"), "var x = 6;");
+        assert_eq!(deobfuscate("var x = 5--;"), "var x = 4;");
+        assert_eq!(deobfuscate("var x = ++5 + 1;"), "var x = 7;");
+        assert_eq!(
+            deobfuscate("for (var i = 0; i < 10; i++) {}"),
+            "for (var i = 0; i < 10; i++) {}"
+        );
+        assert_eq!(
+            deobfuscate("for (var i = 0; i < 10; --i) {}"),
+            "for (var i = 0; i < 10; --i) {}"
+        );
+    }
+
+    #[test]
+    fn test_builtin_value_of() {
+        assert_eq!(deobfuscate("var x = 12.34.valueOf();"), "var x = 12.34;");
+        assert_eq!(deobfuscate("var x = 12.34['valueOf']();"), "var x = 12.34;");
+    }
+
+    #[test]
+    fn test_builtin_to_precision() {
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision();"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(1);"),
+            "var x = '1e+1';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(2);"),
+            "var x = '12';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(4);"),
+            "var x = '12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(6);"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(8);"),
+            "var x = '12.345600';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toPrecision(1);"), "var x = '0';");
+        assert_eq!(
+            deobfuscate("var x = (0).toPrecision(4);"),
+            "var x = '0.000';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toPrecision(4);"),
+            "var x = '-12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toPrecision(1);"),
+            "var x = '-1e+1';"
+        );
+        assert_eq!(
+            // output '0.0000000' instead of '0.0000012'
+            deobfuscate("var x = (0.000001234).toPrecision(2);"),
+            "var x = '0.0000012';"
+        );
+        assert_eq!(
+            // output '0e-7' instead of '1e-7'
+            deobfuscate("var x = (0.0000001).toPrecision(1);"),
+            "var x = '1e-7';"
+        );
+        assert_eq!(
+            // output '0.000000' instead of '0.000001'
+            deobfuscate("var x = (0.000001).toPrecision(1);"),
+            "var x = '0.000001';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (123456789).toPrecision(4);"),
+            "var x = '1.235e+8';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (9.9999).toPrecision(1);"),
+            "var x = '1e+1';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toPrecision(3);"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toPrecision(3);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toPrecision(0);"),
+            "var x = 1.5.toPrecision(0);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toPrecision(101);"),
+            "var x = 1.5.toPrecision(101);"
+        );
+    }
+
+    #[test]
+    fn test_builtin_to_fixed() {
+        assert_eq!(deobfuscate("var x = 12.3456.toFixed();"), "var x = '12';");
+        assert_eq!(deobfuscate("var x = (1.005).toFixed();"), "var x = '1';");
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toFixed(2);"),
+            "var x = '12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toFixed(4);"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(4);"),
+            "var x = '1.5000';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toFixed(3);"), "var x = '0.000';");
+        assert_eq!(deobfuscate("var x = (1.9).toFixed(0);"), "var x = '2';");
+        assert_eq!(deobfuscate("var x = (1.1).toFixed(0);"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = (-1.5).toFixed(0);"), "var x = '-2';");
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toFixed(2);"),
+            "var x = '-12.35';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toFixed(0);"), "var x = '0';");
+        assert_eq!(
+            deobfuscate("var x = (-0).toFixed(2);"),
+            "var x = '0.00';" // -0 has no sign in output per spec step 9
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.000001).toFixed(8);"),
+            "var x = '0.00000100';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1e15).toFixed(0);"),
+            "var x = '1000000000000000';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1e21).toFixed(2);"),
+            "var x = '1e+21';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5e21).toFixed(0);"),
+            "var x = '1.5e+21';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toFixed(2);"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toFixed(2);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(-1);"),
+            "var x = 1.5.toFixed(-1);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(101);"),
+            "var x = 1.5.toFixed(101);"
+        );
+    }
+
+    #[test]
+    fn test_builtin_to_exponential() {
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential();"),
+            "var x = '1.23456789e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (100).toExponential();"),
+            "var x = '1e+2';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential();"),
+            "var x = '1.5e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(2);"),
+            "var x = '1.23e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(6);"),
+            "var x = '1.234568e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(0);"),
+            "var x = '1e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(4);"),
+            "var x = '1.5000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0).toExponential();"),
+            "var x = '0e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0).toExponential(3);"),
+            "var x = '0.000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12345.6789).toExponential(2);"),
+            "var x = '-1.23e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-0.00123).toExponential(2);"),
+            "var x = '-1.23e-3';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.00123).toExponential(2);"),
+            "var x = '1.23e-3';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.0000001).toExponential(1);"),
+            "var x = '1.0e-7';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (5).toExponential(3);"),
+            "var x = '5.000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toExponential();"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toExponential(2);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(-1);"),
+            "var x = 1.5.toExponential(-1);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(101);"),
+            "var x = 1.5.toExponential(101);"
+        );
     }
 }

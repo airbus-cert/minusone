@@ -368,6 +368,111 @@ impl<'a> Rule<'a> for BracketCallToMember {
     }
 }
 
+/// Simplifies globalThis calls. most of the time, it requires `BracketCallToMember` to be called first.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::GlobalThisSimplifier;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "globalThis.eval('alert(1)');";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut bracket_to_member = GlobalThisSimplifier::default();
+/// tree.apply(&mut bracket_to_member).unwrap();
+///
+/// assert_eq!(bracket_to_member.clear().unwrap(), "eval('alert(1)');");
+/// ```
+#[derive(Default)]
+pub struct GlobalThisSimplifier {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl GlobalThisSimplifier {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+}
+
+impl<'a> Rule<'a> for GlobalThisSimplifier {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "call_expression" => {
+                // globalThis: browser + node
+                // global: node only
+                // self: browser only
+                // window: browser only
+                if let Some(callee) = node.child(0) {
+                    if callee.text()?.starts_with("globalThis.") {
+                        let replacement = &node.text()?[11..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("global.") {
+                        let replacement = &node.text()?[7..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("self.") {
+                        let replacement = &node.text()?[5..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("window.") {
+                        let replacement = &node.text()?[7..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 /// Removes variable declarations, assignments, and function declarations where the declared name is never read.
 ///
 /// # Example
@@ -1323,5 +1428,489 @@ impl<'a> Rule<'a> for ReduceSequenceExpression {
 
     fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
         Ok(())
+    }
+}
+
+/// Sanitize var names by replacing \uXXXX by their unicode character.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::SanitizeVarNames;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "let \\u0061 = 1;";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut sanitize = SanitizeVarNames::default();
+/// tree.apply(&mut sanitize).unwrap();
+///
+/// assert_eq!(sanitize.clear().unwrap(), "let a = 1;");
+/// ```
+#[derive(Default)]
+pub struct SanitizeVarNames {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl SanitizeVarNames {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        self.last_index = end;
+    }
+}
+
+impl<'a> Rule<'a> for SanitizeVarNames {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "identifier" | "member_identifier" | "property_identifier" => {
+                if let Some(text) = node.text().ok() {
+                    if text.contains("\\u") {
+                        let mut real_name = String::new();
+                        let mut i = 0;
+                        while i < text.len() {
+                            if text[i..].starts_with("\\u") && i + 6 <= text.len() {
+                                if let Ok(code_point) = u32::from_str_radix(&text[i + 2..i + 6], 16)
+                                {
+                                    if let Some(ch) = char::from_u32(code_point) {
+                                        real_name.push(ch);
+                                        i += 6;
+                                        continue;
+                                    }
+                                }
+                            }
+                            real_name.push(text.as_bytes()[i] as char);
+                            i += 1;
+                        }
+                        trace!("SanitizeVarNames: replacing {} with {}", text, real_name);
+                        self.replace_node_with_text(node, &real_name);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test_js_deadcode {
+    use super::*;
+    use crate::js::build_javascript_tree_for_storage;
+    use crate::tree::EmptyStorage;
+
+    fn clean(input: &str) -> String {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut inline_iife = InlineIife::default();
+        tree.apply(&mut inline_iife).unwrap();
+        let rewritten = inline_iife.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut rewrite = ExpandAugmentedAssignment::default();
+        tree.apply(&mut rewrite).unwrap();
+        let rewritten = rewrite.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut reduce_sequence = ReduceSequenceExpression::default();
+        tree.apply(&mut reduce_sequence).unwrap();
+        let rewritten = reduce_sequence.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut for_to_while = ForToWhile::default();
+        tree.apply(&mut for_to_while).unwrap();
+        let rewritten = for_to_while.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut bracket_to_member = BracketCallToMember::default();
+        tree.apply(&mut bracket_to_member).unwrap();
+        let rewritten = bracket_to_member.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut global_this_simplifier = GlobalThisSimplifier::default();
+        tree.apply(&mut global_this_simplifier).unwrap();
+        let rewritten = global_this_simplifier.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut unused = UnusedVar::default();
+        tree.apply(&mut unused).unwrap();
+        let mut remover = RemoveUnused::new(unused);
+        tree.apply(&mut remover).unwrap();
+        remover.clear().unwrap()
+    }
+
+    fn sanitize(input: &str) -> String {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut sanitize = SanitizeVarNames::default();
+        tree.apply(&mut sanitize).unwrap();
+        sanitize.clear().unwrap()
+    }
+
+    #[test]
+    fn test_remove_unused_var() {
+        assert_eq!(
+            clean("var a = 'hello'; console.log('world');"),
+            "console.log('world');"
+        );
+    }
+
+    #[test]
+    fn test_keep_used_var() {
+        assert_eq!(
+            clean("var a = 'hello'; console.log(a);"),
+            "var a = 'hello'; console.log(a);"
+        );
+    }
+
+    #[test]
+    fn test_remove_unused_assignment() {
+        assert_eq!(
+            clean("var a = 1; a = 2; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_unused_function() {
+        assert_eq!(
+            clean("function unused() { return 1; } console.log('hello');"),
+            "console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_keep_used_function() {
+        assert_eq!(
+            clean("function test() { return 1; } test();"),
+            "function test() { return 1; } test();"
+        );
+    }
+
+    #[test]
+    fn test_remove_multiple_unused() {
+        assert_eq!(
+            clean("var a = 1; var b = 2; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_keep_mixed() {
+        assert_eq!(
+            clean("var a = 1; var b = 2; console.log(a);"),
+            "var a = 1; console.log(a);"
+        );
+    }
+
+    #[test]
+    fn test_remove_unused_let_const() {
+        assert_eq!(
+            clean("let a = 1; const b = 2; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_full_pipeline_dead_code() {
+        assert_eq!(
+            clean("function test() { return 'hello'; } console.log('hello');"),
+            "console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_remove_bare_number() {
+        assert_eq!(clean("1; console.log('ok');"), "console.log('ok');");
+    }
+
+    #[test]
+    fn test_remove_bare_string() {
+        assert_eq!(clean("'hello'; console.log('ok');"), "console.log('ok');");
+    }
+
+    #[test]
+    fn test_remove_bare_bool() {
+        assert_eq!(
+            clean("true; false; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_bare_literal_after_fncall_inlining() {
+        assert_eq!(clean("1; console.log('world');"), "console.log('world');");
+    }
+
+    #[test]
+    fn test_remove_if_false() {
+        assert_eq!(
+            clean("if (false) { console.log('no'); } console.log('yes');"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_if_false_with_else_keeps_else_body() {
+        assert_eq!(
+            clean("if (false) { console.log('no'); } else { console.log('yes'); }"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_if_true_keeps_if_body() {
+        assert_eq!(
+            clean("if (true) { console.log('yes'); }"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_if_true_with_else_keeps_if_body() {
+        assert_eq!(
+            clean("if (true) { console.log('yes'); } else { console.log('no'); }"),
+            "console.log('yes');"
+        );
+    }
+
+    #[test]
+    fn test_keep_if_variable() {
+        assert_eq!(
+            clean("if (x) { console.log('maybe'); }"),
+            "if (x) { console.log('maybe'); }"
+        );
+    }
+
+    #[test]
+    fn test_no_panic_when_parent_removed_before_children() {
+        assert_eq!(
+            clean("function drop() { var a = 1; a = 2; 1; } console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_split_chained_let_declaration() {
+        assert_eq!(
+            clean("let r = 4027, E = 'A', S = 'B';"),
+            "let r = 4027; let E = 'A'; let S = 'B';"
+        );
+    }
+
+    #[test]
+    fn test_split_chained_const_declaration() {
+        assert_eq!(clean("const a = 1, b = 2;"), "const a = 1; const b = 2;");
+    }
+
+    #[test]
+    fn test_keep_for_header_chained_declaration() {
+        assert_eq!(
+            clean("for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"),
+            "for (let i = 0, j = 1; i < 2; i++) { console.log(i, j); }"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_for_ever_to_while_true() {
+        assert_eq!(
+            clean("for (;;) { console.log('x'); }"),
+            "while (true) { console.log('x'); }"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_for_condition_only_to_while() {
+        assert_eq!(clean("for (; a != b;) { x(); }"), "while (a != b) { x(); }");
+    }
+
+    #[test]
+    fn test_keep_for_with_increment() {
+        assert_eq!(
+            clean("for (; i < 10; i++) { x(); }"),
+            "for (; i < 10; i++) { x(); }"
+        );
+    }
+
+    #[test]
+    fn test_keep_for_with_initializer() {
+        assert_eq!(
+            clean("for (let i = 0; i < 10;) { x(); }"),
+            "for (let i = 0; i < 10;) { x(); }"
+        );
+    }
+
+    #[test]
+    fn test_split_sequence_expression_statement() {
+        assert_eq!(
+            clean("a = 1, b = 2, console.log(b);"),
+            "a = 1; b = 2; console.log(b);"
+        );
+    }
+
+    #[test]
+    fn test_split_sequence_expression_statement_with_calls() {
+        assert_eq!(
+            clean(
+                "S = S.replaceAll(a, q), S = S.replaceAll(E, r), t.writeFileSync(r, S), n = transform(stq[10], ord), n = n.replaceAll(E, r);"
+            ),
+            "S = S.replaceAll(a, q); S = S.replaceAll(E, r); t.writeFileSync(r, S); n = transform(stq[10], ord); n = n.replaceAll(E, r);"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_bracket_call_to_member_call() {
+        assert_eq!(clean("console['log'](a);"), "console.log(a);");
+    }
+
+    #[test]
+    fn test_keep_bracket_call_when_key_not_identifier() {
+        assert_eq!(clean("console['x-y'](a);"), "console['x-y'](a);");
+    }
+
+    #[test]
+    fn test_global_this_simplifier() {
+        assert_eq!(clean("globalThis.eval('alert(1)');"), "eval('alert(1)');");
+        assert_eq!(
+            clean("globalThis['eval']('alert(1)');"),
+            "eval('alert(1)');"
+        );
+    }
+
+    #[test]
+    fn test_stress_many_removals_no_slice_panic() {
+        let mut input = String::new();
+        for i in 0..200 {
+            input += &format!("function f{}() {{ var a = 1; a = 2; 1; }} ", i);
+        }
+        input += "console.log('ok');";
+
+        assert_eq!(clean(&input), "console.log('ok');");
+    }
+
+    #[test]
+    fn test_inline_anonymous_iife() {
+        assert_eq!(
+            clean(
+                "(function () { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
+            ),
+            "var a = 123; var b = 'Hello, world! '; console.log(b + a);"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_iife_with_arguments() {
+        assert_eq!(
+            clean("(function () { console.log('x'); })(foo());"),
+            "(function () { console.log('x'); })(foo());"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_iife_with_return() {
+        assert_eq!(
+            clean("(function () { return 1; })(); console.log('ok');"),
+            "(function () { return 1; })(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_iife_with_name() {
+        assert_eq!(
+            clean(
+                "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
+            ),
+            "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_augmented_plus_equals() {
+        assert_eq!(clean("a += 2;"), "a = a + 2;");
+        assert_eq!(clean("a -= 2;"), "a = a - 2;");
+        assert_eq!(clean("a *= 2;"), "a = a * 2;");
+        assert_eq!(clean("a /= 2;"), "a = a / 2;");
+        assert_eq!(clean("a %= 2;"), "a = a % 2;");
+        assert_eq!(clean("obj.x += 2;"), "obj.x += 2;");
+    }
+
+    #[test]
+    fn test_reduce_sequence_expression_to_last_value() {
+        assert_eq!(
+            clean("console.log((\"a\",\"b\"));"),
+            "console.log((\"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_reduce_sequence_expression_with_safe_prefixes() {
+        assert_eq!(
+            clean("console.log((1, null, \"b\"));"),
+            "console.log((\"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_keep_sequence_expression_with_side_effects() {
+        assert_eq!(
+            clean("console.log((foo(), \"b\"));"),
+            "console.log((foo(), \"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_sanitize() {
+        assert_eq!(sanitize("let \\u0061 = 0;"), "let a = 0;");
+        assert_eq!(
+            sanitize("console.\\u006c\\u006f\\u0067();"),
+            "console.log();"
+        );
+        assert_eq!(
+            sanitize("function \\u006d\\u0069\\u006e\\u0075\\u0073\\u006f\\u006e\\u0065(){}"),
+            "function minusone(){}"
+        );
+        assert_eq!(
+            sanitize(
+                "function minusone(\\u006d\\u0069\\u006e\\u0075, \\u0073\\u006f\\u006e\\u0065){}"
+            ),
+            "function minusone(minu, sone){}"
+        );
     }
 }

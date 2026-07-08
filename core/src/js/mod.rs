@@ -9,6 +9,7 @@ pub mod forward;
 pub mod functions;
 pub mod globals;
 pub mod integer;
+pub mod iterator;
 pub mod linter;
 pub mod math;
 pub mod node;
@@ -19,11 +20,14 @@ pub mod specials;
 pub mod strategy;
 pub mod string;
 pub mod r#switch;
+pub mod ternary;
 mod tests;
 pub mod r#typeof;
 mod utils;
 pub mod var;
 
+use self::JavaScript::*;
+use self::Value::*;
 use self::array::*;
 use self::b64::*;
 use self::bool::*;
@@ -33,6 +37,9 @@ use self::forward::*;
 use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
+use self::iterator::*;
+#[cfg(test)]
+use self::linter::Linter;
 use self::linter::RemoveComment;
 use self::math::*;
 use self::node::buffer::*;
@@ -40,13 +47,10 @@ use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
 use self::string::*;
+use self::ternary::*;
 use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
-use crate::js::JavaScript::*;
-use crate::js::Value::*;
-#[cfg(test)]
-use crate::js::linter::Linter;
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::HashMap;
@@ -58,6 +62,12 @@ pub enum Value {
     Str(String),
     Bool(bool),
     BigInt(num_bigint::BigInt),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IteratorKind {
+    Values,
+    Entries,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,19 +94,90 @@ pub enum JavaScript {
         map: HashMap<String, JavaScript>,
         to_string_override: Option<String>,
     },
+    Iterator {
+        values: Vec<JavaScript>,
+        index: usize,
+        kind: IteratorKind,
+    },
+}
+
+fn js_eq(a: &JavaScript, b: &JavaScript) -> bool {
+    use JavaScript::*;
+    use Value::*;
+
+    match (a, b) {
+        (Undefined, Undefined) => true,
+        (NaN, _) | (_, NaN) => false,
+        (Null, Null) => true,
+        (Raw(Num(n1)), Raw(Num(n2))) => n1 == n2,
+        (Raw(Str(s1)), Raw(Str(s2))) => s1 == s2,
+        (Raw(Bool(b1)), Raw(Bool(b2))) => b1 == b2,
+        (Raw(BigInt(b1)), Raw(BigInt(b2))) => b1 == b2,
+        (Array(arr1), Array(arr2)) => {
+            arr1.len() == arr2.len() && arr1.iter().zip(arr2.iter()).all(|(a, b)| js_eq(a, b))
+        }
+        (Bytes(b1), Bytes(b2)) => b1 == b2,
+        (Buffer(b1), Buffer(b2)) => b1 == b2,
+        (
+            Regex {
+                pattern: p1,
+                flags: f1,
+            },
+            Regex {
+                pattern: p2,
+                flags: f2,
+            },
+        ) => p1 == p2 && f1 == f2,
+        (
+            Function {
+                source: s1,
+                return_value: r1,
+            },
+            Function {
+                source: s2,
+                return_value: r2,
+            },
+        ) => s1 == s2 && r1 == r2,
+        (
+            Object {
+                map: m1,
+                to_string_override: t1,
+            },
+            Object {
+                map: m2,
+                to_string_override: t2,
+            },
+        ) => {
+            t1 == t2
+                && m1.len() == m2.len()
+                && m1
+                    .iter()
+                    .all(|(k, v)| m2.get(k).map_or(false, |v2| js_eq(v, v2)))
+        }
+        (
+            Iterator {
+                values: v1,
+                index: i1,
+                kind: k1,
+            },
+            Iterator {
+                values: v2,
+                index: i2,
+                kind: k2,
+            },
+        ) => {
+            i1 == i2
+                && k1 == k2
+                && v1.len() == v2.len()
+                && v1.iter().zip(v2.iter()).all(|(a, b)| js_eq(a, b))
+        }
+        _ => false,
+    }
 }
 
 impl PartialEq<JavaScript> for &JavaScript {
     fn eq(&self, other: &JavaScript) -> bool {
-        match (self, other) {
-            (Undefined, Undefined) => true,
-            (NaN, NaN) => true,
-            (Array(arr1), Array(arr2)) => arr1 == arr2,
-            (Raw(Num(n1)), Raw(Num(n2))) => n1 == n2,
-            (Raw(Str(s1)), Raw(Str(s2))) => s1 == s2,
-            (Raw(Bool(b1)), Raw(Bool(b2))) => b1 == b2,
-            _ => false,
-        }
+        js_eq(self, other)
     }
 }
 
@@ -159,13 +240,14 @@ impl_javascript_ruleset!(
     AddBool,              // Infer boolean addition operations
     CombineArrays,        // Infer + operations on two arrays
     StringBuiltins,       // Shared dispatcher for string literal builtins (.at, etc.)
+    NumberBuiltins,       // Shared dispatcher for string literal builtins (.toPrecision, etc.)
+    ArrayBuiltins,        // Shared dispatcher for array literals builtins (.at, etc.)
+    IteratorBuiltins,     // Shared dispatcher for iterators literals builtins (.next, etc.)
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
     FromCharCode, // Infer String.fromCharCode static calls on deterministic literal arguments
-    StringConstructor, // Infer String(...) coercion calls on deterministic literal arguments
     Forward,    // Forward inferred type in the most simple cases
     ArrayPlusMinus, // Infer unary plus and minus on arrays
-    ArrayJoin,  // Infer array join calls on literal arrays and reduce them to string literals
     Concat,     // Infer string concatenation with + operator on string literals
     RegexConcat, // Infer regex concatenation with + operator on string literals
     ConcatFunction, // Infer function source concatenation with `+` and reduce them to single string literals
@@ -176,6 +258,7 @@ impl_javascript_ruleset!(
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
+    Ternary,        // Infer ternary operator with deterministic condition
     BufferFrom,     // Infer deterministic Buffer.from(...) calls
     BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites

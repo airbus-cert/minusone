@@ -8,7 +8,7 @@ use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
-use log::trace;
+use log::{trace, warn};
 
 /// Var is a variable manager that will try to track
 /// static variable assignments and propagate them in the code
@@ -352,8 +352,64 @@ impl<'a> RuleMut<'a> for Var {
 
                     let var_name = view.text()?.to_string();
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
-                        if matches!(data, JavaScript::Object { .. }) {
+                        if matches!(data, Object { .. }) {
                             return Ok(());
+                        }
+
+                        if matches!(data, Array(_)) {
+                            if let Some(member_expr) = view.parent()
+                                && member_expr.kind() == "member_expression"
+                                && member_expr
+                                    .named_child("object")
+                                    .map(|o| {
+                                        o.start_abs() == view.start_abs()
+                                            && o.end_abs() == view.end_abs()
+                                    })
+                                    .unwrap_or(false)
+                                && let Some(call_expr) = member_expr.parent()
+                                && call_expr.kind() == "call_expression"
+                                && let Some(prop) = member_expr.named_child("property")
+                                && matches!(
+                                    prop.text().unwrap_or(""),
+                                    "pop"
+                                        | "push"
+                                        | "shift"
+                                        | "unshift"
+                                        | "splice"
+                                        | "sort"
+                                        | "reverse"
+                                        | "fill"
+                                        | "copyWithin"
+                                )
+                            {
+                                if matches!(
+                                    prop.text().unwrap_or(""),
+                                    "pop" | "shift" | "splice" | "sort" | "reverse" | "copyWithin"
+                                ) {
+                                    if let Array(arr) = data {
+                                        // fns that doesn't add elements in an empty array keep it as is
+                                        if arr.is_empty() {
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                                trace!(
+                                    "Var (L): Propagating array '{}' before mutating call .{}(), then forgetting",
+                                    var_name,
+                                    prop.text().unwrap_or("?")
+                                );
+                                warn!(
+                                    "Dropped {} because a mutable call `{}.{}(...)` is occurring on it. This means that the deobfuscation will be less effective",
+                                    var_name,
+                                    var_name,
+                                    prop.text().unwrap_or("?")
+                                );
+                                node.set(data.clone());
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&var_name, node.is_ongoing_transaction());
+                                return Ok(());
+                            }
                         }
 
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);

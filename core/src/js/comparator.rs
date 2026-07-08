@@ -58,63 +58,16 @@ impl<'a> RuleMut<'a> for StrictEq {
                 return Ok(());
             }
 
-            let eq: Option<bool> = match (left.data(), right.data()) {
-                (Some(Raw(Num(l))), Some(Raw(Num(r)))) => {
-                    trace!("StrictEq (L): {} {} {} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(BigInt(l))), Some(Raw(BigInt(r)))) => {
-                    trace!("StrictEq (L): {}n {} {}n = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(Str(l))), Some(Raw(Str(r)))) => {
-                    trace!("StrictEq (L): {:?} {} {:?} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(Bool(l))), Some(Raw(Bool(r)))) => {
-                    trace!("StrictEq (L): {} {} {} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Undefined), Some(Undefined)) => {
-                    let res = op_str == "===";
-                    trace!("StrictEq (L): undefined {} undefined = {}", op_str, res);
-                    Some(res)
-                }
-                (Some(Null), Some(Null)) => {
-                    let res = op_str == "===";
-                    trace!("StrictEq (L): null {} null = {}", op_str, res);
-                    Some(res)
-                }
-                // NaN is never strictly equal to anything, including itself ??
-                (Some(NaN), _) | (_, Some(NaN)) => {
-                    trace!("StrictEq (L): NaN {} _ = false", op_str);
-                    Some(false)
-                }
-                // cross-type: always false for ===
-                (Some(Raw(Num(_))), Some(Raw(Str(_))))
-                | (Some(Raw(Str(_))), Some(Raw(Num(_))))
-                | (Some(Raw(Num(_))), Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), Some(Raw(Num(_))))
-                | (Some(Raw(Str(_))), Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), Some(Raw(Str(_))))
-                | (Some(Raw(BigInt(_))), Some(Raw(Num(_))))
-                | (Some(Raw(Num(_))), Some(Raw(BigInt(_))))
-                | (Some(Raw(BigInt(_))), Some(Raw(Str(_))))
-                | (Some(Raw(Str(_))), Some(Raw(BigInt(_))))
-                | (Some(Raw(BigInt(_))), Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), Some(Raw(BigInt(_))))
-                | (Some(Raw(_)), Some(Undefined))
-                | (Some(Undefined), Some(Raw(_))) => {
-                    trace!("StrictEq (L): cross-type {} = false", op_str);
-                    Some(false)
-                }
-                _ => None,
-            };
+            if let (Some(left), Some(right)) = (left.data(), right.data()) {
+                //let eq = strict_eq(left, right, op_str);
+                let eq = if op_str == "===" {
+                    left == right
+                } else {
+                    left != right
+                };
 
-            if let Some(is_eq) = eq {
-                let result = if op_str == "===" { is_eq } else { !is_eq };
-                trace!("StrictEq (L): result = {}", result);
-                node.reduce(Raw(Bool(result)));
+                trace!("StrictEq (L): result = {}", eq);
+                node.reduce(Raw(Bool(eq)));
             }
         }
 
