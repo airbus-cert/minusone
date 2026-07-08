@@ -200,6 +200,7 @@ fn unescaped_js_string(s: &str) -> String {
 /// - `str.includes(substring)`
 /// - `str.indexOf(substring)`
 /// - `str.lastIndexOf(substring)`
+/// - `str.match(regex)`
 /// - `str.padStart(targetLength, [padString])`
 /// - `str.padEnd(targetLength, [padString])`
 /// - `str.repeat(count)`
@@ -218,23 +219,25 @@ fn unescaped_js_string(s: &str) -> String {
 type StringBuiltinHandler = fn(&str, &[JavaScript]) -> Option<JavaScript>;
 
 const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
+    ("anchor", string_builtin_anchor),
     ("at", string_builtin_at),
     ("charAt", string_builtin_char_at),
-    ("split", string_builtin_split),
-    ("replace", string_builtin_replace),
-    ("replaceAll", string_builtin_replace_all),
-    ("link", string_builtin_link),
-    ("anchor", string_builtin_anchor),
     ("codePointAt", string_builtin_code_point_at),
-    ("startsWith", string_builtin_start_with),
     ("endsWith", string_builtin_end_with),
     ("includes", string_builtin_includes),
     ("indexOf", string_builtin_index_of),
     ("lastIndexOf", string_builtin_last_index_of),
-    ("padStart", string_builtin_pad_start),
+    ("link", string_builtin_link),
+    ("match", string_builtin_match),
+    ("matchAll", string_builtin_match_all),
     ("padEnd", string_builtin_pad_end),
+    ("padStart", string_builtin_pad_start),
     ("repeat", string_builtin_repeat),
+    ("replace", string_builtin_replace),
+    ("replaceAll", string_builtin_replace_all),
     ("slice", string_builtin_slice),
+    ("split", string_builtin_split),
+    ("startsWith", string_builtin_start_with),
     ("substring", string_builtin_substring),
     ("toLowerCase", |input, _| {
         Some(Raw(Str(input.to_lowercase())))
@@ -243,11 +246,11 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
         Some(Raw(Str(input.to_uppercase())))
     }),
     ("trim", |input, _| Some(Raw(Str(input.trim().to_string())))),
-    ("trimStart", |input, _| {
-        Some(Raw(Str(input.trim_start().to_string())))
-    }),
     ("trimEnd", |input, _| {
         Some(Raw(Str(input.trim_end().to_string())))
+    }),
+    ("trimStart", |input, _| {
+        Some(Raw(Str(input.trim_start().to_string())))
     }),
 ];
 
@@ -689,6 +692,115 @@ fn string_builtin_dynamic_tag(
     };
 
     Some(Raw(Str(result)))
+}
+
+pub fn string_builtin_match(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let first_arg = args.first()?;
+
+    let (regex, is_global) = match first_arg {
+        Regex { pattern, flags } => {
+            let compiled = RegexExec::compile(pattern, flags)?;
+            let global = flags.contains('g');
+            (compiled, global)
+        }
+        Raw(Str(s)) => (RegexExec::compile(&regex::escape(s), "")?, false),
+        js => (
+            RegexExec::compile(&regex::escape(&js.to_string()), "")?,
+            false,
+        ),
+    };
+
+    if is_global {
+        let mut matches: Vec<JavaScript> = Vec::new();
+        let chars: Vec<char> = input.chars().collect();
+        let mut pos = 0;
+
+        while pos <= chars.len() {
+            let remaining: &str = &input[pos..];
+            if let Some(m) = regex.find(remaining) {
+                if m.start() == m.end() {
+                    matches.push(Raw(Str(m.as_str().to_string())));
+                    pos += 1; // advance by 1 character (JavaScript behavior...)
+                } else {
+                    matches.push(Raw(Str(m.as_str().to_string())));
+                    pos += m.end();
+                }
+            } else {
+                break;
+            }
+        }
+
+        if matches.is_empty() {
+            Some(Null)
+        } else {
+            Some(Array(matches))
+        }
+    } else {
+        match regex.captures(input) {
+            None => Some(Null),
+            Some(caps) => {
+                let result: Vec<JavaScript> = caps
+                    .iter()
+                    .map(|m| match m {
+                        None => Undefined,
+                        Some(m) => Raw(Str(m.as_str().to_string())),
+                    })
+                    .collect();
+
+                Some(Array(result))
+            }
+        }
+    }
+}
+
+pub fn string_builtin_match_all(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
+    let first_arg = args.first()?;
+
+    let regex = match first_arg {
+        Regex { pattern, flags } => {
+            if !flags.contains('g') {
+                error!("String.prototype.matchAll called with a non-global RegExp argument",);
+            }
+            RegexExec::compile(pattern, flags)?
+        }
+
+        Raw(Str(s)) => RegexExec::compile(&regex::escape(s), "g")?,
+        js => RegexExec::compile(&regex::escape(&js.to_string()), "g")?,
+    };
+
+    let mut all_matches: Vec<JavaScript> = Vec::new();
+    let chars: Vec<char> = input.chars().collect();
+    let mut pos = 0;
+
+    while pos <= chars.len() {
+        let remaining = &input[pos..];
+
+        match regex.captures(remaining) {
+            None => break,
+            Some(caps) => {
+                let match_arr: Vec<JavaScript> = caps
+                    .iter()
+                    .map(|m| match m {
+                        None => Undefined,
+                        Some(m) => Raw(Str(m.as_str().to_string())),
+                    })
+                    .collect();
+
+                let full_match = caps.get(0).map(|m| m.as_str()).unwrap_or("");
+                let match_len = full_match.len();
+
+                all_matches.push(Array(match_arr));
+
+                if match_len == 0 {
+                    pos += chars[pos].len_utf8();
+                } else {
+                    pos += match_len;
+                }
+            }
+        }
+    }
+
+    Some(Array(all_matches))
 }
 
 /// Infers charAt with bracket calls on string literals and reduces them to single-character string
@@ -1957,6 +2069,89 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("let a = 1; console.log(String.raw`${a + 1}`);"),
             "let a = 1; console.log('2');"
+        );
+    }
+
+    #[test]
+    fn test_match() {
+        assert_eq!(
+            deobfuscate("var x = 'hello world'.match(/o/g);"),
+            "var x = ['o', 'o'];"
+        );
+
+        assert_eq!(deobfuscate("var x = 'hello'.match(/o/);"), "var x = ['o'];");
+
+        assert_eq!(deobfuscate("var x = 'hello'.match(/x/g);"), "var x = null;");
+
+        assert_eq!(deobfuscate("var x = 'hello'.match(/x/);"), "var x = null;");
+
+        assert_eq!(
+            deobfuscate("var x = 'a1b2c3'.match(/\\d/g);"),
+            "var x = ['1', '2', '3'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123'.match(/(\\w)(\\d)/);"),
+            "var x = ['c1', 'c', '1'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123'.match(/(\\w)(\\d)/g);"),
+            "var x = ['c1', '23'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'a1a2a3'.match(/[^a]*/g);"),
+            "var x = ['', '1', '', '2', '', '3', ''];"
+        );
+
+        assert_eq!(deobfuscate("var x = ''.match(/a/g);"), "var x = null;");
+
+        assert_eq!(deobfuscate("var x = ''.match(/.*/g);"), "var x = [''];");
+
+        assert_eq!(
+            deobfuscate("var x = 'hello world'.match('ell');"),
+            "var x = ['ell'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123def'.match(/([a-z]+)(\\d+)([a-z]+)/);"),
+            "var x = ['abc123def', 'abc', '123', 'def'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'Hello'.match(/h/i);"),
+            "var x = ['H'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'Helloh'.match(/h/gi);"),
+            "var x = ['H', 'h'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = '123abc'.match(/\\d+/g);"),
+            "var x = ['123'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123'.match(/\\d+/g);"),
+            "var x = ['123'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc'.match(/a*b/g);"),
+            "var x = ['ab'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'hello world'.match(/\\w+/g);"),
+            "var x = ['hello', 'world'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'a b c'.match(/ /g);"),
+            "var x = [' ', ' '];"
         );
     }
 }
