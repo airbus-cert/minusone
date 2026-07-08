@@ -50,7 +50,7 @@ impl Drop for GlobalRecursionGuard {
     }
 }
 
-pub const DEFAULT_MAX_RECURSION_DEPTH: usize = 16;
+pub const DEFAULT_MAX_RECURSION_DEPTH: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct RecursionTracker {
