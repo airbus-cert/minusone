@@ -368,6 +368,111 @@ impl<'a> Rule<'a> for BracketCallToMember {
     }
 }
 
+/// Simplifies globalThis calls. most of the time, it requires `BracketCallToMember` to be called first.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::GlobalThisSimplifier;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "globalThis.eval('alert(1)');";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut bracket_to_member = GlobalThisSimplifier::default();
+/// tree.apply(&mut bracket_to_member).unwrap();
+///
+/// assert_eq!(bracket_to_member.clear().unwrap(), "eval('alert(1)');");
+/// ```
+#[derive(Default)]
+pub struct GlobalThisSimplifier {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl GlobalThisSimplifier {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+}
+
+impl<'a> Rule<'a> for GlobalThisSimplifier {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "call_expression" => {
+                // globalThis: browser + node
+                // global: node only
+                // self: browser only
+                // window: browser only
+                if let Some(callee) = node.child(0) {
+                    if callee.text()?.starts_with("globalThis.") {
+                        let replacement = &node.text()?[11..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("global.") {
+                        let replacement = &node.text()?[7..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("self.") {
+                        let replacement = &node.text()?[5..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    } else if callee.text()?.starts_with("window.") {
+                        let replacement = &node.text()?[7..];
+                        self.replace_node_with_text(node, &replacement);
+                        return Ok(false);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 /// Removes variable declarations, assignments, and function declarations where the declared name is never read.
 ///
 /// # Example
@@ -1211,6 +1316,11 @@ mod test_js_deadcode {
         let rewritten = bracket_to_member.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut global_this_simplifier = GlobalThisSimplifier::default();
+        tree.apply(&mut global_this_simplifier).unwrap();
+        let rewritten = global_this_simplifier.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
         let mut unused = UnusedVar::default();
         tree.apply(&mut unused).unwrap();
         let mut remover = RemoveUnused::new(unused);
@@ -1437,6 +1547,15 @@ mod test_js_deadcode {
     #[test]
     fn test_keep_bracket_call_when_key_not_identifier() {
         assert_eq!(clean("console['x-y'](a);"), "console['x-y'](a);");
+    }
+
+    #[test]
+    fn test_global_this_simplifier() {
+        assert_eq!(clean("globalThis.eval('alert(1)');"), "eval('alert(1)');");
+        assert_eq!(
+            clean("globalThis['eval']('alert(1)');"),
+            "eval('alert(1)');"
+        );
     }
 
     #[test]

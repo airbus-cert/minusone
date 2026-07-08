@@ -1,13 +1,11 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Buffer, Null, Object, Raw, Regex};
-use crate::js::JavaScript::{NaN, Undefined};
-use crate::js::Value::{BigInt, Bool};
-use crate::js::Value::{Num, Str};
+use crate::js::JavaScript::*;
+use crate::js::Value::*;
 use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
 use crate::js::regex::RegexExec;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{error, trace, warn};
@@ -299,17 +297,6 @@ fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<Java
     }
 
     Some(Raw(Num(chars[index as usize] as u32 as f64)))
-}
-
-fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
-    match value {
-        None => 0,
-        Some(v) => match v.as_js_num() {
-            Raw(Num(n)) if n.is_finite() => n.trunc() as i64,
-            Raw(Num(_)) | NaN => 0,
-            _ => 0,
-        },
-    }
 }
 
 fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
@@ -1131,6 +1118,16 @@ impl<'a> RuleMut<'a> for Concat {
                         s, obj_str, s
                     );
                     node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
+                }
+                (Some(Iterator { .. }), Some(Raw(Str(s)))) => {
+                    let result = format!("[object Array Iterator]{s}");
+                    trace!("Concat: reducing iterator + '{}' to '{}'", s, result);
+                    node.reduce(Raw(Str(result)));
+                }
+                (Some(Raw(Str(s))), Some(Iterator { .. })) => {
+                    let result = format!("[object Array Iterator]{s}");
+                    trace!("Concat: reducing iterator + '{}' to '{}'", s, result);
+                    node.reduce(Raw(Str(result)));
                 }
                 _ => {}
             }

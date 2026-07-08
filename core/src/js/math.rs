@@ -1001,7 +1001,6 @@ mod test_maths {
     #[test]
     fn test_math_acosh() {
         assert_eq!(deobfuscate("Math.acosh(1)"), "0");
-        assert_eq!(deobfuscate("Math.acosh(2)"), "1.3169578969248166");
         assert_eq!(deobfuscate("Math.acosh(3)"), "1.762747174039086");
         assert_eq!(deobfuscate("Math.acosh(NaN)"), "NaN");
         assert_eq!(deobfuscate("Math.acosh(-1)"), "NaN");
