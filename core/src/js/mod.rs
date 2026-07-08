@@ -21,6 +21,7 @@ pub mod specials;
 pub mod strategy;
 pub mod string;
 pub mod r#switch;
+pub mod ternary;
 mod tests;
 pub mod r#typeof;
 mod utils;
@@ -47,6 +48,7 @@ use self::objects::object::*;
 use self::regex::*;
 use self::specials::*;
 use self::string::*;
+use self::ternary::*;
 use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
@@ -257,6 +259,7 @@ impl_javascript_ruleset!(
     AddSubSpecials, // Infer add and sub on Undefined and NaN
     ToString,       // Infer toString calls
     B64,            // Infer atob & btoa calls and reduce them to string literals
+    Ternary,        // Infer ternary operator with deterministic condition
     BufferFrom,     // Infer deterministic Buffer.from(...) calls
     BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
     Var,            // Track variable assignments and propagate known values to usage sites
