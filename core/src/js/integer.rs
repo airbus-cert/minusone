@@ -1139,14 +1139,18 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                 if let (Some(op), Some(operand)) = (view.child(0), view.child(1))
                     && op.text()? == "~"
                 {
-                    if let Some(Raw(Num(n))) = operand.data() {
-                        let n = *n as i64;
-                        trace!("BitwiseInt (L): ~{} = {}", n, !n);
-                        node.reduce(Raw(Num((!n) as f64)));
-                    } else if let Some(Raw(BigInt(n))) = operand.data() {
+                    if let Some(Raw(BigInt(n))) = operand.data() {
                         let result = !n;
                         trace!("BitwiseInt (L): ~{}n = {}n", n, result);
                         node.reduce(Raw(BigInt(result)));
+                    } else if let Some(js) = operand.data() {
+                        let result = match js.as_js_num() {
+                            Raw(Num(n)) => Raw(Num((!(n as i64)) as f64)),
+                            NaN => NaN,
+                            _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
+                        };
+                        trace!("BitwiseInt (L): ~{} = {}", js, result);
+                        node.reduce(result);
                     }
                 }
             }
