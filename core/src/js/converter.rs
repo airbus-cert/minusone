@@ -4,9 +4,9 @@ use crate::js::array::flatten_array;
 use crate::js::b64::js_bytes_to_string;
 use crate::js::string::escape_js_string;
 use crate::js::{JavaScript, Value};
+use log::warn;
 use num::{ToPrimitive, Zero};
 use std::fmt::Display;
-use log::warn;
 
 impl Display for JavaScript {
     // If a new type is added, try to put the raw value in the console and see the output
@@ -131,9 +131,14 @@ impl JavaScript {
                 if array.is_empty() {
                     Raw(Num(0.0))
                 } else {
-                    match flatten_array(array, None).parse::<f64>() {
-                        Ok(n) => Raw(Num(n)),
-                        Err(_) => NaN,
+                    let flat = flatten_array(array, None);
+                    if flat.trim().is_empty() {
+                        Raw(Num(0.0))
+                    } else {
+                        match flat.parse::<f64>() {
+                            Ok(n) => Raw(Num(n)),
+                            Err(_) => NaN,
+                        }
                     }
                 }
             }
