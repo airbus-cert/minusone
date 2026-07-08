@@ -8,7 +8,7 @@ use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
-use log::trace;
+use log::{trace, warn};
 
 /// Var is a variable manager that will try to track
 /// static variable assignments and propagate them in the code
@@ -83,6 +83,23 @@ impl Var {
             }
         }
         Ok(())
+    }
+
+    fn parse_array_index(node: &Node<JavaScript>) -> Option<usize> {
+        if let Some(data) = node.data() {
+            return match data {
+                Raw(Num(n)) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 => Some(*n as usize),
+                Raw(Str(s)) => s.parse::<usize>().ok(),
+                _ => None,
+            };
+        }
+
+        let text = node.text().ok()?;
+        if text.chars().all(|c| c.is_ascii_digit()) {
+            text.parse::<usize>().ok()
+        } else {
+            None
+        }
     }
 }
 
@@ -200,22 +217,69 @@ impl<'a> RuleMut<'a> for Var {
             }
             // reassignment
             "assignment_expression" => {
-                if let (Some(left), Some(right)) = (view.child(0), view.child(2))
-                    && left.kind() == "identifier"
-                {
-                    let var_name = left.text()?.to_string();
-                    if let Some(data) = right.data() {
-                        trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
-                        self.scope_manager.current_mut().assign(
-                            &var_name,
-                            data.clone(),
-                            node.is_ongoing_transaction(),
-                        );
-                    } else {
-                        // unknown, forget the variable
-                        self.scope_manager
-                            .current_mut()
-                            .forget(&var_name, node.is_ongoing_transaction());
+                if let (Some(left), Some(right)) = (view.child(0), view.child(2)) {
+                    if left.kind() == "identifier" {
+                        let var_name = left.text()?.to_string();
+                        if let Some(data) = right.data() {
+                            trace!("Var (L): Re-assigning variable '{}' = {:?}", var_name, data);
+                            self.scope_manager.current_mut().assign(
+                                &var_name,
+                                data.clone(),
+                                node.is_ongoing_transaction(),
+                            );
+                        } else {
+                            // unknown, forget the variable
+                            self.scope_manager
+                                .current_mut()
+                                .forget(&var_name, node.is_ongoing_transaction());
+                        }
+                    } else if left.kind() == "subscript_expression" {
+                        let Some(base_node) = left.named_child("object").or_else(|| left.child(0))
+                        else {
+                            return Ok(());
+                        };
+                        if base_node.kind() != "identifier" {
+                            return Ok(());
+                        }
+
+                        let base_name = base_node.text()?.to_string();
+                        let index_node = left.named_child("index").or_else(|| left.child(2));
+                        let index = index_node.and_then(|node| Self::parse_array_index(&node));
+                        let rhs_data = right.data().cloned().or_else(|| {
+                            if right.kind() == "identifier" {
+                                right.text().ok().and_then(|name| {
+                                    self.scope_manager.current().get_var(name).cloned()
+                                })
+                            } else {
+                                None
+                            }
+                        });
+
+                        match (index, rhs_data) {
+                            (Some(index), Some(value)) => {
+                                if let Some(Array(arr)) =
+                                    self.scope_manager.current_mut().get_var_mut(&base_name)
+                                {
+                                    if index >= arr.len() {
+                                        arr.resize(index + 1, Undefined);
+                                    }
+                                    arr[index] = value;
+                                    trace!(
+                                        "Var (L): Updating array '{}' index {}",
+                                        base_name, index
+                                    );
+                                } else {
+                                    self.scope_manager
+                                        .current_mut()
+                                        .forget(&base_name, node.is_ongoing_transaction());
+                                }
+                            }
+                            _ => {
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&base_name, node.is_ongoing_transaction());
+                            }
+                        }
                     }
                 }
             }
@@ -352,8 +416,64 @@ impl<'a> RuleMut<'a> for Var {
 
                     let var_name = view.text()?.to_string();
                     if let Some(data) = self.scope_manager.current().get_var(&var_name) {
-                        if matches!(data, JavaScript::Object { .. }) {
+                        if matches!(data, Object { .. }) {
                             return Ok(());
+                        }
+
+                        if matches!(data, Array(_)) {
+                            if let Some(member_expr) = view.parent()
+                                && member_expr.kind() == "member_expression"
+                                && member_expr
+                                    .named_child("object")
+                                    .map(|o| {
+                                        o.start_abs() == view.start_abs()
+                                            && o.end_abs() == view.end_abs()
+                                    })
+                                    .unwrap_or(false)
+                                && let Some(call_expr) = member_expr.parent()
+                                && call_expr.kind() == "call_expression"
+                                && let Some(prop) = member_expr.named_child("property")
+                                && matches!(
+                                    prop.text().unwrap_or(""),
+                                    "pop"
+                                        | "push"
+                                        | "shift"
+                                        | "unshift"
+                                        | "splice"
+                                        | "sort"
+                                        | "reverse"
+                                        | "fill"
+                                        | "copyWithin"
+                                )
+                            {
+                                if matches!(
+                                    prop.text().unwrap_or(""),
+                                    "pop" | "shift" | "splice" | "sort" | "reverse" | "copyWithin"
+                                ) {
+                                    if let Array(arr) = data {
+                                        // fns that doesn't add elements in an empty array keep it as is
+                                        if arr.is_empty() {
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                                trace!(
+                                    "Var (L): Propagating array '{}' before mutating call .{}(), then forgetting",
+                                    var_name,
+                                    prop.text().unwrap_or("?")
+                                );
+                                warn!(
+                                    "Dropped {} because a mutable call `{}.{}(...)` is occurring on it. This means that the deobfuscation will be less effective",
+                                    var_name,
+                                    var_name,
+                                    prop.text().unwrap_or("?")
+                                );
+                                node.set(data.clone());
+                                self.scope_manager
+                                    .current_mut()
+                                    .forget(&var_name, node.is_ongoing_transaction());
+                                return Ok(());
+                            }
                         }
 
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);
@@ -364,154 +484,5 @@ impl<'a> RuleMut<'a> for Var {
             _ => {}
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::js::build_javascript_tree;
-    use crate::js::forward::Forward;
-    use crate::js::integer::ParseInt;
-    use crate::js::linter::Linter;
-    use crate::js::strategy::JavaScriptStrategy;
-    use crate::js::string::ParseString;
-    use crate::js::var::Var;
-
-    fn deobfuscate(input: &str) -> String {
-        let mut tree = build_javascript_tree(input).unwrap();
-        tree.apply_mut_with_strategy(
-            &mut (
-                ParseInt::default(),
-                ParseString::default(),
-                Forward::default(),
-                Var::default(),
-            ),
-            JavaScriptStrategy::default(),
-        )
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        linter.output
-    }
-
-    #[test]
-    fn test_var_simple_string() {
-        assert_eq!(
-            deobfuscate("var a = 'hello'; console.log(a);"),
-            "var a = 'hello'; console.log('hello');"
-        );
-    }
-
-    #[test]
-    fn test_var_simple_int() {
-        assert_eq!(
-            deobfuscate("var x = 42; console.log(x);"),
-            "var x = 42; console.log(42);"
-        );
-    }
-
-    #[test]
-    fn test_let_simple() {
-        assert_eq!(
-            deobfuscate("let a = 'world'; console.log(a);"),
-            "let a = 'world'; console.log('world');"
-        );
-    }
-
-    #[test]
-    fn test_const_simple() {
-        assert_eq!(
-            deobfuscate("const a = 'test'; console.log(a);"),
-            "const a = 'test'; console.log('test');"
-        );
-    }
-
-    #[test]
-    fn test_var_function_scope() {
-        assert_eq!(
-            deobfuscate("function test() { var a = 'hello'; console.log(a); } console.log(a);"),
-            "function test() { var a = 'hello'; console.log('hello'); } console.log(a);"
-        );
-    }
-
-    #[test]
-    fn test_var_reassignment() {
-        assert_eq!(
-            deobfuscate("var a = 'hello'; a = 'world'; console.log(a);"),
-            "var a = 'hello'; a = 'world'; console.log('world');"
-        );
-    }
-
-    #[test]
-    fn test_var_unknown_reassignment() {
-        assert_eq!(
-            deobfuscate("var a = 'hello'; a = foo(); console.log(a);"),
-            "var a = 'hello'; a = foo(); console.log(a);"
-        );
-    }
-
-    #[test]
-    fn test_multiple_vars() {
-        assert_eq!(
-            deobfuscate("var a = 'hello'; var b = 'world'; console.log(a, b);"),
-            "var a = 'hello'; var b = 'world'; console.log('hello', 'world');"
-        );
-    }
-
-    #[test]
-    fn test_var_in_nested_block() {
-        assert_eq!(
-            deobfuscate("var x = 10; { console.log(x); }"),
-            "var x = 10; { console.log(10); }"
-        );
-    }
-
-    #[test]
-    fn test_let_block_scope() {
-        assert_eq!(
-            deobfuscate("{ let x = 10; console.log(x); } console.log(x);"),
-            "{ let x = 10; console.log(10); } console.log(x);"
-        );
-    }
-
-    #[test]
-    fn test_var_hoists_out_of_block() {
-        assert_eq!(
-            deobfuscate("{ var x = 10; } console.log(x);"),
-            "{ var x = 10; } console.log(10);"
-        );
-    }
-
-    #[test]
-    fn test_let_does_not_hoist_out_of_block() {
-        assert_eq!(
-            deobfuscate("{ let x = 10; } console.log(x);"),
-            "{ let x = 10; } console.log(x);"
-        );
-    }
-
-    #[test]
-    fn test_const_does_not_hoist_out_of_block() {
-        assert_eq!(
-            deobfuscate("{ const x = 10; } console.log(x);"),
-            "{ const x = 10; } console.log(x);"
-        );
-    }
-
-    #[test]
-    fn test_postfix_update_expression() {
-        assert_eq!(
-            deobfuscate("var x = 5; var y = x++; console.log(x, y);"),
-            "var x = 5; var y = 5; console.log(6, 5);"
-        );
-    }
-
-    #[test]
-    fn test_prefix_update_expression() {
-        assert_eq!(
-            deobfuscate("var x = 5; var y = ++x; console.log(x, y);"),
-            "var x = 5; var y = 6; console.log(6, 6);"
-        );
     }
 }

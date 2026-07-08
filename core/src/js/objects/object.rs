@@ -211,6 +211,15 @@ impl ObjectField {
         let mut current = root.clone();
         for key in keys {
             current = match current {
+                Array(arr) => {
+                    if let Some(index) = parse_array_index(key) {
+                        arr.get(index).cloned().unwrap_or(Undefined)
+                    } else if let Some(Object { map, .. }) = as_object(&Array(arr)) {
+                        map.get(key).cloned()?
+                    } else {
+                        return None;
+                    }
+                }
                 Object { map, .. } => map.get(key).cloned()?,
                 value => match as_object(&value) {
                     Some(Object { map, .. }) => map.get(key).cloned()?,
@@ -253,10 +262,49 @@ impl ObjectField {
         }
 
         match root {
+            Array(arr) => set_array_index(arr, keys, value),
             Object { map, .. } => Self::set_in_map(map, keys, value),
             _ => false,
         }
     }
+}
+
+fn parse_array_index(key: &str) -> Option<usize> {
+    if key.is_empty() {
+        return None;
+    }
+    if key.chars().all(|c| c.is_ascii_digit()) {
+        key.parse::<usize>().ok()
+    } else {
+        None
+    }
+}
+
+fn set_array_index(arr: &mut Vec<JavaScript>, keys: &[String], value: JavaScript) -> bool {
+    let Some(index) = parse_array_index(&keys[0]) else {
+        return false;
+    };
+
+    if keys.len() == 1 {
+        if index >= arr.len() {
+            arr.resize(index + 1, Undefined);
+        }
+        if let Some(slot) = arr.get_mut(index) {
+            *slot = value;
+            return true;
+        }
+        return false;
+    }
+
+    if index >= arr.len() {
+        return false;
+    }
+
+    if let Some(slot) = arr.get_mut(index) {
+        return ObjectField::set_by_path(slot, &keys[1..], value);
+    }
+
+    false
 }
 
 impl<'a> RuleMut<'a> for ObjectField {
@@ -313,7 +361,9 @@ impl<'a> RuleMut<'a> for ObjectField {
                             .cloned()
                             .or_else(|| function_value_from_node(&value_node));
 
-                        if let Some(value_data @ (Object { .. } | Function { .. })) = value_data {
+                        if let Some(value_data @ (Object { .. } | Function { .. } | Array(_))) =
+                            value_data
+                        {
                             self.scope_manager.current_mut().assign(
                                 &var_name,
                                 value_data,
@@ -336,7 +386,9 @@ impl<'a> RuleMut<'a> for ObjectField {
                             .cloned()
                             .or_else(|| function_value_from_node(&right));
 
-                        if let Some(right_data @ (Object { .. } | Function { .. })) = right_data {
+                        if let Some(right_data @ (Object { .. } | Function { .. } | Array(_))) =
+                            right_data
+                        {
                             self.scope_manager.current_mut().assign(
                                 &var_name,
                                 right_data,
@@ -368,6 +420,14 @@ impl<'a> RuleMut<'a> for ObjectField {
                             })
                             .or_else(|| function_value_from_node(&right));
                         if let Some(data) = rhs_data {
+                            if let Some(root) =
+                                self.scope_manager.current_mut().get_var_mut(&base_name)
+                            {
+                                if Self::set_by_path(root, &access.keys, data.clone()) {
+                                    return Ok(());
+                                }
+                            }
+
                             if self.scope_manager.current().get_var(&base_name).is_none()
                                 && matches!(access.base_value, Some(Object { .. }))
                             {
@@ -438,7 +498,28 @@ impl<'a> RuleMut<'a> for ObjectField {
                                 .unwrap_or(false)
                             && !get_positional_arguments(parent.named_child("arguments")).is_empty()
                         {
-                            // let the dedicated ToString rule resolve radix-aware calls for integers
+                            return Ok(());
+                        }
+
+                        let is_callee = view
+                            .parent()
+                            .filter(|p| p.kind() == "call_expression")
+                            .and_then(|p| p.named_child("function").or_else(|| p.child(0)))
+                            .map(|callee| {
+                                callee.start_abs() == view.start_abs()
+                                    && callee.end_abs() == view.end_abs()
+                            })
+                            .unwrap_or(false);
+
+                        if is_callee
+                            && !matches!(
+                                &value,
+                                Function {
+                                    return_value: Some(_),
+                                    ..
+                                }
+                            )
+                        {
                             return Ok(());
                         }
 
@@ -450,7 +531,6 @@ impl<'a> RuleMut<'a> for ObjectField {
                             } if source.contains("[native code]")
                         ) && !Self::is_string_concat_target(&view)
                         {
-                            // keep original constructor/at access except in + coercion contexts.
                             return Ok(());
                         }
 
@@ -463,6 +543,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                     }
                 }
             }
+
             "identifier" => {
                 if !is_write_target(&view) {
                     if let Some(parent) = view.parent()
@@ -479,7 +560,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                     }
 
                     let var_name = view.text()?.to_string();
-                    if let Some(value @ (Object { .. } | Function { .. })) =
+                    if let Some(value @ (Object { .. } | Function { .. } | Array(_))) =
                         self.scope_manager.current().get_var(&var_name)
                     {
                         node.set(value.clone());
@@ -495,7 +576,7 @@ impl<'a> RuleMut<'a> for ObjectField {
 
 #[cfg(test)]
 mod tests {
-    use crate::js::array::{GetArrayElement, ParseArray};
+    use crate::js::array::{ArrayBuiltins, GetArrayElement, ParseArray};
     use crate::js::bool::ParseBool;
     use crate::js::build_javascript_tree;
     use crate::js::forward::Forward;
@@ -521,6 +602,7 @@ mod tests {
                 ParseFunction::default(),
                 ParseObject::default(),
                 ParseSpecials::default(),
+                ArrayBuiltins::default(),
                 Forward::default(),
                 GetArrayElement::default(),
                 ObjectField::default(),
