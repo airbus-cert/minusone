@@ -633,6 +633,8 @@ impl<'a> RuleMut<'a> for Substract {
                     let right = r.as_js_num();
                     if left == NaN || right == NaN {
                         trace!("Substract (L): one of the operands is NaN, result is NaN");
+                        node.reduce(NaN);
+                        return Ok(());
                     }
 
                     if let (Raw(Num(l)), Raw(Num(r))) = (left, right) {
