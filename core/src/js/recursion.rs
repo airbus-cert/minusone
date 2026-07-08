@@ -1,5 +1,3 @@
-//! Depth-tracking utility for rules that recurse into function calls or `eval`.
-
 use crate::tree::Node;
 use std::cell::Cell;
 
@@ -8,11 +6,6 @@ thread_local! {
 }
 
 /// Cross-instance recursion bracket. Sub-pipelines spawn fresh `FnCall`
-/// instances with their own `RecursionTracker`, so the per-instance counter
-/// would reset to zero on every nested deobfuscation. The thread-local
-/// `GLOBAL_DEPTH` is shared between all `FnCall` instances on the same
-/// thread, so an inner sub-tree can see how deep the outer caller is and
-/// refuse to recurse past `DEFAULT_MAX_RECURSION_DEPTH`.
 pub fn try_global_bump() -> bool {
     GLOBAL_DEPTH.with(|c| {
         let depth = c.get();
@@ -36,9 +29,7 @@ pub fn global_depth() -> usize {
     GLOBAL_DEPTH.with(|c| c.get())
 }
 
-/// RAII bracket for the thread-local global counter. Returns `None` when
-/// the cap has been reached; otherwise releases the slot when dropped, so
-/// early returns and `?` propagation keep the counter consistent.
+// Returns `None` when the cap has been reached
 pub struct GlobalRecursionGuard {
     _private: (),
 }
@@ -98,10 +89,7 @@ impl RecursionTracker {
     pub fn reset(&mut self) {
         self.depth = 0;
     }
-
-    /// Imperative bracket for recursive callees that need `&mut self` access
-    /// (the RAII guard would conflict with the borrow checker). Each successful
-    /// `bump` must be paired with exactly one `unbump`.
+    
     pub fn bump(&mut self) -> bool {
         if self.depth >= self.max_depth {
             log::trace!(

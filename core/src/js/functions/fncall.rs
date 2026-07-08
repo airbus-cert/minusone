@@ -46,17 +46,13 @@ pub struct FnCall {
     var_shapes: HashMap<String, FunctionShape>,
     object_field_shapes: HashMap<(String, String), FunctionShape>,
     shapes_by_source: HashMap<String, FunctionShape>,
-    // All top-level function declarations as raw source, prepended to every
-    // synthesised sub-program so sub-FnCall can hoist + resolve nested calls.
+    // All top-level function declarations as raw source, can hoist + resolve nested calls.
     fn_decl_prelude: String,
 }
 
 #[derive(Clone)]
 struct FunctionShape {
     params: Vec<String>,
-    // Body source text, with the outer `{` / `}` already stripped so we can
-    // splice it directly into a synthesised sub-program (after binding params
-    // as top-level vars).
     body_inner: String,
 }
 
@@ -227,11 +223,6 @@ impl FnCall {
         let body = function_node.named_child("body")?;
         let body_text = body.text().ok()?;
 
-        // For statement-block bodies (`function f() { ... }`), strip the
-        // outer braces so the inner statements can be spliced directly into
-        // a parent program. For arrow expression bodies (`x => x.foo()`),
-        // wrap the expression in a `return` so it has the same semantics
-        // when spliced.
         let body_inner = if body.kind() == "statement_block" {
             let trimmed = body_text.trim();
             let stripped = trimmed
@@ -246,13 +237,6 @@ impl FnCall {
 
         Some(FunctionShape { params, body_inner })
     }
-
-    // -----------------------------------------------------------------
-    //  Subtree-based evaluation: synthesise `var p = V; <body>` and run
-    //  the full JavaScript ruleset on a fresh tree so method calls,
-    //  array operations, regex, etc. — anything minusone already handles
-    //  — work inside function bodies without re-implementing them.
-    // -----------------------------------------------------------------
 
     fn js_value_to_source(value: &JavaScript) -> Option<String> {
         match value {
@@ -298,9 +282,6 @@ impl FnCall {
         out
     }
 
-    /// Strict positional extraction: returns None as soon as any arg has no
-    /// inferred data, so we never silently shift later args into earlier
-    /// parameter slots when running on a sub-tree.
     fn extract_positional_call_args(call_node: &Node<JavaScript>) -> Option<Vec<JavaScript>> {
         let arguments_node = call_node.named_child("arguments")?;
         let mut args = Vec::new();
@@ -313,16 +294,7 @@ impl FnCall {
         Some(args)
     }
 
-    /// Walk the deobfuscated sub-program, find the FIRST top-level
-    /// `return_statement` (the one that survived CleanEngine's
-    /// constant-`if` collapse), and read the data attached to its
-    /// expression. Returns are only honoured at program scope: anything
-    /// still nested inside a surviving conditional means we couldn't
-    /// statically pick a branch and we must bail.
     fn extract_top_level_return_value(root: &Node<JavaScript>) -> Option<JavaScript> {
-        // Bail when any return survives nested in a control-flow structure:
-        // an opaque condition would otherwise let us pick the later top-level
-        // return and silently drop the alternative branch.
         if Self::has_nested_return_in_control_flow(root) {
             return None;
         }
@@ -370,11 +342,6 @@ impl FnCall {
         false
     }
 
-    /// Synthesise `<prelude>; var p1 = V1; ...; <body>` and run the full
-    /// JavaScript backend on it. The body is included verbatim — its
-    /// `return` statements stay where they are. After the backend reduces
-    /// the program, exactly one top-level `return` survives if the body is
-    /// reducible, and its expression carries the value.
     fn evaluate_shape_via_subtree(
         shape: &FunctionShape,
         args: &[JavaScript],
@@ -404,18 +371,8 @@ impl FnCall {
         Self::run_subtree_pipeline(&program)
     }
 
-    /// Run the full minusone JavaScript pipeline on `program` and return the
-    /// stabilised source. Shared by every subtree-based resolver (function
-    /// calls, eval) so they all see exactly the same rules.
     fn stabilise_via_minusone(program: &str) -> Option<String> {
-        // 1. Pre-process: InlineIife, ExpandAugmentedAssignment, ReduceSequence,
-        //    UnusedVar+RemoveUnused (which does the constant-condition `if` collapsing).
         let cleaned = JavaScriptBackend::remove_extra(program).ok()?;
-
-        // 2. Apply ruleset, lint, post-clean. Iterate the (rules + clean)
-        //    pair until the source stabilises - one cycle isn't enough when
-        //    a constant `if` collapse on iteration N exposes new constant
-        //    folds for iteration N+1 (e.g. recursive call resolution).
         const SUBTREE_FIXPOINT_ITER_CAP: usize = 8;
         let mut current = cleaned;
         for _ in 0..SUBTREE_FIXPOINT_ITER_CAP {
@@ -700,13 +657,6 @@ impl FnCall {
         }
     }
 
-    /// Runs the full `JavaScriptRuleSet` on the eval'd source so the same
-    /// rules that reduce the host program apply inside eval. We skip
-    /// `JavaScriptBackend::remove_extra` here on purpose: it would
-    /// dead-code-remove standalone expressions like `eval('5')` before any
-    /// rule had a chance to attach data. The `GlobalRecursionGuard` at the
-    /// call site bounds eval-in-eval chains across the fresh `FnCall`
-    /// instance the inner tree spawns.
     fn evaluate_eval_source(source: &str) -> Option<JavaScript> {
         let mut tree = build_javascript_tree(source).ok()?;
         tree.apply_mut_with_strategy(
@@ -733,9 +683,6 @@ impl FnCall {
 
         let source = Self::eval_source_from_argument(&positional[0])?;
 
-        // GlobalRecursionGuard caps eval-in-eval chains across nested
-        // `FnCall` instances - the per-instance tracker resets in the inner
-        // tree, so only the thread-local counter sees the full depth.
         let _guard = GlobalRecursionGuard::enter()?;
         Self::evaluate_eval_source(&source)
     }
