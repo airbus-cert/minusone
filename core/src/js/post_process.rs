@@ -219,26 +219,26 @@ impl<'a> Rule<'a> for ForToWhile {
 ///
 /// # Example
 /// ```
-/// use minusone::js::post_process::BracketCallToMember;
+/// use minusone::js::post_process::BracketToMember;
 /// use minusone::js::build_javascript_tree_for_storage;
 /// use minusone::tree::EmptyStorage;
 ///
 /// let source = "console['log']('minusone');";
 /// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
 ///
-/// let mut bracket_to_member = BracketCallToMember::default();
+/// let mut bracket_to_member = BracketToMember::default();
 /// tree.apply(&mut bracket_to_member).unwrap();
 ///
 /// assert_eq!(bracket_to_member.clear().unwrap(), "console.log('minusone');");
 /// ```
 #[derive(Default)]
-pub struct BracketCallToMember {
+pub struct BracketToMember {
     source: String,
     output: String,
     last_index: usize,
 }
 
-impl BracketCallToMember {
+impl BracketToMember {
     pub fn clear(mut self) -> MinusOneResult<String> {
         if self.last_index < self.source.len() {
             self.output += &self.source[self.last_index..];
@@ -254,9 +254,9 @@ impl BracketCallToMember {
         }
     }
 
-    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
-        let start = node.start_abs().min(self.source.len());
-        let end = node.end_abs().min(self.source.len());
+    fn replace_range_with_text(&mut self, start: usize, end: usize, replacement: &str) {
+        let start = start.min(self.source.len());
+        let end = end.min(self.source.len());
 
         if start < self.last_index || end <= self.last_index || end <= start {
             return;
@@ -307,18 +307,14 @@ impl BracketCallToMember {
         chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
     }
 
-    fn bracket_call_to_member_text(node: &Node<()>) -> Option<String> {
-        if node.kind() != "call_expression" {
+    fn bracket_to_member_replacement(node: &Node<()>) -> Option<(usize, usize, String)> {
+        if node.kind() != "subscript_expression" {
             return None;
         }
 
-        let callee = node.child(0)?;
-        if callee.kind() != "subscript_expression" {
-            return None;
-        }
+        let object = node.child(0)?;
+        let index = node.named_child("index").or_else(|| node.child(2))?;
 
-        let object = callee.child(0)?;
-        let index = callee.named_child("index").or_else(|| callee.child(2))?;
         if index.kind() != "string" {
             return None;
         }
@@ -328,47 +324,36 @@ impl BracketCallToMember {
             return None;
         }
 
-        let args = node.child(1)?;
-        if args.kind() != "arguments" {
-            return None;
-        }
+        let start = object.end_abs();
+        let end = node.end_abs();
 
-        Some(format!(
-            "{}.{}{}",
-            object.text().ok()?.trim(),
-            key,
-            args.text().ok()?.trim()
-        ))
+        Some((start, end, format!(".{}", key)))
     }
 }
 
-impl<'a> Rule<'a> for BracketCallToMember {
+impl<'a> Rule<'a> for BracketToMember {
     type Language = ();
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-        match node.kind() {
-            "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
-            }
-            "call_expression" => {
-                if let Some(replacement) = Self::bracket_call_to_member_text(node) {
-                    trace!("BracketCallToMember: rewriting bracket call to member call");
-                    self.replace_node_with_text(node, &replacement);
-                    return Ok(false);
-                }
-            }
-            _ => {}
+        if node.kind() == "program" {
+            self.source = node.text()?.to_string();
+            self.last_index = 0;
         }
         Ok(true)
     }
 
-    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        if node.kind() == "subscript_expression" {
+            if let Some((start, end, replacement)) = Self::bracket_to_member_replacement(node) {
+                trace!("BracketToMember: rewriting bracket access to member access");
+                self.replace_range_with_text(start, end, &replacement);
+            }
+        }
         Ok(())
     }
 }
 
-/// Simplifies globalThis calls. most of the time, it requires `BracketCallToMember` to be called first.
+/// Simplifies globalThis calls. most of the time, it requires `BracketToMember` to be called first.
 ///
 /// # Example
 /// ```
@@ -407,9 +392,9 @@ impl GlobalThisSimplifier {
         }
     }
 
-    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
-        let start = node.start_abs().min(self.source.len());
-        let end = node.end_abs().min(self.source.len());
+    fn replace_range_with_text(&mut self, start: usize, end: usize, replacement: &str) {
+        let start = start.min(self.source.len());
+        let end = end.min(self.source.len());
 
         if start < self.last_index || end <= self.last_index || end <= start {
             return;
@@ -427,48 +412,47 @@ impl GlobalThisSimplifier {
         }
         self.last_index = end;
     }
+
+    fn global_this_replacement(node: &Node<()>) -> Option<(usize, usize, String)> {
+        if node.kind() != "member_expression" {
+            return None;
+        }
+
+        let object = node.child(0)?;
+        let object_text = object.text().ok()?;
+        let object_str = object_text.trim();
+
+        if !["globalThis", "globalthis", "global", "self", "window"].contains(&object_str) {
+            return None;
+        }
+
+        let dot = node.child(1)?;
+        if dot.kind() != "." {
+            return None;
+        }
+
+        Some((object.start_abs(), dot.end_abs(), String::new()))
+    }
 }
 
 impl<'a> Rule<'a> for GlobalThisSimplifier {
     type Language = ();
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-        match node.kind() {
-            "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
-            }
-            "call_expression" => {
-                // globalThis: browser + node
-                // global: node only
-                // self: browser only
-                // window: browser only
-                if let Some(callee) = node.child(0) {
-                    if callee.text()?.starts_with("globalThis.") {
-                        let replacement = &node.text()?[11..];
-                        self.replace_node_with_text(node, &replacement);
-                        return Ok(false);
-                    } else if callee.text()?.starts_with("global.") {
-                        let replacement = &node.text()?[7..];
-                        self.replace_node_with_text(node, &replacement);
-                        return Ok(false);
-                    } else if callee.text()?.starts_with("self.") {
-                        let replacement = &node.text()?[5..];
-                        self.replace_node_with_text(node, &replacement);
-                        return Ok(false);
-                    } else if callee.text()?.starts_with("window.") {
-                        let replacement = &node.text()?[7..];
-                        self.replace_node_with_text(node, &replacement);
-                        return Ok(false);
-                    }
-                }
-            }
-            _ => {}
+        if node.kind() == "program" {
+            self.source = node.text()?.to_string();
+            self.last_index = 0;
         }
         Ok(true)
     }
 
-    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        if node.kind() == "member_expression" {
+            if let Some((start, end, replacement)) = Self::global_this_replacement(node) {
+                trace!("GlobalThisSimplifier: removing global object reference");
+                self.replace_range_with_text(start, end, &replacement);
+            }
+        }
         Ok(())
     }
 }
@@ -1560,7 +1544,7 @@ mod test_js_deadcode {
         let rewritten = for_to_while.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
         let rewritten = bracket_to_member.clear().unwrap();
 

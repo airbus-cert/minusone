@@ -97,7 +97,7 @@ impl DeobfuscationBackend for JavaScriptBackend {
         // simplify bracket calls to member expressions to help some rules
         {
             let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-            let mut bracket_to_member = BracketCallToMember::default();
+            let mut bracket_to_member = BracketToMember::default();
             tree.apply(&mut bracket_to_member)?;
             current = bracket_to_member.clear()?;
         }
@@ -213,9 +213,8 @@ impl CleanBackend for JavaScriptBackend {
             }
         }
 
-        // simplify bracket calls to member expressions to make it more "human readable"
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member)?;
         current = bracket_to_member.clear()?;
 

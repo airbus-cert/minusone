@@ -26,7 +26,7 @@ mod test_js_post_process {
         let rewritten = for_to_while.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
         let rewritten = bracket_to_member.clear().unwrap();
 
