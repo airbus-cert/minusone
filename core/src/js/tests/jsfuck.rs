@@ -11,7 +11,7 @@ pub mod jsfuck_tests {
     use crate::js::integer::*;
     use crate::js::linter::Linter;
     use crate::js::objects::object::*;
-    use crate::js::post_process::BracketCallToMember;
+    use crate::js::post_process::BracketToMember;
     use crate::js::specials::*;
     use crate::js::string::*;
     use crate::js::var::*;
@@ -22,7 +22,7 @@ pub mod jsfuck_tests {
 
     fn deobfuscate(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
         let input = bracket_to_member.clear().unwrap();
 

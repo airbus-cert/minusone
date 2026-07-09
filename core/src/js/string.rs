@@ -1655,7 +1655,7 @@ mod tests_js_string {
     use crate::js::forward::Forward;
     use crate::js::integer::{AddInt, ParseInt, PosNeg};
     use crate::js::linter::Linter;
-    use crate::js::post_process::BracketCallToMember;
+    use crate::js::post_process::BracketToMember;
     use crate::js::regex::ParseRegex;
     use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::string::*;
@@ -1665,7 +1665,7 @@ mod tests_js_string {
 
     fn deobfuscate(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
         let input = bracket_to_member.clear().unwrap();
 
