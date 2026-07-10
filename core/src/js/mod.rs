@@ -11,6 +11,7 @@ pub mod globals;
 pub mod integer;
 pub mod iterator;
 pub mod linter;
+pub mod r#loop;
 pub mod math;
 pub mod node;
 pub mod objects;
@@ -41,6 +42,7 @@ use self::iterator::*;
 #[cfg(test)]
 use self::linter::Linter;
 use self::linter::RemoveComment;
+use self::r#loop::*;
 use self::math::*;
 use self::node::buffer::*;
 use self::objects::object::*;
@@ -242,6 +244,7 @@ impl_javascript_ruleset!(
     StringBuiltins,       // Shared dispatcher for string literal builtins (.at, etc.)
     NumberBuiltins,       // Shared dispatcher for string literal builtins (.toPrecision, etc.)
     ArrayBuiltins,        // Shared dispatcher for array literals builtins (.at, etc.)
+    ArrayMapFilter,       // Infer deterministic array .map(...) and .filter(...) calls
     IteratorBuiltins,     // Shared dispatcher for iterators literals builtins (.next, etc.)
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
