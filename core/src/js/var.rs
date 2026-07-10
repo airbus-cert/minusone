@@ -125,6 +125,9 @@ impl<'a> RuleMut<'a> for Var {
             | "generator_function_declaration"
             | "generator_function" => {
                 self.scope_manager.enter();
+                if let Some(body) = view.named_child("body") {
+                    self.forget_assigned_var(&body)?;
+                }
             }
             // bloc scopes but NOT when parent is a function, because we already pushed a scope for the function itself
             "statement_block" => {
@@ -135,11 +138,7 @@ impl<'a> RuleMut<'a> for Var {
                         | "arrow_function"
                         | "method_definition"
                         | "generator_function_declaration"
-                        | "generator_function" => {
-                            if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
-                                self.forget_assigned_var(&view)?;
-                            }
-                        }
+                        | "generator_function" => {}
                         _ => {
                             // Non-function block: push a block scope
                             self.scope_manager.enter();

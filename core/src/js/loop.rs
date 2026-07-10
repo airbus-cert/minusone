@@ -251,8 +251,11 @@ impl ArrayMapFilter {
             _ => None,
         }
     }
-    
-    fn mutates_free_var(node: &Node<JavaScript>, locals: &std::collections::HashSet<String>) -> bool {
+
+    fn mutates_free_var(
+        node: &Node<JavaScript>,
+        locals: &std::collections::HashSet<String>,
+    ) -> bool {
         for child in node.iter() {
             match child.kind() {
                 "assignment_expression" | "augmented_assignment_expression" => {
@@ -587,6 +590,30 @@ mod tests_js_loop {
         assert_eq!(
             deobfuscate("var x = [1, 2, 3].map(foo);"),
             "var x = [1, 2, 3].map(foo);"
+        );
+    }
+
+    #[test]
+    fn test_map_redundant_parens_around_callback() {
+        assert_eq!(
+            deobfuscate("var x = [1, 2, 3].map(((e) => e + 1));"),
+            "var x = [2, 3, 4];"
+        );
+    }
+
+    #[test]
+    fn test_map_closure_over_outer_const() {
+        assert_eq!(
+            deobfuscate("var offset = 10; var x = [1, 2, 3].map(e => e + offset);"),
+            "var offset = 10; var x = [11, 12, 13];"
+        );
+    }
+
+    #[test]
+    fn test_map_mutating_outer_var_leaves_call_untouched() {
+        assert_eq!(
+            deobfuscate("var x = 0; [1, 2, 3].map(() => x = x + 1);"),
+            "var x = 0; [1, 2, 3].map(() => x = x + 1);"
         );
     }
 }
