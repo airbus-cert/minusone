@@ -8,7 +8,7 @@ use crate::js::objects::objectify::as_object;
 use crate::js::regex::RegexExec;
 use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
 use crate::rule::RuleMut;
-use crate::tree::{ControlFlow, NodeMut};
+use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{error, trace, warn};
 
 /// Parses JavaScript string literals into `Raw(Str(_))`.
@@ -1041,6 +1041,21 @@ impl<'a> RuleMut<'a> for CharCodeAt {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = 'ABC';");
 /// ```
+/// Recognizes the `String` constructor, either named directly (`String`) or
+/// reached the way pure JSFuck does — as the `constructor` of any string value,
+/// e.g. `''["constructor"]` or `([]+[])["constructor"]`.
+fn is_string_constructor(node: &Node<JavaScript>) -> bool {
+    if node.text().map(|t| t == "String").unwrap_or(false) {
+        return true;
+    }
+    if method_name(node).as_deref() == Some("constructor")
+        && let Some(object) = node.child(0).or_else(|| node.named_child("object"))
+    {
+        return matches!(object.data(), Some(Raw(Str(_))));
+    }
+    false
+}
+
 #[derive(Default)]
 pub struct FromCharCode;
 
@@ -1079,10 +1094,7 @@ impl<'a> RuleMut<'a> for FromCharCode {
         let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
             return Ok(());
         };
-        let Ok(object_name) = object.text() else {
-            return Ok(());
-        };
-        if object_name != "String" {
+        if !is_string_constructor(&object) {
             return Ok(());
         }
 

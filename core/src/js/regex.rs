@@ -3,7 +3,7 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Null, Raw, Regex, Undefined};
 use crate::js::Value::{Bool, Num, Str};
 use crate::js::string::Concat;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{builder_returned_identifier, get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -31,7 +31,7 @@ use std::collections::HashSet;
 pub struct ParseRegex;
 
 impl ParseRegex {
-    fn parse_regex_literal(raw: &str) -> Option<(String, String)> {
+    pub fn parse_regex_literal(raw: &str) -> Option<(String, String)> {
         if !raw.starts_with('/') {
             return None;
         }
@@ -76,7 +76,16 @@ impl ParseRegex {
         args: Option<Node<JavaScript>>,
     ) -> Option<JavaScript> {
         let callee = callee?;
-        if callee.text().ok()? != "RegExp" {
+        // `RegExp(...)` directly, reached through the JSFuck universal builder `Function("return RegExp")()(...)`
+        let is_regexp = callee.text().ok().as_deref() == Some("RegExp")
+            || builder_returned_identifier(&callee).as_deref() == Some("RegExp")
+            || (method_name(&callee).as_deref() == Some("constructor")
+                && callee
+                    .child(0)
+                    .or_else(|| callee.named_child("object"))
+                    .and_then(|o| o.data().cloned())
+                    .is_some_and(|d| matches!(d, JavaScript::Regex { .. })));
+        if !is_regexp {
             return None;
         }
 

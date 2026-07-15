@@ -3,6 +3,53 @@ use crate::js::JavaScript::{Function, NaN, Raw};
 use crate::js::Value::{Num, Str};
 use crate::tree::Node;
 
+/// see [this](https://stackoverflow.com/a/63713987)
+pub fn builder_returned_identifier(callee: &Node<JavaScript>) -> Option<String> {
+    if callee.kind() == "parenthesized_expression" {
+        let inner = callee.iter().find(|c| !matches!(c.kind(), "(" | ")"))?;
+        return builder_returned_identifier(&inner);
+    }
+    if callee.kind() != "call_expression" {
+        return None;
+    }
+    if !get_positional_arguments(callee.named_child("arguments")).is_empty() {
+        return None;
+    }
+
+    let inner = callee.named_child("function").or_else(|| callee.child(0))?;
+    if inner.kind() != "call_expression" {
+        return None;
+    }
+
+    let inner_callee = inner.named_child("function").or_else(|| inner.child(0))?;
+    let is_function_constructor = method_name(&inner_callee).as_deref() == Some("constructor")
+        || inner_callee
+            .text()
+            .map(|t| t == "Function")
+            .unwrap_or(false);
+    if !is_function_constructor {
+        return None;
+    }
+
+    let inner_args = get_positional_arguments(inner.named_child("arguments"));
+    if inner_args.len() != 1 {
+        return None;
+    }
+    let Some(Raw(Str(body))) = inner_args[0].data() else {
+        return None;
+    };
+
+    let name = body.trim().strip_prefix("return")?.trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
+
 pub fn method_name(callee: &Node<JavaScript>) -> Option<String> {
     match callee.kind() {
         "member_expression" => callee

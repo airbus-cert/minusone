@@ -92,13 +92,10 @@ fn array_builtins(array: Vec<JavaScript>) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
     map.insert("length".to_string(), Raw(Num(array.len() as f64)));
 
-    map.insert(
-        "flat".to_string(),
-        Function {
-            source: "function flat() { [native code] }".to_string(),
-            return_value: None,
-        },
-    );
+    // jsfuck native code harvesters
+    for name in ["flat", "filter", "fill", "find", "keys", "values"] {
+        map.insert(name.to_string(), native_function(name));
+    }
 
     map
 }

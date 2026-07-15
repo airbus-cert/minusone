@@ -3,6 +3,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::Bool;
 use crate::js::Value::{Num, Str};
 use crate::js::b64::js_bytes_to_string;
+use crate::js::objects::objectify::as_object;
 use crate::js::utils::*;
 use crate::js::{IteratorKind, JavaScript};
 use crate::rule::RuleMut;
@@ -942,6 +943,87 @@ impl<'a> RuleMut<'a> for CombineArrays {
 /// tree.apply(&mut linter).unwrap();
 /// assert_eq!(linter.output, "var x = [2, '3'];");
 /// ```
+/// Infers `Array.prototype.concat` calls on literal arrays and reduces them to a
+/// single array literal. JSFuck relies on this to build a comma:
+/// `[[]]["concat"]([[]]) + []` => `","`.
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::array::{ParseArray, ArrayConcat, CombineArrays};
+/// use minusone::js::string::ParseString;
+/// use minusone::js::linter::Linter;
+///
+/// let mut tree = build_javascript_tree("[[]]['concat']([[]])+[]").unwrap();
+/// tree.apply_mut(&mut (
+///     ParseString::default(),
+///     ParseArray::default(),
+///     ArrayConcat::default(),
+///     CombineArrays::default(),
+/// )).unwrap();
+///
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert_eq!(linter.output, "','");
+/// ```
+#[derive(Default)]
+pub struct ArrayConcat;
+
+impl<'a> RuleMut<'a> for ArrayConcat {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() != "call_expression" {
+            return Ok(());
+        }
+
+        let Some(callee) = view.named_child("function").or_else(|| view.child(0)) else {
+            return Ok(());
+        };
+        if method_name(&callee).as_deref() != Some("concat") {
+            return Ok(());
+        }
+
+        let Some(object) = callee.child(0).or_else(|| callee.named_child("object")) else {
+            return Ok(());
+        };
+        let Some(Array(base)) = object.data() else {
+            return Ok(());
+        };
+
+        let mut result = base.clone();
+        for arg in get_positional_arguments(view.named_child("arguments")) {
+            match arg.data() {
+                // concat spreads array arguments one level deep
+                Some(Array(items)) => result.extend(items.iter().cloned()),
+                Some(value) => result.push(value.clone()),
+                // an unresolved argument: leave the call untouched
+                None => return Ok(()),
+            }
+        }
+
+        trace!(
+            "ArrayConcat: reducing concat() call to an array of {} element(s)",
+            result.len()
+        );
+        node.reduce(Array(result));
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub struct GetArrayElement;
 
@@ -1055,7 +1137,11 @@ impl<'a> RuleMut<'a> for GetArrayElement {
                     }
                     Ok(())
                 } else {
-                    if index_str == "constructor" || index_str == "at" {
+                    // A non-numeric key is a prototype member (e.g. "filter", "constructor"), used for jsfuck
+                    let is_prototype_member = as_object(array_node.data().unwrap())
+                        .map(|o| matches!(&o, Object { map, .. } if map.contains_key(index_str.as_str())))
+                        .unwrap_or(false);
+                    if is_prototype_member {
                         trace!(
                             "GetArrayElement: preserving known array property access '{}', defer to object coercion",
                             index_str
@@ -1094,11 +1180,7 @@ pub fn flatten_array(arr: &Vec<JavaScript>, separator: Option<String>) -> String
 fn flatten_value(value: &JavaScript, separator: Option<String>) -> String {
     match value {
         Array(arr) => flatten_array(arr, separator.clone()),
-        Raw(Num(n)) => match *n {
-            f64::INFINITY => "Infinity".to_string(),
-            f64::NEG_INFINITY => "-Infinity".to_string(),
-            n => n.to_string(),
-        },
+        Raw(Num(n)) => Num(*n).to_string(),
         Raw(Str(s)) => s.clone(),
         Raw(Bool(b)) => b.to_string(),
 

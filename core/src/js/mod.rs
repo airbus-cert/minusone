@@ -10,6 +10,7 @@ pub mod functions;
 pub mod globals;
 pub mod integer;
 pub mod iterator;
+pub mod jsfuck;
 pub mod linter;
 pub mod math;
 pub mod node;
@@ -38,6 +39,7 @@ use self::functions::fncall::*;
 use self::functions::function::*;
 use self::integer::*;
 use self::iterator::*;
+use self::jsfuck::*;
 #[cfg(test)]
 use self::linter::Linter;
 use self::linter::RemoveComment;
@@ -239,6 +241,7 @@ impl_javascript_ruleset!(
     BoolAlgebra,          // Infer boolean algebra operations (&&, ||)
     AddBool,              // Infer boolean addition operations
     CombineArrays,        // Infer + operations on two arrays
+    ArrayConcat,          // Infer Array.prototype.concat calls on literal arrays
     StringBuiltins,       // Shared dispatcher for string literal builtins (.at, etc.)
     NumberBuiltins,       // Shared dispatcher for string literal builtins (.toPrecision, etc.)
     ArrayBuiltins,        // Shared dispatcher for array literals builtins (.at, etc.)
@@ -266,6 +269,7 @@ impl_javascript_ruleset!(
     BufferToString, // Infer Buffer.toString(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
+    JsFuckLevelNine, // Resolve the JSFuck level-9 Function("return '\uXXXX'")() universal builder
     StrictEq,       // Infer strict equality === and !==
     LooseEq,        // Infer strict equality == and !=
     CmpOrd,         // Infer comparison operators <, >, <= and >=

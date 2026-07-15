@@ -54,8 +54,13 @@ impl<'a> RuleMut<'a> for EncodeDecodeBuiltins {
             return Ok(());
         };
 
-        let Ok(method) = callee.text() else {
-            return Ok(());
+        // see [this](https://stackoverflow.com/a/63713987)
+        let method: String = match callee.text() {
+            Ok(name) if ENCODE_BUILTINS.iter().any(|(n, _)| *n == name) => name.to_string(),
+            _ => match builder_returned_identifier(&callee) {
+                Some(name) => name,
+                None => return Ok(()),
+            },
         };
 
         let args = view.named_child("arguments");
@@ -68,7 +73,7 @@ impl<'a> RuleMut<'a> for EncodeDecodeBuiltins {
             arg_values.push(value);
         }
 
-        let Some(result) = dispatch_encode_builtin(method, &arg_values) else {
+        let Some(result) = dispatch_encode_builtin(&method, &arg_values) else {
             return Ok(());
         };
 
@@ -331,7 +336,7 @@ mod test_encode_decode {
             "'https://mozilla.org/?x=%D1%88%D0%B5%D0%BB%D0%BB%D1%8B';"
         );
         assert_eq!(deobfuscate("encodeURI(';,/?:@&=+$#');"), "';,/?:@&=+$#';");
-        assert_eq!(deobfuscate("encodeURI('-_.!~*\\'()');"), "\"-_.!~*\'()\";");
+        assert_eq!(deobfuscate("encodeURI('-_.!~*\\'()');"), "\"-_.!~*'()\";");
         assert_eq!(
             deobfuscate("encodeURI('ABC abc 123');"),
             "'ABC%20abc%20123';"
