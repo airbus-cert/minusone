@@ -1,6 +1,6 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript::*;
-use crate::js::Value::Str;
+use crate::js::Value::{Bool, Str};
 use crate::js::array::flatten_array;
 use crate::js::build_javascript_tree;
 use crate::js::strategy::JavaScriptStrategy;
@@ -9,7 +9,8 @@ use crate::js::{JavaScript, JavaScriptRuleSet};
 use crate::rule::{RuleMut, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{trace, warn};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 
 const MAX_MAP_FILTER_DEPTH: usize = 4;
 
@@ -439,6 +440,267 @@ impl<'a> RuleMut<'a> for ArrayMapFilter {
     }
 }
 
+const MAX_FOR_ITERATIONS: usize = 10_000;
+pub const MAX_FOR_DEPTH: usize = 3;
+
+thread_local! {
+    static FOR_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static FOR_LOOP_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static FOR_LOOP_RESULTS: RefCell<HashMap<usize, Vec<(String, JavaScript)>>> =
+        RefCell::new(HashMap::new());
+}
+
+pub fn is_for_loop_enabled() -> bool {
+    FOR_LOOP_ENABLED.get()
+}
+
+pub fn for_depth_get() -> usize {
+    FOR_DEPTH.get()
+}
+
+pub fn for_depth_inc() {
+    FOR_DEPTH.with(|d| d.set(d.get() + 1));
+}
+
+pub fn for_depth_dec() {
+    FOR_DEPTH.with(|d| d.set(d.get() - 1));
+}
+
+pub fn clear_for_loop_results() {
+    FOR_LOOP_RESULTS.with(|m| m.borrow_mut().clear());
+}
+
+pub fn take_for_loop_result(node_id: usize) -> Option<Vec<(String, JavaScript)>> {
+    FOR_LOOP_RESULTS.with(|m| m.borrow_mut().remove(&node_id))
+}
+
+pub fn store_for_loop_result(node_id: usize, vars: Vec<(String, JavaScript)>) {
+    FOR_LOOP_RESULTS.with(|m| m.borrow_mut().insert(node_id, vars));
+}
+
+pub fn body_has_bail_node<T>(node: &Node<T>) -> bool {
+    for child in node.iter() {
+        match child.kind() {
+            "break_statement" | "continue_statement" | "return_statement" | "throw_statement"
+            | "for_statement" | "while_statement" | "do_statement" | "for_in_statement"
+            | "for_of_statement" => return true,
+            "function_declaration"
+            | "function"
+            | "arrow_function"
+            | "method_definition"
+            | "generator_function_declaration"
+            | "generator_function" => {}
+            _ => {
+                if body_has_bail_node(&child) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+pub fn extract_for_parts(node: &Node<JavaScript>) -> Option<(String, String, String, String)> {
+    let init = node.named_child("initializer")?;
+    let condition = node.named_child("condition")?;
+    let update = node.named_child("increment")?;
+    let body = node.named_child("body")?;
+    Some((
+        init.text().ok()?.to_string(),
+        condition.text().ok()?.to_string(),
+        update.text().ok()?.to_string(),
+        body.text().ok()?.to_string(),
+    ))
+}
+
+pub fn vars_to_source(vars: &[(String, JavaScript)]) -> String {
+    vars.iter()
+        .map(|(name, val)| format!("var {name} = {val};\n"))
+        .collect()
+}
+
+fn collect_declarator_names_from_root<T>(node: &Node<T>, names: &mut HashSet<String>) {
+    for child in node.iter() {
+        if child.kind() == "variable_declarator"
+            && let Some(name_node) = child.named_child("name")
+            && name_node.kind() == "identifier"
+            && let Ok(name) = name_node.text()
+            && !name.starts_with("__v_")
+        {
+            names.insert(name.to_string());
+        }
+        collect_declarator_names_from_root(&child, names);
+    }
+}
+
+fn collect_declared_names(src: &str) -> Vec<String> {
+    let Ok(tree) = build_javascript_tree(src) else {
+        return vec![];
+    };
+    let Ok(root) = tree.root() else {
+        return vec![];
+    };
+    let mut names = HashSet::new();
+    collect_declarator_names_from_root(&root, &mut names);
+    names.into_iter().collect()
+}
+
+pub fn run_program_extract_state(
+    src: &str,
+    tracked: &[String],
+) -> Option<(Vec<(String, JavaScript)>, JavaScript)> {
+    let snapshot_suffix: String = tracked
+        .iter()
+        .map(|name| format!("var __v_{name} = {name};\n"))
+        .collect();
+    let full_src = format!("{src}\n{snapshot_suffix}");
+
+    let mut tree = build_javascript_tree(&full_src).ok()?;
+    tree.apply_mut_with_strategy(
+        &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+        JavaScriptStrategy,
+    )
+    .ok()?;
+
+    let root = tree.root().ok()?;
+    let mut state: HashMap<String, JavaScript> = HashMap::new();
+    let mut condition: Option<JavaScript> = None;
+
+    for stmt in root.iter() {
+        match stmt.kind() {
+            "variable_declaration" | "lexical_declaration" => {
+                for child in stmt.iter() {
+                    if child.kind() == "variable_declarator"
+                        && let Some(name_node) = child.named_child("name")
+                        && name_node.kind() == "identifier"
+                        && let Ok(name) = name_node.text()
+                        && let Some(real_name) = name.strip_prefix("__v_")
+                        && let Some(val_node) = child.named_child("value")
+                        && let Some(data) = val_node.data()
+                    {
+                        state.insert(real_name.to_string(), data.clone());
+                    }
+                }
+            }
+            "expression_statement" => {
+                for child in stmt.iter() {
+                    if child.kind() != ";" {
+                        if let Some(data) = child.data() {
+                            condition = Some(data.clone());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let condition = condition?;
+    Some((state.into_iter().collect(), condition))
+}
+
+pub fn simulate_for_loop(
+    scope_snapshot: &str,
+    init_src: &str,
+    condition_src: &str,
+    update_src: &str,
+    body_src: &str,
+) -> Option<Vec<(String, JavaScript)>> {
+    let init_program = format!("{scope_snapshot}{init_src}\n({condition_src})");
+    let init_var_names = collect_declared_names(init_src);
+
+    // discover all variable names present after init by running the init program
+    let mut tracked: Vec<String> = {
+        let mut tree = build_javascript_tree(&init_program).ok()?;
+        tree.apply_mut_with_strategy(
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
+        )
+        .ok()?;
+        let root = tree.root().ok()?;
+        let mut names = HashSet::new();
+        collect_declarator_names_from_root(&root, &mut names);
+        names.into_iter().collect()
+    };
+    for name in &init_var_names {
+        if !tracked.contains(name) {
+            tracked.push(name.clone());
+        }
+    }
+
+    let (mut state, first_condition) = run_program_extract_state(&init_program, &tracked)?;
+
+    match first_condition {
+        Raw(Bool(false)) => return Some(state),
+        Raw(Bool(true)) => {}
+        _ => return None,
+    }
+
+    for _ in 0..MAX_FOR_ITERATIONS {
+        let state_src = vars_to_source(&state);
+        let iter_program = format!("{state_src}{body_src}\n{update_src};\n({condition_src})");
+        let (new_state, condition) = run_program_extract_state(&iter_program, &tracked)?;
+        state = new_state;
+
+        match condition {
+            Raw(Bool(false)) => return Some(state),
+            Raw(Bool(true)) => continue,
+            _ => return None,
+        }
+    }
+
+    None
+}
+
+/// Simulates deterministic `for` loops (no break/continue/return/throw, no nested loops)
+///
+/// # Example
+/// ```
+/// use minusone::js::build_javascript_tree;
+/// use minusone::js::r#loop::ForLoop;
+/// use minusone::js::var::Var;
+/// use minusone::js::linter::Linter;
+/// use minusone::js::strategy::JavaScriptStrategy;
+/// use minusone::js::JavaScriptRuleSet;
+/// use minusone::rule::RuleSetBuilderType;
+///
+/// let mut tree = build_javascript_tree(
+///     "var s = ''; for(var i = 0; i < 3; i++) { s = s + String.fromCharCode(65 + i); } var out = s;"
+/// ).unwrap();
+/// tree.apply_mut_with_strategy(
+///     &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+///     JavaScriptStrategy,
+/// ).unwrap();
+/// let mut linter = Linter::default();
+/// tree.apply(&mut linter).unwrap();
+/// assert!(linter.output.contains("var out = 'ABC';"));
+/// ```
+#[derive(Default)]
+pub struct ForLoop;
+
+impl<'a> RuleMut<'a> for ForLoop {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        if node.view().kind() == "program" {
+            FOR_LOOP_ENABLED.set(true);
+        }
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests_js_loop {
     use super::*;
@@ -468,6 +730,18 @@ mod tests_js_loop {
         )
         .unwrap();
 
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
+
+    fn deobfuscate_for_loop(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
+        )
+        .unwrap();
         let mut linter = Linter::default();
         tree.apply(&mut linter).unwrap();
         linter.output
@@ -615,5 +889,53 @@ mod tests_js_loop {
             deobfuscate("var x = 0; [1, 2, 3].map(() => x = x + 1);"),
             "var x = 0; [1, 2, 3].map(() => x = x + 1);"
         );
+    }
+
+    #[test]
+    fn test_counter_propagated_after_loop() {
+        let out = deobfuscate_for_loop("for(var i = 0; i < 5; i++) {} var x = i;");
+        assert!(out.ends_with("var x = 5;"));
+    }
+
+    #[test]
+    fn test_string_accumulation() {
+        let out = deobfuscate_for_loop(
+            "var s = ''; for(var i = 0; i < 3; i++) { s = s + String.fromCharCode(65 + i); } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'ABC';"));
+    }
+
+    #[test]
+    fn test_loop_never_runs() {
+        let out = deobfuscate_for_loop(
+            "var s = 'x'; for(var i = 0; i < 0; i++) { s = s + 'y'; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'x';"));
+    }
+
+    #[test]
+    fn test_bail_on_break() {
+        let src = "var s = ''; for(var i = 0; i < 3; i++) { if(i == 1) break; s = s + 'x'; } var out = s;";
+        assert!(deobfuscate_for_loop(src).ends_with("var out = s;"));
+    }
+
+    #[test]
+    fn test_bail_on_return() {
+        let src = "function f() { var s = ''; for(var i = 0; i < 3; i++) { if(i == 1) return s; s = s + 'x'; } }";
+        assert!(deobfuscate_for_loop(src).contains("for"));
+    }
+
+    #[test]
+    fn test_non_deterministic_condition_bails() {
+        let src = "var s = ''; for(var i = 0; i < unknown; i++) { s = s + 'x'; } var out = s;";
+        assert!(deobfuscate_for_loop(src).ends_with("var out = s;"));
+    }
+
+    #[test]
+    fn test_free_var_from_outer_scope() {
+        let out = deobfuscate_for_loop(
+            "var key = 10; var s = ''; for(var i = 0; i < 3; i++) { s = s + String.fromCharCode(55 + i + key); } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'ABC';"));
     }
 }

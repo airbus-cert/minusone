@@ -4,6 +4,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::r#loop::*;
 use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
@@ -85,6 +86,17 @@ impl Var {
         Ok(())
     }
 
+    fn snapshot_scope(&self) -> String {
+        let scope = self.scope_manager.current();
+        let mut out = String::new();
+        for name in scope.get_var_names() {
+            if let Some(value) = scope.get_var(&name) {
+                out.push_str(&format!("var {name} = {value};\n"));
+            }
+        }
+        out
+    }
+
     fn parse_array_index(node: &Node<JavaScript>) -> Option<usize> {
         if let Some(data) = node.data() {
             return match data {
@@ -116,6 +128,7 @@ impl<'a> RuleMut<'a> for Var {
             "program" => {
                 self.scope_manager.reset();
                 inject_js_globals(self.scope_manager.current_mut(), false);
+                clear_for_loop_results();
             }
             // fn scopes: entering -> new scope
             "function_declaration"
@@ -154,6 +167,38 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             }
+            "for_statement" if is_for_loop_enabled() => {
+                if for_depth_get() >= MAX_FOR_DEPTH {
+                    return Ok(());
+                }
+                if let Some(body) = view.named_child("body") {
+                    if body_has_bail_node(&body) {
+                        return Ok(());
+                    }
+                }
+                let Some((init_src, cond_src, update_src, body_src)) = extract_for_parts(&view)
+                else {
+                    return Ok(());
+                };
+                let scope_snapshot = self.snapshot_scope();
+                for_depth_inc();
+                let result = simulate_for_loop(
+                    &scope_snapshot,
+                    &init_src,
+                    &cond_src,
+                    &update_src,
+                    &body_src,
+                );
+                for_depth_dec();
+                if let Some(final_vars) = result {
+                    trace!(
+                        "ForLoop: simulated for_statement id={}, {} vars",
+                        node.id(),
+                        final_vars.len()
+                    );
+                    store_for_loop_result(node.id(), final_vars);
+                }
+            }
             "}" => {
                 if let Some(parent) = view.parent()
                     && parent.kind() == "statement_block"
@@ -189,6 +234,19 @@ impl<'a> RuleMut<'a> for Var {
     ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
+            // ForLoop stores final variable state in a thread-local side-channel
+            "for_statement" => {
+                if let Some(final_vars) = take_for_loop_result(node.id()) {
+                    for (name, value) in final_vars {
+                        trace!("ForLoop: assigning '{}' = {:?} after loop", name, value);
+                        self.scope_manager.current_mut().assign(
+                            &name,
+                            value,
+                            node.is_ongoing_transaction(),
+                        );
+                    }
+                }
+            }
             // var/let/const
             "variable_declarator" => {
                 // child(0) = name (identifier), child(1) = "=", child(2) = value

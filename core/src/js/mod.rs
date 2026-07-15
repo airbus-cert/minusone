@@ -245,6 +245,7 @@ impl_javascript_ruleset!(
     NumberBuiltins,       // Shared dispatcher for string literal builtins (.toPrecision, etc.)
     ArrayBuiltins,        // Shared dispatcher for array literals builtins (.at, etc.)
     ArrayMapFilter,       // Infer deterministic array .map(...) and .filter(...) calls
+    ForLoop,              // Simulate deterministic for loops and propagate final variable state
     IteratorBuiltins,     // Shared dispatcher for iterators literals builtins (.next, etc.)
     BracketCharAt, // Infer charAt calls on string literals and reduces them to single-character string literals using arrays indexes
     CharCodeAt, // Infer charCodeAt calls on string literals and reduces them to integer literals using arrays indexes
