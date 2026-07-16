@@ -7,7 +7,7 @@ use crate::js::strategy::JavaScriptStrategy;
 use crate::js::utils::{get_positional_arguments, is_write_target, method_name};
 use crate::js::{JavaScript, JavaScriptRuleSet};
 use crate::rule::{RuleMut, RuleSetBuilderType};
-use crate::tree::{ControlFlow, Node, NodeMut};
+use crate::tree::{ControlFlow, HashMapStorage, Node, NodeMut, Tree};
 use log::{trace, warn};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -517,6 +517,10 @@ pub fn loop_invariant_array_index(name: &str, index: usize) -> Option<JavaScript
     })
 }
 
+pub fn loop_invariant_get(name: &str) -> Option<JavaScript> {
+    LOOP_INVARIANTS.with(|c| c.borrow().get(name).cloned())
+}
+
 pub fn is_for_loop_enabled() -> bool {
     FOR_LOOP_ENABLED.get()
 }
@@ -651,13 +655,7 @@ pub fn run_program_extract_state(
         .collect();
     let full_src = format!("{src}\n{snapshot_suffix}");
 
-    let mut tree = build_javascript_tree(&full_src).ok()?;
-    tree.apply_mut_with_strategy(
-        &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-        JavaScriptStrategy,
-    )
-    .ok()?;
-
+    let tree = build_and_reduce(&full_src)?;
     let root = tree.root().ok()?;
     let mut state: HashMap<String, JavaScript> = HashMap::new();
     let mut condition: Option<JavaScript> = None;
@@ -745,34 +743,48 @@ fn is_readonly_index_use(occ: &Node<JavaScript>) -> bool {
     }
 }
 
+fn build_and_reduce(src: &str) -> Option<Tree<'_, HashMapStorage<JavaScript>>> {
+    let mut tree = build_javascript_tree(src).ok()?;
+    tree.apply_mut_with_strategy(
+        &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+        JavaScriptStrategy,
+    )
+    .ok()?;
+    Some(tree)
+}
+
+fn last_expression_data(root: &Node<JavaScript>) -> Option<JavaScript> {
+    let mut data = None;
+    for stmt in root.iter() {
+        if stmt.kind() == "expression_statement" {
+            data = stmt
+                .iter()
+                .find(|c| c.kind() != ";")
+                .and_then(|c| c.data().cloned());
+        }
+    }
+    data
+}
+
+fn with_loop_seed<R>(
+    seed: HashMap<String, JavaScript>,
+    f: impl FnOnce() -> Option<R>,
+) -> Option<R> {
+    set_loop_seed(seed);
+    let result = f();
+    clear_loop_seed();
+    result
+}
+
 fn run_seeded_program(
     program_src: &str,
     seed: HashMap<String, JavaScript>,
 ) -> Option<(HashMap<String, JavaScript>, JavaScript)> {
-    set_loop_seed(seed);
-    let result = (|| {
-        let mut tree = build_javascript_tree(program_src).ok()?;
-        tree.apply_mut_with_strategy(
-            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-            JavaScriptStrategy,
-        )
-        .ok()?;
-
-        let root = tree.root().ok()?;
-        let mut condition = None;
-        for stmt in root.iter() {
-            if stmt.kind() == "expression_statement" {
-                condition = stmt
-                    .iter()
-                    .find(|c| c.kind() != ";")
-                    .and_then(|c| c.data().cloned());
-            }
-        }
-
-        Some((take_loop_result()?, condition?))
-    })();
-    clear_loop_seed();
-    result
+    with_loop_seed(seed, || {
+        let tree = build_and_reduce(program_src)?;
+        let condition = last_expression_data(&tree.root().ok()?)?;
+        Some((take_loop_result()?, condition))
+    })
 }
 
 fn run_for_iterations(
@@ -809,12 +821,7 @@ pub fn simulate_for_loop(
 
     // discover all variable names present after init by running the init program
     let mut tracked: Vec<String> = {
-        let mut tree = build_javascript_tree(&init_program).ok()?;
-        tree.apply_mut_with_strategy(
-            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-            JavaScriptStrategy,
-        )
-        .ok()?;
+        let tree = build_and_reduce(&init_program)?;
         let root = tree.root().ok()?;
         let mut names = HashSet::new();
         collect_declarator_names_from_root(&root, &mut names);
@@ -853,6 +860,55 @@ pub fn simulate_for_loop(
         final_state.extend(invariants);
         final_state
     })
+}
+
+fn run_seeded_body(
+    program_src: &str,
+    seed: HashMap<String, JavaScript>,
+) -> Option<HashMap<String, JavaScript>> {
+    with_loop_seed(seed, || {
+        build_and_reduce(program_src)?;
+        take_loop_result()
+    })
+}
+
+pub fn simulate_for_in_loop(
+    loop_var: &str,
+    iter_values: &[JavaScript],
+    body_src: &str,
+    initial_state: HashMap<String, JavaScript>,
+) -> Option<Vec<(String, JavaScript)>> {
+    let mut invariants: HashMap<String, JavaScript> = HashMap::new();
+    let mut state: HashMap<String, JavaScript> = HashMap::new();
+    for (name, value) in &initial_state {
+        if name == loop_var {
+            continue;
+        }
+        if matches!(value, Array(_) | Object { .. }) && array_is_hoistable(name, body_src) {
+            invariants.insert(name.clone(), value.clone());
+        } else {
+            state.insert(name.clone(), value.clone());
+        }
+    }
+
+    let previous = swap_loop_invariants(invariants);
+    let outcome = (|| {
+        for value in iter_values {
+            let mut seed = state.clone();
+            seed.insert(loop_var.to_string(), value.clone());
+            state = run_seeded_body(body_src, seed)?;
+        }
+        Some(())
+    })();
+    swap_loop_invariants(previous);
+    outcome?;
+
+    Some(
+        state
+            .into_iter()
+            .filter(|(name, value)| initial_state.get(name) != Some(value))
+            .collect(),
+    )
 }
 
 /// Simulates deterministic `for` loops (no break/continue/return/throw, no nested loops)
@@ -1156,6 +1212,38 @@ mod tests_js_loop {
             "var a = ['a', 'b', 'c', 'd']; var s = ''; for(j = 0; j < a.length; j++) { s = s + a[j] + a[0]; } var out = s;",
         );
         assert!(out.ends_with("var out = 'aabacada';"));
+    }
+
+    #[test]
+    fn test_for_in_array_indices() {
+        let out = deobfuscate_for_loop(
+            "var a = ['x', 'y', 'z']; var s = ''; var k; for (k in a) { s = s + a[k]; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'xyz';"));
+    }
+
+    #[test]
+    fn test_for_of_array_values() {
+        let out = deobfuscate_for_loop(
+            "var a = ['x', 'y', 'z']; var s = ''; var v; for (v of a) { s = s + v; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'xyz';"));
+    }
+
+    #[test]
+    fn test_for_in_bare_loop_var() {
+        let out = deobfuscate_for_loop(
+            "var a = ['a', 'b']; var s = ''; for (k in a) { s = s + a[k]; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'ab';"));
+    }
+
+    #[test]
+    fn test_for_in_object_indexed_lookup() {
+        let out = deobfuscate_for_loop(
+            "var keys = ['p', 'q']; var m = { p: 'A', q: 'B' }; var s = ''; for (i in keys) { s = s + m[keys[i]]; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'AB';"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
 use log::{trace, warn};
+use std::collections::HashMap;
 
 /// Var is a variable manager that will try to track
 /// static variable assignments and propagate them in the code
@@ -95,6 +96,17 @@ impl Var {
             }
         }
         out
+    }
+
+    fn collect_scope_state(&self) -> HashMap<String, JavaScript> {
+        let scope = self.scope_manager.current();
+        let mut state = HashMap::new();
+        for name in scope.get_var_names() {
+            if let Some(value) = scope.get_var(&name) {
+                state.insert(name, value.clone());
+            }
+        }
+        state
     }
 
     fn index_from_data(data: &JavaScript) -> Option<usize> {
@@ -224,6 +236,55 @@ impl<'a> RuleMut<'a> for Var {
                     set_inside_simulated_for(true);
                 }
             }
+            "for_in_statement" => {
+                if let Some(left) = view.named_child("left") {
+                    self.forget_assigned_var(&left)?;
+                }
+                if !is_for_loop_enabled() || for_depth_get() >= MAX_FOR_DEPTH {
+                    return Ok(());
+                }
+                let (Some(left), Some(op), Some(right), Some(body)) = (
+                    view.named_child("left"),
+                    view.named_child("operator")
+                        .and_then(|o| o.text().ok().map(|s| s.to_string())),
+                    view.named_child("right"),
+                    view.named_child("body"),
+                ) else {
+                    return Ok(());
+                };
+                if left.kind() != "identifier" || body_has_bail_node(&body) {
+                    return Ok(());
+                }
+                let loop_var = left.text()?.to_string();
+                let iterable = right.data().cloned().or_else(|| {
+                    (right.kind() == "identifier")
+                        .then(|| right.text().ok())
+                        .flatten()
+                        .and_then(|name| self.scope_manager.current().get_var(name).cloned())
+                });
+                let Some(Array(elems)) = iterable else {
+                    return Ok(());
+                };
+                let iter_values: Vec<JavaScript> = match op.as_str() {
+                    "in" => (0..elems.len()).map(|i| Raw(Str(i.to_string()))).collect(),
+                    "of" => elems,
+                    _ => return Ok(()),
+                };
+                let body_src = body.text()?.to_string();
+                let state = self.collect_scope_state();
+                for_depth_inc();
+                let result = simulate_for_in_loop(&loop_var, &iter_values, &body_src, state);
+                for_depth_dec();
+                if let Some(final_vars) = result {
+                    trace!(
+                        "ForLoop: simulated for_in_statement id={}, {} vars",
+                        node.id(),
+                        final_vars.len()
+                    );
+                    store_for_loop_result(node.id(), final_vars);
+                    set_inside_simulated_for(true);
+                }
+            }
             "}" => {
                 if let Some(parent) = view.parent()
                     && parent.kind() == "statement_block"
@@ -263,7 +324,7 @@ impl<'a> RuleMut<'a> for Var {
                 let scope = self.scope_manager.current();
                 capture_loop_result(|name| scope.get_var(name).cloned());
             }
-            "for_statement" => {
+            "for_statement" | "for_in_statement" => {
                 if let Some(final_vars) = take_for_loop_result(node.id()) {
                     set_inside_simulated_for(false);
                     for (name, value) in &final_vars {
