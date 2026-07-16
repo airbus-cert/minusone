@@ -101,6 +101,7 @@ pub enum JavaScript {
         index: usize,
         kind: IteratorKind,
     },
+    ForLoopResult(Vec<(String, JavaScript)>),
 }
 
 fn js_eq(a: &JavaScript, b: &JavaScript) -> bool {
@@ -156,6 +157,7 @@ fn js_eq(a: &JavaScript, b: &JavaScript) -> bool {
                     .iter()
                     .all(|(k, v)| m2.get(k).map_or(false, |v2| js_eq(v, v2)))
         }
+        (ForLoopResult(_), _) | (_, ForLoopResult(_)) => false,
         (
             Iterator {
                 values: v1,

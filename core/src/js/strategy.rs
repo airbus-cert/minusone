@@ -2,6 +2,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::Raw;
 use crate::js::Value::Bool;
+use crate::js::r#loop::is_inside_simulated_for;
 use crate::tree::BranchFlow::{Predictable, Unpredictable};
 use crate::tree::ControlFlow::{Break, Continue};
 use crate::tree::{ControlFlow, Node, Strategy};
@@ -11,6 +12,17 @@ pub struct JavaScriptStrategy;
 
 impl Strategy<JavaScript> for JavaScriptStrategy {
     fn control(&self, node: Node<JavaScript>) -> MinusOneResult<ControlFlow> {
+        if node.kind() != "for_statement" && is_inside_simulated_for() {
+            return Ok(Break);
+        }
+
+        if node.kind() != "statement_block"
+            && node.kind() != "for_statement"
+            && node.parent().is_some_and(|p| p.kind() == "for_statement")
+        {
+            return Ok(Break);
+        }
+
         match node.kind() {
             "statement_block" => {
                 if let Some(parent) = node.parent() {

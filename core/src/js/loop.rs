@@ -446,12 +446,21 @@ pub const MAX_FOR_DEPTH: usize = 3;
 thread_local! {
     static FOR_DEPTH: Cell<usize> = const { Cell::new(0) };
     static FOR_LOOP_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static INSIDE_SIMULATED_FOR: Cell<bool> = const { Cell::new(false) };
     static FOR_LOOP_RESULTS: RefCell<HashMap<usize, Vec<(String, JavaScript)>>> =
         RefCell::new(HashMap::new());
 }
 
 pub fn is_for_loop_enabled() -> bool {
     FOR_LOOP_ENABLED.get()
+}
+
+pub fn is_inside_simulated_for() -> bool {
+    INSIDE_SIMULATED_FOR.get()
+}
+
+pub fn set_inside_simulated_for(v: bool) {
+    INSIDE_SIMULATED_FOR.set(v);
 }
 
 pub fn for_depth_get() -> usize {

@@ -197,6 +197,7 @@ impl<'a> RuleMut<'a> for Var {
                         final_vars.len()
                     );
                     store_for_loop_result(node.id(), final_vars);
+                    set_inside_simulated_for(true);
                 }
             }
             "}" => {
@@ -237,14 +238,16 @@ impl<'a> RuleMut<'a> for Var {
             // ForLoop stores final variable state in a thread-local side-channel
             "for_statement" => {
                 if let Some(final_vars) = take_for_loop_result(node.id()) {
-                    for (name, value) in final_vars {
+                    set_inside_simulated_for(false);
+                    for (name, value) in &final_vars {
                         trace!("ForLoop: assigning '{}' = {:?} after loop", name, value);
                         self.scope_manager.current_mut().assign(
-                            &name,
-                            value,
+                            name,
+                            value.clone(),
                             node.is_ongoing_transaction(),
                         );
                     }
+                    node.set(ForLoopResult(final_vars));
                 }
             }
             // var/let/const
