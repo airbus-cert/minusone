@@ -530,13 +530,34 @@ pub fn vars_to_source(vars: &[(String, JavaScript)]) -> String {
 
 fn collect_declarator_names_from_root<T>(node: &Node<T>, names: &mut HashSet<String>) {
     for child in node.iter() {
-        if child.kind() == "variable_declarator"
-            && let Some(name_node) = child.named_child("name")
-            && name_node.kind() == "identifier"
-            && let Ok(name) = name_node.text()
-            && !name.starts_with("__v_")
-        {
-            names.insert(name.to_string());
+        match child.kind() {
+            "variable_declarator" => {
+                if let Some(name_node) = child.named_child("name")
+                    && name_node.kind() == "identifier"
+                    && let Ok(name) = name_node.text()
+                    && !name.starts_with("__v_")
+                {
+                    names.insert(name.to_string());
+                }
+            }
+            "assignment_expression" | "augmented_assignment_expression" => {
+                if let Some(target) = child.child(0)
+                    && target.kind() == "identifier"
+                    && let Ok(name) = target.text()
+                    && !name.starts_with("__v_")
+                {
+                    names.insert(name.to_string());
+                }
+            }
+            "update_expression" => {
+                if let Some(target) = child.iter().find(|c| c.kind() == "identifier")
+                    && let Ok(name) = target.text()
+                    && !name.starts_with("__v_")
+                {
+                    names.insert(name.to_string());
+                }
+            }
+            _ => {}
         }
         collect_declarator_names_from_root(&child, names);
     }
@@ -615,7 +636,7 @@ pub fn simulate_for_loop(
     update_src: &str,
     body_src: &str,
 ) -> Option<Vec<(String, JavaScript)>> {
-    let init_program = format!("{scope_snapshot}{init_src}\n({condition_src})");
+    let init_program = format!("{scope_snapshot}{init_src};\n({condition_src})");
     let init_var_names = collect_declared_names(init_src);
 
     // discover all variable names present after init by running the init program
@@ -938,6 +959,22 @@ mod tests_js_loop {
     fn test_non_deterministic_condition_bails() {
         let src = "var s = ''; for(var i = 0; i < unknown; i++) { s = s + 'x'; } var out = s;";
         assert!(deobfuscate_for_loop(src).ends_with("var out = s;"));
+    }
+
+    #[test]
+    fn test_bare_counter_without_var() {
+        let out = deobfuscate_for_loop(
+            "var s = ''; for(i = 0; i < 3; i++) { s = s + 'x'; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'xxx';"));
+    }
+
+    #[test]
+    fn test_array_length_in_condition() {
+        let out = deobfuscate_for_loop(
+            "var a = ['p', 'q', 'r']; var s = ''; for(i = 0; i < a.length; i++) { s = s + a[i]; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'pqr';"));
     }
 
     #[test]

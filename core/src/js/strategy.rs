@@ -16,9 +16,14 @@ impl Strategy<JavaScript> for JavaScriptStrategy {
             return Ok(Break);
         }
 
-        if node.kind() != "statement_block"
-            && node.kind() != "for_statement"
-            && node.parent().is_some_and(|p| p.kind() == "for_statement")
+        if let Some(parent) = node.parent()
+            && parent.kind() == "for_statement"
+            && (parent
+                .named_child("initializer")
+                .is_some_and(|n| n.id() == node.id())
+                || parent
+                    .named_child("increment")
+                    .is_some_and(|n| n.id() == node.id()))
         {
             return Ok(Break);
         }

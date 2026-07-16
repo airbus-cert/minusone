@@ -167,7 +167,16 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 }
             }
-            "for_statement" if is_for_loop_enabled() => {
+            "for_statement" => {
+                if let Some(init) = view.named_child("initializer") {
+                    self.forget_assigned_var(&init)?;
+                }
+                if let Some(increment) = view.named_child("increment") {
+                    self.forget_assigned_var(&increment)?;
+                }
+                if !is_for_loop_enabled() {
+                    return Ok(());
+                }
                 if for_depth_get() >= MAX_FOR_DEPTH {
                     return Ok(());
                 }
