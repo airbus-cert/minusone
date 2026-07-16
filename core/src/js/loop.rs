@@ -4,7 +4,7 @@ use crate::js::Value::{Bool, Str};
 use crate::js::array::flatten_array;
 use crate::js::build_javascript_tree;
 use crate::js::strategy::JavaScriptStrategy;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{get_positional_arguments, is_write_target, method_name};
 use crate::js::{JavaScript, JavaScriptRuleSet};
 use crate::rule::{RuleMut, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -449,6 +449,72 @@ thread_local! {
     static INSIDE_SIMULATED_FOR: Cell<bool> = const { Cell::new(false) };
     static FOR_LOOP_RESULTS: RefCell<HashMap<usize, Vec<(String, JavaScript)>>> =
         RefCell::new(HashMap::new());
+    // arrays hoisted out of the current loop simulation, read in O(1) by name/index, I had to use
+    // this trick because most of the time, loops iterate over arrays
+    static LOOP_INVARIANTS: RefCell<HashMap<String, JavaScript>> = RefCell::new(HashMap::new());
+    // avoid the old technic of writing vars and the re-parse them on each iterations
+    static LOOP_SEED: RefCell<Option<HashMap<String, JavaScript>>> = RefCell::new(None);
+    static LOOP_RESULT: RefCell<Option<HashMap<String, JavaScript>>> = RefCell::new(None);
+}
+
+fn swap_loop_invariants(next: HashMap<String, JavaScript>) -> HashMap<String, JavaScript> {
+    LOOP_INVARIANTS.with(|c| c.replace(next))
+}
+
+fn set_loop_seed(seed: HashMap<String, JavaScript>) {
+    LOOP_SEED.with(|c| *c.borrow_mut() = Some(seed));
+    LOOP_RESULT.with(|c| *c.borrow_mut() = None);
+}
+
+fn clear_loop_seed() {
+    LOOP_SEED.with(|c| *c.borrow_mut() = None);
+    LOOP_RESULT.with(|c| *c.borrow_mut() = None);
+}
+
+fn take_loop_result() -> Option<HashMap<String, JavaScript>> {
+    LOOP_RESULT.with(|c| c.borrow_mut().take())
+}
+
+pub fn is_loop_seed_active() -> bool {
+    LOOP_SEED.with(|c| c.borrow().is_some())
+}
+
+pub fn inject_loop_seed<F: FnMut(&str, &JavaScript)>(mut assign: F) {
+    LOOP_SEED.with(|c| {
+        if let Some(seed) = c.borrow().as_ref() {
+            for (name, value) in seed {
+                assign(name, value);
+            }
+        }
+    });
+}
+
+pub fn capture_loop_result<F: Fn(&str) -> Option<JavaScript>>(read: F) {
+    LOOP_SEED.with(|seed| {
+        let seed = seed.borrow();
+        let Some(seed) = seed.as_ref() else {
+            return;
+        };
+        let captured = seed
+            .keys()
+            .filter_map(|name| read(name).map(|v| (name.clone(), v)))
+            .collect();
+        LOOP_RESULT.with(|r| *r.borrow_mut() = Some(captured));
+    });
+}
+
+pub fn loop_invariant_array_len(name: &str) -> Option<usize> {
+    LOOP_INVARIANTS.with(|c| match c.borrow().get(name) {
+        Some(Array(a)) => Some(a.len()),
+        _ => None,
+    })
+}
+
+pub fn loop_invariant_array_index(name: &str, index: usize) -> Option<JavaScript> {
+    LOOP_INVARIANTS.with(|c| match c.borrow().get(name) {
+        Some(Array(a)) => Some(a.get(index).cloned().unwrap_or(Undefined)),
+        _ => None,
+    })
 }
 
 pub fn is_for_loop_enabled() -> bool {
@@ -629,6 +695,108 @@ pub fn run_program_extract_state(
     Some((state.into_iter().collect(), condition))
 }
 
+fn array_is_hoistable(name: &str, src: &str) -> bool {
+    let Ok(tree) = build_javascript_tree(src) else {
+        return false;
+    };
+    let Ok(root) = tree.root() else {
+        return false;
+    };
+    all_uses_readonly_index(&root, name)
+}
+
+fn all_uses_readonly_index(node: &Node<JavaScript>, name: &str) -> bool {
+    for child in node.iter() {
+        if child.kind() == "identifier"
+            && child.text().map(|t| t == name).unwrap_or(false)
+            && !is_readonly_index_use(&child)
+        {
+            return false;
+        }
+        if !all_uses_readonly_index(&child, name) {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_readonly_index_use(occ: &Node<JavaScript>) -> bool {
+    if is_write_target(occ) {
+        return false;
+    }
+    let Some(parent) = occ.parent() else {
+        return false;
+    };
+    let is_object = parent
+        .named_child("object")
+        .or_else(|| parent.child(0))
+        .map(|o| o.id() == occ.id())
+        .unwrap_or(false);
+    match parent.kind() {
+        "subscript_expression" => is_object,
+        "member_expression" => {
+            is_object
+                && parent
+                    .named_child("property")
+                    .and_then(|p| p.text().ok().map(|s| s == "length"))
+                    .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+fn run_seeded_program(
+    program_src: &str,
+    seed: HashMap<String, JavaScript>,
+) -> Option<(HashMap<String, JavaScript>, JavaScript)> {
+    set_loop_seed(seed);
+    let result = (|| {
+        let mut tree = build_javascript_tree(program_src).ok()?;
+        tree.apply_mut_with_strategy(
+            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            JavaScriptStrategy,
+        )
+        .ok()?;
+
+        let root = tree.root().ok()?;
+        let mut condition = None;
+        for stmt in root.iter() {
+            if stmt.kind() == "expression_statement" {
+                condition = stmt
+                    .iter()
+                    .find(|c| c.kind() != ";")
+                    .and_then(|c| c.data().cloned());
+            }
+        }
+
+        Some((take_loop_result()?, condition?))
+    })();
+    clear_loop_seed();
+    result
+}
+
+fn run_for_iterations(
+    state: HashMap<String, JavaScript>,
+    body_src: &str,
+    update_src: &str,
+    condition_src: &str,
+) -> Option<Vec<(String, JavaScript)>> {
+    let program = format!("{body_src}\n{update_src};\n({condition_src})");
+    let mut state = state;
+    for _ in 0..MAX_FOR_ITERATIONS {
+        let (new_state, condition) = run_seeded_program(&program, state)?;
+        state = new_state;
+
+        match condition {
+            Raw(Bool(false)) => return Some(state.into_iter().collect()),
+            Raw(Bool(true)) => continue,
+            _ => return None,
+        }
+    }
+
+    None
+}
+
 pub fn simulate_for_loop(
     scope_snapshot: &str,
     init_src: &str,
@@ -658,28 +826,33 @@ pub fn simulate_for_loop(
         }
     }
 
-    let (mut state, first_condition) = run_program_extract_state(&init_program, &tracked)?;
+    let (initial_state, first_condition) = run_program_extract_state(&init_program, &tracked)?;
 
     match first_condition {
-        Raw(Bool(false)) => return Some(state),
+        Raw(Bool(false)) => return Some(initial_state),
         Raw(Bool(true)) => {}
         _ => return None,
     }
 
-    for _ in 0..MAX_FOR_ITERATIONS {
-        let state_src = vars_to_source(&state);
-        let iter_program = format!("{state_src}{body_src}\n{update_src};\n({condition_src})");
-        let (new_state, condition) = run_program_extract_state(&iter_program, &tracked)?;
-        state = new_state;
-
-        match condition {
-            Raw(Bool(false)) => return Some(state),
-            Raw(Bool(true)) => continue,
-            _ => return None,
+    let all_uses = format!("{body_src}\n{update_src}\n({condition_src})");
+    let mut invariants: HashMap<String, JavaScript> = HashMap::new();
+    let mut state: HashMap<String, JavaScript> = HashMap::new();
+    for (name, value) in initial_state {
+        if matches!(value, Array(_)) && array_is_hoistable(&name, &all_uses) {
+            invariants.insert(name, value);
+        } else {
+            state.insert(name, value);
         }
     }
 
-    None
+    let previous = swap_loop_invariants(invariants);
+    let outcome = run_for_iterations(state, body_src, update_src, condition_src);
+    let invariants = swap_loop_invariants(previous);
+
+    outcome.map(|mut final_state| {
+        final_state.extend(invariants);
+        final_state
+    })
 }
 
 /// Simulates deterministic `for` loops (no break/continue/return/throw, no nested loops)
@@ -975,6 +1148,14 @@ mod tests_js_loop {
             "var a = ['p', 'q', 'r']; var s = ''; for(i = 0; i < a.length; i++) { s = s + a[i]; } var out = s;",
         );
         assert!(out.ends_with("var out = 'pqr';"));
+    }
+
+    #[test]
+    fn test_hoisted_invariant_array_reads() {
+        let out = deobfuscate_for_loop(
+            "var a = ['a', 'b', 'c', 'd']; var s = ''; for(j = 0; j < a.length; j++) { s = s + a[j] + a[0]; } var out = s;",
+        );
+        assert!(out.ends_with("var out = 'aabacada';"));
     }
 
     #[test]

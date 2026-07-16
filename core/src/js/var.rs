@@ -97,6 +97,14 @@ impl Var {
         out
     }
 
+    fn index_from_data(data: &JavaScript) -> Option<usize> {
+        match data {
+            Raw(Num(n)) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 => Some(*n as usize),
+            Raw(Str(s)) => s.parse::<usize>().ok(),
+            _ => None,
+        }
+    }
+
     fn parse_array_index(node: &Node<JavaScript>) -> Option<usize> {
         if let Some(data) = node.data() {
             return match data {
@@ -129,6 +137,13 @@ impl<'a> RuleMut<'a> for Var {
                 self.scope_manager.reset();
                 inject_js_globals(self.scope_manager.current_mut(), false);
                 clear_for_loop_results();
+
+                let ongoing = node.is_ongoing_transaction();
+                let scope = self.scope_manager.current_mut();
+                inject_loop_seed(|name, value| {
+                    scope.assign(name, value.clone(), ongoing);
+                    scope.set_non_local(name);
+                });
             }
             // fn scopes: entering -> new scope
             "function_declaration"
@@ -244,7 +259,10 @@ impl<'a> RuleMut<'a> for Var {
     ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
-            // ForLoop stores final variable state in a thread-local side-channel
+            "program" if is_loop_seed_active() => {
+                let scope = self.scope_manager.current();
+                capture_loop_result(|name| scope.get_var(name).cloned());
+            }
             "for_statement" => {
                 if let Some(final_vars) = take_for_loop_result(node.id()) {
                     set_inside_simulated_for(false);
@@ -548,6 +566,35 @@ impl<'a> RuleMut<'a> for Var {
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);
                         node.set(data.clone());
                     }
+                }
+            }
+            // read of a hoisted loop-invariant array element: `a[i]`
+            "subscript_expression" => {
+                if !is_write_target(&view)
+                    && let Some(obj) = view.named_child("object").or_else(|| view.child(0))
+                    && obj.kind() == "identifier"
+                    && let Some(idx) = view.named_child("index").or_else(|| view.child(2))
+                    && let Ok(name) = obj.text()
+                    && let Some(index) = idx.data().and_then(Self::index_from_data)
+                    && let Some(element) = loop_invariant_array_index(name, index)
+                {
+                    trace!("Var (L): hoisted array '{}' index {}", name, index);
+                    node.reduce(element);
+                }
+            }
+            // read of a hoisted loop-invariant array length: `a.length`
+            "member_expression" => {
+                if let Some(obj) = view.named_child("object").or_else(|| view.child(0))
+                    && obj.kind() == "identifier"
+                    && let Ok(name) = obj.text()
+                    && view
+                        .named_child("property")
+                        .map(|p| p.text().map(|t| t == "length").unwrap_or(false))
+                        .unwrap_or(false)
+                    && let Some(len) = loop_invariant_array_len(name)
+                {
+                    trace!("Var (L): hoisted array '{}' length {}", name, len);
+                    node.reduce(Raw(Num(len as f64)));
                 }
             }
             _ => {}
