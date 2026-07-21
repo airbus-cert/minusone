@@ -56,6 +56,15 @@ impl Display for JavaScript {
                 write!(f, "Buffer.from('{}', 'hex')", hex)
             }
             Iterator { .. } => write!(f, "[object Array Iterator]"),
+            ForLoopResult(vars) => {
+                for (i, (name, val)) in vars.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "var {} = {};", name, val)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -154,6 +163,7 @@ impl JavaScript {
                 Err(_) => NaN,
             },
             Iterator { .. } => NaN,
+            ForLoopResult(_) => NaN,
         }
     }
 
@@ -183,6 +193,7 @@ impl JavaScript {
             Object { .. } => true,
             Buffer(_) => true,
             Iterator { .. } => true,
+            ForLoopResult(_) => false,
         }
     }
 
@@ -205,6 +216,7 @@ impl JavaScript {
             Object { .. } => "object",
             Buffer(_) => "object",
             Iterator { .. } => "object",
+            ForLoopResult(_) => "undefined",
         }
     }
 }

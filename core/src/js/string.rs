@@ -1007,10 +1007,10 @@ impl<'a> RuleMut<'a> for CharCodeAt {
             _ => 0,
         };
 
-        let bytes = input.as_bytes();
+        let chars: Vec<char> = input.chars().collect();
 
-        let result = if index < bytes.len() {
-            Raw(Num(bytes[index] as f64))
+        let result = if index < chars.len() {
+            Raw(Num(chars[index] as u32 as f64))
         } else {
             NaN
         };

@@ -38,6 +38,7 @@ pub fn constructor_name(value: &JavaScript) -> &'static str {
         Object { .. } => "Object",
         Buffer(_) => "Buffer",
         Iterator { .. } => "Iterator",
+        ForLoopResult(_) => "undefined",
     }
 }
 
@@ -170,14 +171,6 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
     if let Array(arr) = value {
         map.extend(array_builtins(arr.clone()));
     }
-
-    println!(
-        "To string override: {}",
-        to_string_override
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("None")
-    );
 
     Some(Object {
         map,
