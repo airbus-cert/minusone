@@ -8,6 +8,15 @@ use log::trace;
 #[derive(Default)]
 pub struct Forward;
 
+impl Forward {
+    fn is_safe_to_discard(data: &JavaScript) -> bool {
+        matches!(
+            data,
+            JavaScript::Raw(_) | JavaScript::Undefined | JavaScript::Null | JavaScript::NaN
+        )
+    }
+}
+
 impl<'a> RuleMut<'a> for Forward {
     type Language = JavaScript;
 
@@ -25,15 +34,29 @@ impl<'a> RuleMut<'a> for Forward {
         _flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let view = node.view();
+        let mut forwarded = None;
+
         if view.kind() == "parenthesized_expression"
             && let Some(expression) = view.child(1)
             && let Some(expression_data) = expression.data()
         {
-            trace!(
-                "Forward (L): Forwarding data from child to parent: {:?}",
-                expression_data
-            );
-            node.reduce(expression_data.clone())
+            forwarded = Some(expression_data.clone());
+        } else if view.kind() == "sequence_expression" {
+            let parts: Vec<_> = view.iter().filter(|child| child.kind() != ",").collect();
+
+            if parts.len() >= 2
+                && let Some(last_data) = parts.last().and_then(|part| part.data())
+                && parts[..parts.len() - 1]
+                    .iter()
+                    .all(|part| part.data().is_some_and(Self::is_safe_to_discard))
+            {
+                forwarded = Some(last_data.clone());
+            }
+        }
+
+        if let Some(data) = forwarded {
+            trace!("Forward (L): Forwarding data to parent: {:?}", data);
+            node.reduce(data)
         }
 
         Ok(())

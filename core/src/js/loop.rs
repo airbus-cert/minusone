@@ -440,7 +440,7 @@ impl<'a> RuleMut<'a> for ArrayMapFilter {
     }
 }
 
-const MAX_FOR_ITERATIONS: usize = 10_000;
+const MAX_FOR_ITERATIONS: usize = 20_000;
 pub const MAX_FOR_DEPTH: usize = 3;
 
 thread_local! {
