@@ -293,6 +293,18 @@ impl<'a> RuleMut<'a> for JavaScriptRuleSet<'a> {
     }
 }
 
+impl<'a> JavaScriptRuleSet<'a> {
+    /// See `RuleSet::leave_traced`.
+    pub fn leave_traced(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, JavaScript>,
+        flow: crate::tree::ControlFlow,
+        on_change: impl FnMut(&mut crate::tree::NodeMut<'a, JavaScript>, &'a str) -> MinusOneResult<()>,
+    ) -> MinusOneResult<()> {
+        self.ruleset.leave_traced(node, flow, on_change)
+    }
+}
+
 pub fn remove_javascript_extra(source: &str) -> MinusOneResult<String> {
     let mut parser = tree_sitter::Parser::new();
     parser
