@@ -45,9 +45,13 @@ fn steps_to_json(initial: &str, steps: &[Step]) -> String {
 
 const TEMPLATE: &str = include_str!("../assets/steps_template.html");
 
-pub fn render(initial: &str, steps: &[Step]) -> String {
+pub fn render_html(initial: &str, steps: &[Step]) -> String {
     let json = steps_to_json(initial, steps);
     let b64 = STANDARD.encode(json.as_bytes());
 
     TEMPLATE.replace("__STEPS_B64__", &b64)
+}
+
+pub fn render_json(initial: &str, steps: &[Step]) -> String {
+    steps_to_json(initial, steps)
 }

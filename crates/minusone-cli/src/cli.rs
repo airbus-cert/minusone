@@ -91,6 +91,24 @@ pub struct Cli {
     /// Keep dead code
     #[arg(short, long, alias = "kdc")]
     pub keep_dead_code: bool,
+
+    /// Record every step of the deobfuscation and export it (see --step-format, --step-output)
+    #[arg(long, short = 's')]
+    pub step: bool,
+
+    /// Output format for --step
+    #[arg(long, value_enum, default_value_t = StepFormat::Html, requires = "step", alias = "sf")]
+    pub step_format: StepFormat,
+
+    /// Output file for --step (defaults to steps.html or steps.json depending on --step-format)
+    #[arg(long, value_name = "PATH", requires = "step")]
+    pub step_output: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq)]
+pub enum StepFormat {
+    Html,
+    Json,
 }
 
 impl Display for Language {
