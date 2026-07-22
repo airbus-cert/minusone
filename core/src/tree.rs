@@ -909,7 +909,7 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
-    fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
+    pub fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
         let mut is_visiting = true;
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize, bool)> = vec![];

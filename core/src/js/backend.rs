@@ -238,6 +238,14 @@ impl<'a> DeobfuscateEngine<'a, JavaScriptBackend> {
     pub fn from_javascript(src: &'a str) -> MinusOneResult<Self> {
         Self::from_source(src)
     }
+    pub fn deobfuscate_traced(&mut self) -> MinusOneResult<Vec<crate::js::trace::Step>> {
+        let mut tracer = crate::js::trace::TracingRuleSet::new(JavaScriptRuleSet::new(
+            RuleSetBuilderType::WithoutRules(vec![]),
+        ));
+        self.root_mut()
+            .apply_mut_with_strategy(&mut tracer, JavaScriptStrategy)?;
+        Ok(tracer.steps)
+    }
 }
 
 impl<'a> CleanEngine<'a, JavaScriptBackend> {

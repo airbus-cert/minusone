@@ -3,6 +3,7 @@ extern crate clap_help;
 extern crate minusone;
 
 mod cli;
+mod trace_view;
 mod utils;
 
 use crate::cli::*;
@@ -16,7 +17,7 @@ use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
 use termimad::ansi;
-use utils::{get_available_rules, run_deobf};
+use utils::{get_available_rules, run_deobf, run_deobf_js_traced};
 
 const FLEXIBLE_B64: GeneralPurpose = GeneralPurpose::new(
     &alphabet::STANDARD,
@@ -161,6 +162,13 @@ fn main() {
 
     let result = match lang {
         Language::Powershell => run_deobf::<PowershellBackend>(
+            &source,
+            cli_clone,
+            rule_set,
+            skip_rule_set,
+            cli.keep_dead_code,
+        ),
+        Language::Javascript if cli.debug_level == DebugLevel::Trace => run_deobf_js_traced(
             &source,
             cli_clone,
             rule_set,

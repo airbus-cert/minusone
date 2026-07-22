@@ -1,0 +1,264 @@
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use minusone::js::trace::Step;
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn steps_to_json(initial: &str, steps: &[Step]) -> String {
+    let mut json = String::from("[");
+    json.push_str(&format!(
+        "{{\"i\":0,\"kind\":\"initial\",\"node_id\":0,\"start\":0,\"end\":{},\"source\":\"{}\"}}",
+        initial.len(),
+        json_escape(initial)
+    ));
+
+    for (n, step) in steps.iter().enumerate() {
+        json.push(',');
+        json.push_str(&format!(
+            "{{\"i\":{},\"kind\":\"{}\",\"node_id\":{},\"start\":{},\"end\":{},\"source\":\"{}\"}}",
+            n + 1,
+            json_escape(step.kind),
+            step.node_id,
+            step.start,
+            step.end,
+            json_escape(&step.source)
+        ));
+    }
+    json.push(']');
+    json
+}
+
+pub fn render(initial: &str, steps: &[Step]) -> String {
+    let json = steps_to_json(initial, steps);
+    let b64 = STANDARD.encode(json.as_bytes());
+
+    format!(
+        r##"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MinusOne - step-by-step trace</title>
+<style>
+  :root {{
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --panel: #f5f5f7;
+    --border: #d8d8de;
+    --accent: #3b6fe0;
+    --mark-bg: #ffe58a;
+    --mark-fg: #1a1a1a;
+    --muted: #6b6b76;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{
+      --bg: #1e1f22;
+      --fg: #e6e6e8;
+      --panel: #2a2b2f;
+      --border: #3c3d42;
+      --accent: #7aa2f7;
+      --mark-bg: #5a4a1f;
+      --mark-fg: #ffe58a;
+      --muted: #9a9aa2;
+    }}
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+  }}
+  header {{
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }}
+  header h1 {{
+    font-size: 15px;
+    margin: 0;
+    font-weight: 600;
+    white-space: nowrap;
+  }}
+  .controls {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 260px;
+  }}
+  button {{
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 13px;
+  }}
+  button:hover {{ border-color: var(--accent); }}
+  button:disabled {{ opacity: 0.4; cursor: default; }}
+  input[type=range] {{ flex: 1; }}
+  .step-label {{
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 90px;
+    text-align: right;
+  }}
+  .meta {{
+    padding: 10px 20px;
+    font-size: 12px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }}
+  .meta b {{ color: var(--fg); }}
+  main {{
+    padding: 20px;
+    overflow-x: auto;
+  }}
+  pre#code {{
+    margin: 0;
+    padding: 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }}
+  mark {{
+    background: var(--mark-bg);
+    color: var(--mark-fg);
+    border-radius: 3px;
+    padding: 0 1px;
+  }}
+  .empty {{
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+  }}
+</style>
+</head>
+<body>
+<header>
+  <h1>MinusOne trace</h1>
+  <div class="controls">
+    <button id="prev">&larr; Prev</button>
+    <input type="range" id="slider" min="0" max="0" value="0" step="1">
+    <button id="next">Next &rarr;</button>
+  </div>
+  <div class="step-label" id="stepLabel">-</div>
+</header>
+<div class="meta">
+  <span>kind: <b id="metaKind">-</b></span>
+  <span>node id: <b id="metaNode">-</b></span>
+  <span>original byte span: <b id="metaSpan">-</b></span>
+</div>
+<main>
+  <pre id="code"></pre>
+</main>
+<script>
+function b64ToUtf8(b64) {{
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}}
+
+const STEPS = JSON.parse(b64ToUtf8("{b64}"));
+
+function escapeHtml(s) {{
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}}
+
+function renderDiff(prev, cur) {{
+  if (prev === null) return escapeHtml(cur);
+
+  let prefix = 0;
+  const maxPrefix = Math.min(prev.length, cur.length);
+  while (prefix < maxPrefix && prev[prefix] === cur[prefix]) prefix++;
+
+  let suffix = 0;
+  const maxSuffix = Math.min(prev.length, cur.length) - prefix;
+  while (
+    suffix < maxSuffix &&
+    prev[prev.length - 1 - suffix] === cur[cur.length - 1 - suffix]
+  ) suffix++;
+
+  const before = cur.slice(0, prefix);
+  const middle = cur.slice(prefix, cur.length - suffix);
+  const after = cur.slice(cur.length - suffix);
+
+  if (middle.length === 0) return escapeHtml(cur);
+  return escapeHtml(before) + "<mark>" + escapeHtml(middle) + "</mark>" + escapeHtml(after);
+}}
+
+const codeEl = document.getElementById("code");
+const sliderEl = document.getElementById("slider");
+const stepLabelEl = document.getElementById("stepLabel");
+const metaKindEl = document.getElementById("metaKind");
+const metaNodeEl = document.getElementById("metaNode");
+const metaSpanEl = document.getElementById("metaSpan");
+const prevBtn = document.getElementById("prev");
+const nextBtn = document.getElementById("next");
+
+let current = 0;
+
+function show(i) {{
+  current = Math.max(0, Math.min(STEPS.length - 1, i));
+  const step = STEPS[current];
+  const prevSource = current > 0 ? STEPS[current - 1].source : null;
+
+  codeEl.innerHTML = renderDiff(prevSource, step.source);
+  sliderEl.value = current;
+  stepLabelEl.textContent = "Step " + current + " / " + (STEPS.length - 1);
+  metaKindEl.textContent = step.kind;
+  metaNodeEl.textContent = step.node_id;
+  metaSpanEl.textContent = "[" + step.start + ", " + step.end + ")";
+  prevBtn.disabled = current === 0;
+  nextBtn.disabled = current === STEPS.length - 1;
+}}
+
+sliderEl.max = STEPS.length - 1;
+prevBtn.addEventListener("click", () => show(current - 1));
+nextBtn.addEventListener("click", () => show(current + 1));
+sliderEl.addEventListener("input", () => show(parseInt(sliderEl.value, 10)));
+document.addEventListener("keydown", (e) => {{
+  if (e.key === "ArrowLeft") show(current - 1);
+  if (e.key === "ArrowRight") show(current + 1);
+}});
+
+if (STEPS.length === 0) {{
+  document.querySelector("main").innerHTML = '<div class="empty">No reduction recorded.</div>';
+}} else {{
+  show(0);
+}}
+</script>
+</body>
+</html>
+"##
+    )
+}
