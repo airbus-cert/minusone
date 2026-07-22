@@ -21,7 +21,7 @@ fn json_escape(s: &str) -> String {
 fn steps_to_json(initial: &str, steps: &[Step]) -> String {
     let mut json = String::from("[");
     json.push_str(&format!(
-        "{{\"i\":0,\"kind\":\"initial\",\"rule\":\"-\",\"start\":0,\"end\":{},\"source\":\"{}\"}}",
+        "{{\"i\":0,\"phase\":\"start\",\"kind\":\"initial\",\"rule\":\"-\",\"start\":0,\"end\":{},\"source\":\"{}\"}}",
         initial.len(),
         json_escape(initial)
     ));
@@ -29,8 +29,9 @@ fn steps_to_json(initial: &str, steps: &[Step]) -> String {
     for (n, step) in steps.iter().enumerate() {
         json.push(',');
         json.push_str(&format!(
-            "{{\"i\":{},\"kind\":\"{}\",\"rule\":\"{}\",\"start\":{},\"end\":{},\"source\":\"{}\"}}",
+            "{{\"i\":{},\"phase\":\"{}\",\"kind\":\"{}\",\"rule\":\"{}\",\"start\":{},\"end\":{},\"source\":\"{}\"}}",
             n + 1,
+            json_escape(step.phase),
             json_escape(step.kind),
             json_escape(&step.rule),
             step.start,

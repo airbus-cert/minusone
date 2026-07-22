@@ -124,6 +124,7 @@
   <div class="step-label" id="stepLabel">-</div>
 </header>
 <div class="meta">
+  <span>phase: <b id="metaPhase">-</b></span>
   <span>Transformed by: <b id="metaRule">-</b></span>
   <span>kind: <b id="metaKind">-</b></span>
   <span>original byte span: <b id="metaSpan">-</b></span>
@@ -171,6 +172,7 @@ const codeEl = document.getElementById("code");
 const sliderEl = document.getElementById("slider");
 const stepLabelEl = document.getElementById("stepLabel");
 const metaKindEl = document.getElementById("metaKind");
+const metaPhaseEl = document.getElementById("metaPhase");
 const metaRuleEl = document.getElementById("metaRule");
 const metaSpanEl = document.getElementById("metaSpan");
 const prevBtn = document.getElementById("prev");
@@ -187,6 +189,7 @@ function show(i) {
   sliderEl.value = current;
   stepLabelEl.textContent = "Step " + current + " / " + (STEPS.length - 1);
   metaKindEl.textContent = step.kind;
+  metaPhaseEl.textContent = step.phase;
   metaRuleEl.textContent = step.rule;
   metaSpanEl.textContent = "[" + step.start + ", " + step.end + ")";
   prevBtn.disabled = current === 0;
