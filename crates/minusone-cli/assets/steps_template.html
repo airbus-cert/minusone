@@ -201,6 +201,9 @@ prevBtn.addEventListener("click", () => show(current - 1));
 nextBtn.addEventListener("click", () => show(current + 1));
 sliderEl.addEventListener("input", () => show(parseInt(sliderEl.value, 10)));
 document.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+
   if (e.key === "ArrowLeft") show(current - 1);
   if (e.key === "ArrowRight") show(current + 1);
 });

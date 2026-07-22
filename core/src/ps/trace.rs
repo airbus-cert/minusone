@@ -1,19 +1,18 @@
 use crate::error::MinusOneResult;
-use crate::js::linter::Linter;
-use crate::js::{JavaScript, JavaScriptRuleSet};
+use crate::ps::linter::Linter;
+use crate::ps::{Powershell, PowershellRuleSet};
 use crate::rule::RuleMut;
 pub use crate::trace::{Step, push_text_step};
 use crate::trace::{find_root, push_main_step};
 use crate::tree::{ControlFlow, NodeMut};
 
-
 pub struct TracingRuleSet<'a> {
-    inner: JavaScriptRuleSet<'a>,
+    inner: PowershellRuleSet<'a>,
     pub steps: Vec<Step>,
 }
 
 impl<'a> TracingRuleSet<'a> {
-    pub fn new(inner: JavaScriptRuleSet<'a>) -> Self {
+    pub fn new(inner: PowershellRuleSet<'a>) -> Self {
         Self {
             inner,
             steps: Vec::new(),
@@ -22,7 +21,7 @@ impl<'a> TracingRuleSet<'a> {
 }
 
 impl<'a> RuleMut<'a> for TracingRuleSet<'a> {
-    type Language = JavaScript;
+    type Language = Powershell;
 
     fn enter(
         &mut self,
