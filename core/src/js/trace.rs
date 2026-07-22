@@ -6,7 +6,7 @@ use crate::tree::{ControlFlow, Node, NodeMut};
 
 pub struct Step {
     pub index: usize,
-    pub node_id: usize,
+    pub rule: String,
     pub kind: &'static str,
     pub start: usize,
     pub end: usize,
@@ -51,31 +51,21 @@ impl<'a> RuleMut<'a> for TracingRuleSet<'a> {
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
-        let before = node.view().data().cloned();
-        self.inner.leave(node, flow)?;
-        let after = node.view().data().cloned();
-
-        let changed = match (&before, &after) {
-            (None, Some(_)) => true,
-            (Some(a), Some(b)) => a != b,
-            _ => false,
-        };
-
-        if changed {
+        let steps = &mut self.steps;
+        self.inner.leave_traced(node, flow, move |node, rule_name| {
             let root = find_root(node.view());
             let mut linter = Linter::default();
             root.apply(&mut linter)?;
 
-            self.steps.push(Step {
-                index: self.steps.len(),
-                node_id: node.id(),
+            steps.push(Step {
+                index: steps.len(),
+                rule: rule_name.to_string(),
                 kind: node.view().kind(),
                 start: node.view().start_abs(),
                 end: node.view().end_abs(),
                 source: linter.output,
             });
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 }
