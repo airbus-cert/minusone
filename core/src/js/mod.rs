@@ -22,6 +22,7 @@ pub mod string;
 pub mod r#switch;
 pub mod ternary;
 mod tests;
+pub mod trace;
 pub mod r#typeof;
 mod utils;
 pub mod var;
