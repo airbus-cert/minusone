@@ -78,7 +78,7 @@ pub(crate) fn run_deobf_js_traced(
     println!("{}", engine.lint(keep_dead_code)?);
 
     let html = trace_view::render(&cleaned, &steps);
-    let out_path = "trace.html";
+    let out_path = "steps.html";
     match std::fs::write(out_path, html) {
         Ok(()) => info!(
             "Recorded {} reduction step(s), trace written to {}",

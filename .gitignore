@@ -34,4 +34,4 @@ devenv.local.nix
 # test venv
 /.venv-pyminusone-test/
 /scripts/
-/trace.html
+steps.html
