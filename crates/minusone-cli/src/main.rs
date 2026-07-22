@@ -161,7 +161,7 @@ fn main() {
     let now = std::time::Instant::now();
 
     let result = match lang {
-        Language::Powershell if cli.debug_level == DebugLevel::Trace => run_deobf_ps_traced(
+        Language::Powershell if cli.step => run_deobf_ps_traced(
             &source,
             cli_clone,
             rule_set,
@@ -175,7 +175,7 @@ fn main() {
             skip_rule_set,
             cli.keep_dead_code,
         ),
-        Language::Javascript if cli.debug_level == DebugLevel::Trace => run_deobf_js_traced(
+        Language::Javascript if cli.step => run_deobf_js_traced(
             &source,
             cli_clone,
             rule_set,

@@ -1,4 +1,4 @@
-use crate::cli::{Cli, DebugLevel, Language};
+use crate::cli::{Cli, DebugLevel, Language, StepFormat};
 use crate::trace_view;
 use log::{info, warn};
 use minusone::debug::DebugView;
@@ -9,16 +9,20 @@ use minusone::ps::backend::PowershellBackend;
 use minusone::trace::Step;
 use std::fmt::Debug;
 
-fn write_steps_html(source: &str, steps: &[Step]) {
-    let html = trace_view::render(source, steps);
-    let out_path = "steps.html";
-    match std::fs::write(out_path, html) {
+fn write_steps_output(source: &str, steps: &[Step], format: StepFormat, output: Option<&str>) {
+    let (default_path, content) = match format {
+        StepFormat::Html => ("steps.html", trace_view::render_html(source, steps)),
+        StepFormat::Json => ("steps.json", trace_view::render_json(source, steps)),
+    };
+    let out_path = output.unwrap_or(default_path);
+
+    match std::fs::write(out_path, content) {
         Ok(()) => info!(
-            "Recorded {} reduction step(s), trace written to {}",
+            "Recorded {} reduction step(s), written to {}",
             steps.len(),
             out_path
         ),
-        Err(e) => log::error!("Failed to write trace file {}: {}", out_path, e),
+        Err(e) => log::error!("Failed to write step file {}: {}", out_path, e),
     }
 }
 
@@ -96,7 +100,7 @@ pub(crate) fn run_deobf_js_traced(
 
     println!("{}", final_output);
 
-    write_steps_html(source, &steps);
+    write_steps_output(source, &steps, cli.step_format, cli.step_output.as_deref());
 
     Ok(())
 }
@@ -135,7 +139,7 @@ pub(crate) fn run_deobf_ps_traced(
 
     println!("{}", final_output);
 
-    write_steps_html(source, &steps);
+    write_steps_output(source, &steps, cli.step_format, cli.step_output.as_deref());
 
     Ok(())
 }
