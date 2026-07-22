@@ -58,10 +58,11 @@ pub(crate) fn run_deobf_js_traced(
         warn!("Custom rule selection is not supported in trace mode; running the full ruleset");
     }
 
-    let cleaned = DeobfuscateEngine::<JavaScriptBackend>::remove_extra(source, keep_dead_code)?;
+    let (cleaned, mut steps) =
+        JavaScriptBackend::remove_extra_traced(source, keep_dead_code)?;
     let mut engine = DeobfuscateEngine::<JavaScriptBackend>::from_source(&cleaned)?;
 
-    let steps = engine.deobfuscate_traced()?;
+    steps.extend(engine.deobfuscate_traced()?);
 
     if cli.debug_level == DebugLevel::Debug || cli.debug_level == DebugLevel::Trace {
         let debug_view = DebugView::new(
@@ -75,9 +76,13 @@ pub(crate) fn run_deobf_js_traced(
         println!("\n\n");
     }
 
-    println!("{}", engine.lint(keep_dead_code)?);
+    let (final_output, post_steps) =
+        JavaScriptBackend::lint_traced(engine.root_mut(), keep_dead_code)?;
+    steps.extend(post_steps);
 
-    let html = trace_view::render(&cleaned, &steps);
+    println!("{}", final_output);
+
+    let html = trace_view::render(source, &steps);
     let out_path = "steps.html";
     match std::fs::write(out_path, html) {
         Ok(()) => info!(

@@ -4,13 +4,30 @@ use crate::js::{JavaScript, JavaScriptRuleSet};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 
+
 pub struct Step {
-    pub index: usize,
+    // pre/main/post
+    pub phase: &'static str,
     pub rule: String,
     pub kind: &'static str,
     pub start: usize,
     pub end: usize,
     pub source: String,
+}
+
+pub fn push_text_step(steps: &mut Vec<Step>, phase: &'static str, rule: &str, current: &str) {
+    if steps.last().is_some_and(|s| s.source == current) {
+        return;
+    }
+
+    steps.push(Step {
+        phase,
+        rule: rule.to_string(),
+        kind: "program",
+        start: 0,
+        end: current.len(),
+        source: current.to_string(),
+    });
 }
 
 fn find_root<'a, T>(node: Node<'a, T>) -> Node<'a, T> {
@@ -58,7 +75,7 @@ impl<'a> RuleMut<'a> for TracingRuleSet<'a> {
             root.apply(&mut linter)?;
 
             steps.push(Step {
-                index: steps.len(),
+                phase: "main",
                 rule: rule_name.to_string(),
                 kind: node.view().kind(),
                 start: node.view().start_abs(),
