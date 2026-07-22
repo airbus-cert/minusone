@@ -6,7 +6,21 @@ use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::error::MinusOneResult;
 use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
+use minusone::trace::Step;
 use std::fmt::Debug;
+
+fn write_steps_html(source: &str, steps: &[Step]) {
+    let html = trace_view::render(source, steps);
+    let out_path = "steps.html";
+    match std::fs::write(out_path, html) {
+        Ok(()) => info!(
+            "Recorded {} reduction step(s), trace written to {}",
+            steps.len(),
+            out_path
+        ),
+        Err(e) => log::error!("Failed to write trace file {}: {}", out_path, e),
+    }
+}
 
 pub(crate) fn run_deobf<B: DeobfuscationBackend>(
     source: &str,
@@ -82,16 +96,46 @@ pub(crate) fn run_deobf_js_traced(
 
     println!("{}", final_output);
 
-    let html = trace_view::render(source, &steps);
-    let out_path = "steps.html";
-    match std::fs::write(out_path, html) {
-        Ok(()) => info!(
-            "Recorded {} reduction step(s), trace written to {}",
-            steps.len(),
-            out_path
-        ),
-        Err(e) => log::error!("Failed to write trace file {}: {}", out_path, e),
+    write_steps_html(source, &steps);
+
+    Ok(())
+}
+
+pub(crate) fn run_deobf_ps_traced(
+    source: &str,
+    cli: Cli,
+    rule_set: Option<Vec<String>>,
+    skip_rule_set: Option<Vec<String>>,
+    keep_dead_code: bool,
+) -> MinusOneResult<()> {
+    if rule_set.is_some() || skip_rule_set.is_some() {
+        warn!("Custom rule selection is not supported in trace mode; running the full ruleset");
     }
+
+    let (cleaned, mut steps) = PowershellBackend::remove_extra_traced(source)?;
+    let mut engine = DeobfuscateEngine::<PowershellBackend>::from_source(&cleaned)?;
+
+    steps.extend(engine.deobfuscate_traced()?);
+
+    if cli.debug_level == DebugLevel::Debug || cli.debug_level == DebugLevel::Trace {
+        let debug_view = DebugView::new(
+            cli.debug_indent,
+            !cli.debug_no_text,
+            !cli.debug_no_count,
+            !cli.debug_no_colors,
+        );
+        engine.debug(Some(debug_view));
+
+        println!("\n\n");
+    }
+
+    let (final_output, post_steps) =
+        PowershellBackend::lint_traced(engine.root_mut(), "    ", keep_dead_code)?;
+    steps.extend(post_steps);
+
+    println!("{}", final_output);
+
+    write_steps_html(source, &steps);
 
     Ok(())
 }

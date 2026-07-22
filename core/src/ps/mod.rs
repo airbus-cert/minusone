@@ -42,6 +42,7 @@ pub mod strategy;
 pub mod string;
 pub mod switch;
 mod tool;
+pub mod trace;
 pub mod typing;
 pub mod var;
 //todo: add : mod r#static;
@@ -206,6 +207,18 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         flow: crate::tree::ControlFlow,
     ) -> MinusOneResult<()> {
         self.ruleset.leave(node, flow)
+    }
+}
+
+impl<'a> PowershellRuleSet<'a> {
+    /// See `RuleSet::leave_traced`.
+    pub fn leave_traced(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Powershell>,
+        flow: crate::tree::ControlFlow,
+        on_change: impl FnMut(&mut crate::tree::NodeMut<'a, Powershell>, &'a str) -> MinusOneResult<()>,
+    ) -> MinusOneResult<()> {
+        self.ruleset.leave_traced(node, flow, on_change)
     }
 }
 

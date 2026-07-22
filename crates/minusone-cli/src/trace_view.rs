@@ -1,6 +1,6 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use minusone::js::trace::Step;
+use minusone::trace::Step;
 
 fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);

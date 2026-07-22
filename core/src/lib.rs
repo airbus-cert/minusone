@@ -20,4 +20,5 @@ pub mod error;
 pub mod init;
 pub mod rule;
 pub mod scope;
+pub mod trace;
 pub mod tree;
