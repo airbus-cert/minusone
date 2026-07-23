@@ -107,10 +107,12 @@ impl<'a, T: Clone + PartialEq> RuleSet<'a, T> {
         &mut self,
         node: &mut NodeMut<'a, T>,
         flow: ControlFlow,
-        mut on_change: impl FnMut(&mut NodeMut<'a, T>, &'a str) -> MinusOneResult<()>,
+        mut render: impl for<'b> FnMut(&Node<'b, T>) -> MinusOneResult<String>,
+        mut on_change: impl FnMut(&mut NodeMut<'a, T>, &'a str, String, String) -> MinusOneResult<()>,
     ) -> MinusOneResult<()> {
         for (name, rule) in self.rules.iter_mut() {
             let before = node.view().data().cloned();
+            let before_text = render(&node.view())?;
             rule.leave(node, flow)?;
             let after = node.view().data().cloned();
 
@@ -121,7 +123,8 @@ impl<'a, T: Clone + PartialEq> RuleSet<'a, T> {
             };
 
             if changed {
-                on_change(node, name)?;
+                let after_text = render(&node.view())?;
+                on_change(node, name, before_text, after_text)?;
             }
         }
         Ok(())

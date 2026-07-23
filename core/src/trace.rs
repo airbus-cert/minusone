@@ -8,10 +8,19 @@ pub struct Step {
     pub start: usize,
     pub end: usize,
     pub source: String,
+    pub old: String,
+    pub new: String,
+    pub has_node_diff: bool,
 }
 
-pub fn push_text_step(steps: &mut Vec<Step>, phase: &'static str, rule: &str, current: &str) {
-    if steps.last().is_some_and(|s| s.source == current) {
+pub fn push_text_step(
+    steps: &mut Vec<Step>,
+    phase: &'static str,
+    rule: &str,
+    current: &str,
+    record_all: bool,
+) {
+    if !record_all && steps.last().is_some_and(|s| s.source == current) {
         return;
     }
 
@@ -22,9 +31,13 @@ pub fn push_text_step(steps: &mut Vec<Step>, phase: &'static str, rule: &str, cu
         start: 0,
         end: current.len(),
         source: current.to_string(),
+        old: String::new(),
+        new: String::new(),
+        has_node_diff: false,
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn push_main_step(
     steps: &mut Vec<Step>,
     rule: &str,
@@ -32,8 +45,11 @@ pub fn push_main_step(
     start: usize,
     end: usize,
     source: String,
+    old: String,
+    new: String,
+    record_all: bool,
 ) {
-    if steps.last().is_some_and(|s| s.source == source) {
+    if !record_all && steps.last().is_some_and(|s| s.source == source) {
         return;
     }
 
@@ -44,6 +60,9 @@ pub fn push_main_step(
         start,
         end,
         source,
+        old,
+        new,
+        has_node_diff: true,
     });
 }
 

@@ -216,9 +216,15 @@ impl<'a> PowershellRuleSet<'a> {
         &mut self,
         node: &mut crate::tree::NodeMut<'a, Powershell>,
         flow: crate::tree::ControlFlow,
-        on_change: impl FnMut(&mut crate::tree::NodeMut<'a, Powershell>, &'a str) -> MinusOneResult<()>,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, Powershell>) -> MinusOneResult<String>,
+        on_change: impl FnMut(
+            &mut crate::tree::NodeMut<'a, Powershell>,
+            &'a str,
+            String,
+            String,
+        ) -> MinusOneResult<()>,
     ) -> MinusOneResult<()> {
-        self.ruleset.leave_traced(node, flow, on_change)
+        self.ruleset.leave_traced(node, flow, render, on_change)
     }
 }
 

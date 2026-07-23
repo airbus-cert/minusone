@@ -103,6 +103,10 @@ pub struct Cli {
     /// Output file for --step (defaults to steps.html or steps.json depending on --step-format)
     #[arg(long, value_name = "PATH", requires = "step")]
     pub step_output: Option<String>,
+
+    /// Record every step, even ones that produce no visible source change (requires --step)
+    #[arg(long, requires = "step", alias = "sa")]
+    pub step_all: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq)]
