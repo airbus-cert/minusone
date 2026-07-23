@@ -14,6 +14,8 @@
     --mark-bg: #ffe58a;
     --mark-fg: #1a1a1a;
     --muted: #6b6b76;
+    --good: #1a7f37;
+    --bad: #c0392b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -25,6 +27,8 @@
       --mark-bg: #5a4a1f;
       --mark-fg: #ffe58a;
       --muted: #9a9aa2;
+      --good: #7ee787;
+      --bad: #ff7b72;
     }
   }
   * { box-sizing: border-box; }
@@ -71,8 +75,17 @@
     font-size: 13px;
     color: var(--muted);
     white-space: nowrap;
-    min-width: 90px;
+    min-width: 140px;
     text-align: right;
+  }
+  .filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
   }
   .meta {
     padding: 10px 20px;
@@ -84,6 +97,31 @@
     flex-wrap: wrap;
   }
   .meta b { color: var(--fg); }
+  .diffbar {
+    padding: 8px 20px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .diffbar .row {
+    display: flex;
+    gap: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 4.5em;
+    overflow-y: auto;
+  }
+  .diffbar .tag {
+    flex: 0 0 auto;
+    font-weight: 600;
+  }
+  .diffbar .old .tag { color: var(--bad); }
+  .diffbar .new .tag { color: var(--good); }
+  .diffbar .old .text { color: var(--bad); opacity: 0.85; }
+  .diffbar .new .text { color: var(--good); }
   main {
     padding: 20px;
     overflow-x: auto;
@@ -99,17 +137,24 @@
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    max-height: 70vh;
+    overflow-y: auto;
   }
   mark {
     background: var(--mark-bg);
     color: var(--mark-fg);
     border-radius: 3px;
     padding: 0 1px;
+    scroll-margin: 120px;
   }
   .empty {
     padding: 40px;
     text-align: center;
     color: var(--muted);
+  }
+  .noop-badge {
+    color: var(--muted);
+    font-style: italic;
   }
 </style>
 </head>
@@ -121,6 +166,10 @@
     <input type="range" id="slider" min="0" max="0" value="0" step="1">
     <button id="next">Next &rarr;</button>
   </div>
+  <label class="filter-toggle">
+    <input type="checkbox" id="showNoop">
+    Show unchanged steps
+  </label>
   <div class="step-label" id="stepLabel">-</div>
 </header>
 <div class="meta">
@@ -128,6 +177,10 @@
   <span>Transformed by: <b id="metaRule">-</b></span>
   <span>kind: <b id="metaKind">-</b></span>
   <span>original byte span: <b id="metaSpan">-</b></span>
+</div>
+<div class="diffbar" id="diffBar">
+  <div class="row old"><span class="tag">-</span><span class="text" id="diffOld"></span></div>
+  <div class="row new"><span class="tag">+</span><span class="text" id="diffNew"></span></div>
 </div>
 <main>
   <pre id="code"></pre>
@@ -146,26 +199,45 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function renderDiff(prev, cur) {
-  if (prev === null) return escapeHtml(cur);
+const resolvedCache = new Array(STEPS.length);
 
+function reconstruct(i) {
+  if (resolvedCache[i] !== undefined) return resolvedCache[i];
+  const step = STEPS[i];
+  let text;
+  if (step.source !== undefined) {
+    text = step.source;
+  } else {
+    const prev = reconstruct(i - 1);
+    text = prev.slice(0, step.dstart) + step.new + prev.slice(step.dend);
+  }
+  resolvedCache[i] = text;
+  return text;
+}
+
+function computeDiff(prev, cur) {
   let prefix = 0;
-  const maxPrefix = Math.min(prev.length, cur.length);
-  while (prefix < maxPrefix && prev[prefix] === cur[prefix]) prefix++;
-
+  const maxP = Math.min(prev.length, cur.length);
+  while (prefix < maxP && prev[prefix] === cur[prefix]) prefix++;
   let suffix = 0;
-  const maxSuffix = Math.min(prev.length, cur.length) - prefix;
-  while (
-    suffix < maxSuffix &&
-    prev[prev.length - 1 - suffix] === cur[cur.length - 1 - suffix]
-  ) suffix++;
+  const maxS = maxP - prefix;
+  while (suffix < maxS && prev[prev.length - 1 - suffix] === cur[cur.length - 1 - suffix]) suffix++;
+  return {
+    dstart: prefix,
+    dend: prev.length - suffix,
+    old: prev.slice(prefix, prev.length - suffix),
+    new: cur.slice(prefix, cur.length - suffix),
+  };
+}
 
-  const before = cur.slice(0, prefix);
-  const middle = cur.slice(prefix, cur.length - suffix);
-  const after = cur.slice(cur.length - suffix);
-
-  if (middle.length === 0) return escapeHtml(cur);
-  return escapeHtml(before) + "<mark>" + escapeHtml(middle) + "</mark>" + escapeHtml(after);
+function getDiffParts(i) {
+  if (i === 0) return { dstart: 0, dend: 0, old: "", new: "", loc: true };
+  const step = STEPS[i];
+  if (step.dstart !== undefined) {
+    return { dstart: step.dstart, dend: step.dend, old: step.old, new: step.new, loc: step.loc !== false };
+  }
+  const d = computeDiff(reconstruct(i - 1), reconstruct(i));
+  return { ...d, loc: true };
 }
 
 const codeEl = document.getElementById("code");
@@ -175,42 +247,81 @@ const metaKindEl = document.getElementById("metaKind");
 const metaPhaseEl = document.getElementById("metaPhase");
 const metaRuleEl = document.getElementById("metaRule");
 const metaSpanEl = document.getElementById("metaSpan");
+const diffOldEl = document.getElementById("diffOld");
+const diffNewEl = document.getElementById("diffNew");
 const prevBtn = document.getElementById("prev");
 const nextBtn = document.getElementById("next");
+const showNoopEl = document.getElementById("showNoop");
 
-let current = 0;
+let visible = [];
+let pos = 0;
 
-function show(i) {
-  current = Math.max(0, Math.min(STEPS.length - 1, i));
-  const step = STEPS[current];
-  const prevSource = current > 0 ? STEPS[current - 1].source : null;
+function computeVisible() {
+  const showNoop = showNoopEl.checked;
+  const idxs = [];
+  for (let i = 0; i < STEPS.length; i++) {
+    if (showNoop || i === 0 || i === STEPS.length - 1 || STEPS[i].same !== true) {
+      idxs.push(i);
+    }
+  }
+  return idxs;
+}
 
-  codeEl.innerHTML = renderDiff(prevSource, step.source);
-  sliderEl.value = current;
-  stepLabelEl.textContent = "Step " + current + " / " + (STEPS.length - 1);
+function show(newPos) {
+  pos = Math.max(0, Math.min(visible.length - 1, newPos));
+  const i = visible[pos];
+  const step = STEPS[i];
+  const src = reconstruct(i);
+  const diff = getDiffParts(i);
+
+  if (diff.new.length > 0 && diff.loc) {
+    const before = escapeHtml(src.slice(0, diff.dstart));
+    const markText = escapeHtml(src.slice(diff.dstart, diff.dstart + diff.new.length));
+    const after = escapeHtml(src.slice(diff.dstart + diff.new.length));
+    codeEl.innerHTML = before + "<mark id=\"cursor\">" + markText + "</mark>" + after;
+    const markEl = document.getElementById("cursor");
+    if (markEl) markEl.scrollIntoView({ block: "center" });
+  } else {
+    codeEl.innerHTML = escapeHtml(src);
+  }
+
+  sliderEl.value = pos;
+  stepLabelEl.textContent = "Step " + i + " / " + (STEPS.length - 1) +
+    (step.same ? " (no change)" : "");
   metaKindEl.textContent = step.kind;
   metaPhaseEl.textContent = step.phase;
   metaRuleEl.textContent = step.rule;
   metaSpanEl.textContent = "[" + step.start + ", " + step.end + ")";
-  prevBtn.disabled = current === 0;
-  nextBtn.disabled = current === STEPS.length - 1;
+  diffOldEl.textContent = diff.old || "(none)";
+  diffNewEl.textContent = diff.new || "(none)";
+  prevBtn.disabled = pos === 0;
+  nextBtn.disabled = pos === visible.length - 1;
 }
 
-sliderEl.max = STEPS.length - 1;
-prevBtn.addEventListener("click", () => show(current - 1));
-nextBtn.addEventListener("click", () => show(current + 1));
+prevBtn.addEventListener("click", () => show(pos - 1));
+nextBtn.addEventListener("click", () => show(pos + 1));
 sliderEl.addEventListener("input", () => show(parseInt(sliderEl.value, 10)));
 document.addEventListener("keydown", (e) => {
   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
   e.preventDefault();
 
-  if (e.key === "ArrowLeft") show(current - 1);
-  if (e.key === "ArrowRight") show(current + 1);
+  if (e.key === "ArrowLeft") show(pos - 1);
+  if (e.key === "ArrowRight") show(pos + 1);
+});
+showNoopEl.addEventListener("change", () => {
+  const rawI = visible[pos];
+  visible = computeVisible();
+  sliderEl.max = visible.length - 1;
+  const newPos = visible.indexOf(rawI);
+  show(newPos >= 0 ? newPos : 0);
 });
 
 if (STEPS.length === 0) {
   document.querySelector("main").innerHTML = '<div class="empty">No reduction recorded.</div>';
+  document.getElementById("diffBar").style.display = "none";
 } else {
+  visible = computeVisible();
+  sliderEl.max = visible.length - 1;
   show(0);
 }
 </script>

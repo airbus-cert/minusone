@@ -9,13 +9,15 @@ use crate::tree::{ControlFlow, NodeMut};
 pub struct TracingRuleSet<'a> {
     inner: PowershellRuleSet<'a>,
     pub steps: Vec<Step>,
+    record_all: bool,
 }
 
 impl<'a> TracingRuleSet<'a> {
-    pub fn new(inner: PowershellRuleSet<'a>) -> Self {
+    pub fn new(inner: PowershellRuleSet<'a>, record_all: bool) -> Self {
         Self {
             inner,
             steps: Vec::new(),
+            record_all,
         }
     }
 }
@@ -37,20 +39,33 @@ impl<'a> RuleMut<'a> for TracingRuleSet<'a> {
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
         let steps = &mut self.steps;
-        self.inner.leave_traced(node, flow, move |node, rule_name| {
-            let root = find_root(node.view());
-            let mut linter = Linter::default();
-            root.apply(&mut linter)?;
+        let record_all = self.record_all;
+        self.inner.leave_traced(
+            node,
+            flow,
+            |node| {
+                let mut linter = Linter::default();
+                node.apply(&mut linter)?;
+                Ok(linter.output)
+            },
+            move |node, rule_name, old, new| {
+                let root = find_root(node.view());
+                let mut linter = Linter::default();
+                root.apply(&mut linter)?;
 
-            push_main_step(
-                steps,
-                rule_name,
-                node.view().kind(),
-                node.view().start_abs(),
-                node.view().end_abs(),
-                linter.output,
-            );
-            Ok(())
-        })
+                push_main_step(
+                    steps,
+                    rule_name,
+                    node.view().kind(),
+                    node.view().start_abs(),
+                    node.view().end_abs(),
+                    linter.output,
+                    old,
+                    new,
+                    record_all,
+                );
+                Ok(())
+            },
+        )
     }
 }

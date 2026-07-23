@@ -17,10 +17,11 @@ impl JavaScriptBackend {
     pub fn remove_extra_traced(
         src: &str,
         keep_dead_code: bool,
+        record_all: bool,
     ) -> MinusOneResult<(String, Vec<crate::js::trace::Step>)> {
         let mut steps = Vec::new();
         let out = remove_extra_impl(src, keep_dead_code, &mut |rule, current| {
-            crate::js::trace::push_text_step(&mut steps, "pre", rule, current);
+            crate::js::trace::push_text_step(&mut steps, "pre", rule, current, record_all);
         })?;
         Ok((out, steps))
     }
@@ -31,10 +32,11 @@ impl JavaScriptBackend {
     pub fn lint_traced(
         root: &Tree<HashMapStorage<JavaScript>>,
         keep_dead_code: bool,
+        record_all: bool,
     ) -> MinusOneResult<(String, Vec<crate::js::trace::Step>)> {
         let mut steps = Vec::new();
         let out = lint_impl(root, keep_dead_code, &mut |rule, current| {
-            crate::js::trace::push_text_step(&mut steps, "post", rule, current);
+            crate::js::trace::push_text_step(&mut steps, "post", rule, current, record_all);
         })?;
         Ok((out, steps))
     }
@@ -307,10 +309,14 @@ impl<'a> DeobfuscateEngine<'a, JavaScriptBackend> {
     pub fn from_javascript(src: &'a str) -> MinusOneResult<Self> {
         Self::from_source(src)
     }
-    pub fn deobfuscate_traced(&mut self) -> MinusOneResult<Vec<crate::js::trace::Step>> {
-        let mut tracer = crate::js::trace::TracingRuleSet::new(JavaScriptRuleSet::new(
-            RuleSetBuilderType::WithoutRules(vec![]),
-        ));
+    pub fn deobfuscate_traced(
+        &mut self,
+        record_all: bool,
+    ) -> MinusOneResult<Vec<crate::js::trace::Step>> {
+        let mut tracer = crate::js::trace::TracingRuleSet::new(
+            JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            record_all,
+        );
         self.root_mut()
             .apply_mut_with_strategy(&mut tracer, JavaScriptStrategy)?;
         Ok(tracer.steps)

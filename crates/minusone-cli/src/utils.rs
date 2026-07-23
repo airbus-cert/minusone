@@ -77,10 +77,10 @@ pub(crate) fn run_deobf_js_traced(
     }
 
     let (cleaned, mut steps) =
-        JavaScriptBackend::remove_extra_traced(source, keep_dead_code)?;
+        JavaScriptBackend::remove_extra_traced(source, keep_dead_code, cli.step_all)?;
     let mut engine = DeobfuscateEngine::<JavaScriptBackend>::from_source(&cleaned)?;
 
-    steps.extend(engine.deobfuscate_traced()?);
+    steps.extend(engine.deobfuscate_traced(cli.step_all)?);
 
     if cli.debug_level == DebugLevel::Debug || cli.debug_level == DebugLevel::Trace {
         let debug_view = DebugView::new(
@@ -95,7 +95,7 @@ pub(crate) fn run_deobf_js_traced(
     }
 
     let (final_output, post_steps) =
-        JavaScriptBackend::lint_traced(engine.root_mut(), keep_dead_code)?;
+        JavaScriptBackend::lint_traced(engine.root_mut(), keep_dead_code, cli.step_all)?;
     steps.extend(post_steps);
 
     println!("{}", final_output);
@@ -116,10 +116,11 @@ pub(crate) fn run_deobf_ps_traced(
         warn!("Custom rule selection is not supported in trace mode; running the full ruleset");
     }
 
-    let (cleaned, mut steps) = PowershellBackend::remove_extra_traced(source)?;
+    let (cleaned, mut steps) =
+        PowershellBackend::remove_extra_traced(source, cli.step_all)?;
     let mut engine = DeobfuscateEngine::<PowershellBackend>::from_source(&cleaned)?;
 
-    steps.extend(engine.deobfuscate_traced()?);
+    steps.extend(engine.deobfuscate_traced(cli.step_all)?);
 
     if cli.debug_level == DebugLevel::Debug || cli.debug_level == DebugLevel::Trace {
         let debug_view = DebugView::new(
@@ -134,7 +135,7 @@ pub(crate) fn run_deobf_ps_traced(
     }
 
     let (final_output, post_steps) =
-        PowershellBackend::lint_traced(engine.root_mut(), "    ", keep_dead_code)?;
+        PowershellBackend::lint_traced(engine.root_mut(), "    ", keep_dead_code, cli.step_all)?;
     steps.extend(post_steps);
 
     println!("{}", final_output);
