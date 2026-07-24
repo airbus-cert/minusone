@@ -44,6 +44,21 @@ impl PowershellBackend {
 
         Ok((out, steps))
     }
+
+    /// Runs the full pre-process/reduce/lint pipeline and returns a
+    /// `Stepper` that hands out each recorded transform one at a time via
+    /// `next`.
+    pub fn stepper(
+        src: &str,
+        keep_dead_code: bool,
+        record_all: bool,
+    ) -> MinusOneResult<crate::trace::Stepper> {
+        Ok(crate::trace::Stepper::Ps(crate::ps::step::PsStepper::new(
+            src,
+            keep_dead_code,
+            record_all,
+        )?))
+    }
 }
 
 impl DeobfuscationBackend for PowershellBackend {

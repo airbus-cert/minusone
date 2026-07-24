@@ -418,6 +418,11 @@ impl<'a, T> NodeMut<'a, T> {
         self.storage.set(node_id, data)
     }
 
+    /// Remove any data associated with a node
+    pub fn remove_by_node_id(&mut self, node_id: usize) {
+        self.storage.remove(node_id)
+    }
+
     /// Reduce data node
     /// It will delete associated data to all children
     ///

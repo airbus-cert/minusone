@@ -1,7 +1,8 @@
 use minusone::engine::{DeobfuscateEngine, DeobfuscationBackend};
 use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
-use pyo3::exceptions::PyRuntimeError;
+use minusone::trace::Stepper;
+use pyo3::exceptions::{PyRuntimeError, PyStopIteration, PyValueError};
 use pyo3::prelude::*;
 use std::fmt::Debug;
 
@@ -83,10 +84,104 @@ fn deobfuscate_without(language: String, source: String, ruleset: Vec<String>) -
     }
 }
 
+#[pyclass(name = "Step")]
+struct PyStep {
+    #[pyo3(get)]
+    phase: String,
+    #[pyo3(get)]
+    rule: String,
+    #[pyo3(get)]
+    kind: String,
+    #[pyo3(get)]
+    start: usize,
+    #[pyo3(get)]
+    end: usize,
+    #[pyo3(get)]
+    source: String,
+    #[pyo3(get)]
+    old: String,
+    #[pyo3(get)]
+    new: String,
+}
+
+impl From<minusone::trace::Step> for PyStep {
+    fn from(step: minusone::trace::Step) -> Self {
+        PyStep {
+            phase: step.phase.to_string(),
+            rule: step.rule,
+            kind: step.kind.to_string(),
+            start: step.start,
+            end: step.end,
+            source: step.source,
+            old: step.old,
+            new: step.new,
+        }
+    }
+}
+
+#[pymethods]
+impl PyStep {
+    fn __repr__(&self) -> String {
+        format!(
+            "Step(phase={:?}, rule={:?}, kind={:?}, start={}, end={})",
+            self.phase, self.rule, self.kind, self.start, self.end
+        )
+    }
+}
+
+#[pyclass(name = "Stepper", unsendable)]
+struct PyStepper {
+    inner: Stepper,
+}
+
+#[pymethods]
+impl PyStepper {
+    fn next(&mut self) -> Option<PyStep> {
+        Iterator::next(&mut self.inner).map(PyStep::from)
+    }
+
+    fn __iter__(slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> PyResult<PyStep> {
+        self.next().ok_or_else(|| PyStopIteration::new_err(()))
+    }
+}
+
+fn build_stepper(language: &str, source: &str, record_all: bool) -> PyResult<Stepper> {
+    let stepper = match language.to_lowercase().as_str() {
+        "ps" | "ps1" | "powershell" => {
+            PowershellBackend::stepper(source, false, record_all).map_err(PyMinusOneError)?
+        }
+        "js" | "javascript" => {
+            JavaScriptBackend::stepper(source, false, record_all).map_err(PyMinusOneError)?
+        }
+        _ => {
+            return Err(PyErr::new::<PyValueError, _>(format!(
+                "Unsupported language: {}",
+                language
+            )));
+        }
+    };
+    Ok(stepper)
+}
+
+#[pyfunction]
+#[pyo3(signature = (language, source, record_all=false))]
+fn new_stepper(language: String, source: String, record_all: bool) -> PyResult<PyStepper> {
+    Ok(PyStepper {
+        inner: build_stepper(&language, &source, record_all)?,
+    })
+}
+
 #[pymodule]
 fn pyminusone(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deobfuscate, m)?)?;
     m.add_function(wrap_pyfunction!(deobfuscate_with, m)?)?;
     m.add_function(wrap_pyfunction!(deobfuscate_without, m)?)?;
+    m.add_function(wrap_pyfunction!(new_stepper, m)?)?;
+    m.add_class::<PyStep>()?;
+    m.add_class::<PyStepper>()?;
     Ok(())
 }

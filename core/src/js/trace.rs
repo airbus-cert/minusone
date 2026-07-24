@@ -6,7 +6,6 @@ pub use crate::trace::{Step, push_text_step};
 use crate::trace::{find_root, push_main_step};
 use crate::tree::{ControlFlow, NodeMut};
 
-
 pub struct TracingRuleSet<'a> {
     inner: JavaScriptRuleSet<'a>,
     pub steps: Vec<Step>,

@@ -17,6 +17,7 @@ pub mod objects;
 pub mod post_process;
 pub mod regex;
 pub mod specials;
+pub mod step;
 pub mod strategy;
 pub mod string;
 pub mod r#switch;
@@ -308,6 +309,17 @@ impl<'a> JavaScriptRuleSet<'a> {
         ) -> MinusOneResult<()>,
     ) -> MinusOneResult<()> {
         self.ruleset.leave_traced(node, flow, render, on_change)
+    }
+
+    /// See `RuleSet::leave_traced_step`.
+    pub fn leave_traced_step(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, JavaScript>,
+        flow: crate::tree::ControlFlow,
+        start_at: usize,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, JavaScript>) -> MinusOneResult<String>,
+    ) -> MinusOneResult<crate::rule::LeaveStepOutcome<'a>> {
+        self.ruleset.leave_traced_step(node, flow, start_at, render)
     }
 }
 

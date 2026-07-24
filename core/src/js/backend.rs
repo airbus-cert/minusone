@@ -40,6 +40,21 @@ impl JavaScriptBackend {
         })?;
         Ok((out, steps))
     }
+
+    /// Runs the full pre-process/reduce/lint pipeline and returns a
+    /// `Stepper` that hands out each recorded transform one at a time via
+    /// `next`.
+    pub fn stepper(
+        src: &str,
+        keep_dead_code: bool,
+        record_all: bool,
+    ) -> MinusOneResult<crate::trace::Stepper> {
+        Ok(crate::trace::Stepper::Js(crate::js::step::JsStepper::new(
+            src,
+            keep_dead_code,
+            record_all,
+        )?))
+    }
 }
 
 /// Shared implementation of `remove_extra`, calling back `on_step` with the
@@ -149,7 +164,7 @@ fn remove_extra_impl(
 
 /// Shared implementation of `clean_tree`, calling back `on_step` the same
 /// way as `remove_extra_impl`.
-fn clean_impl(
+pub fn clean_impl(
     mut current: String,
     keep_dead_code: bool,
     on_step: &mut dyn FnMut(&str, &str),
