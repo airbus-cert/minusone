@@ -38,10 +38,12 @@ pub mod join;
 pub mod linter;
 pub mod loops;
 pub mod method;
+pub mod step;
 pub mod strategy;
 pub mod string;
 pub mod switch;
 mod tool;
+pub mod trace;
 pub mod typing;
 pub mod var;
 //todo: add : mod r#static;
@@ -206,6 +208,35 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         flow: crate::tree::ControlFlow,
     ) -> MinusOneResult<()> {
         self.ruleset.leave(node, flow)
+    }
+}
+
+impl<'a> PowershellRuleSet<'a> {
+    /// See `RuleSet::leave_traced`.
+    pub fn leave_traced(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Powershell>,
+        flow: crate::tree::ControlFlow,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, Powershell>) -> MinusOneResult<String>,
+        on_change: impl FnMut(
+            &mut crate::tree::NodeMut<'a, Powershell>,
+            &'a str,
+            String,
+            String,
+        ) -> MinusOneResult<()>,
+    ) -> MinusOneResult<()> {
+        self.ruleset.leave_traced(node, flow, render, on_change)
+    }
+
+    /// See `RuleSet::leave_traced_step`.
+    pub fn leave_traced_step(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Powershell>,
+        flow: crate::tree::ControlFlow,
+        start_at: usize,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, Powershell>) -> MinusOneResult<String>,
+    ) -> MinusOneResult<crate::rule::LeaveStepOutcome<'a>> {
+        self.ruleset.leave_traced_step(node, flow, start_at, render)
     }
 }
 

@@ -67,12 +67,18 @@ impl<'a> Rule<'a> for RemoveComment {
     }
 }
 
-/// Reconstructs the JavaScript source while preserving original whitespace
+/// Reconstructs the JavaScript source while preserving original whitespace.
+///
+/// `apply` may be called on any node, not just the document root.
 #[derive(Default)]
 pub struct Linter {
     pub output: String,
     source: String,
+    // 0 for the whole document
+    base: usize,
     last_index: usize,
+    started: bool,
+    depth: usize,
 }
 
 impl Linter {
@@ -90,23 +96,17 @@ impl Linter {
 
     fn copy_until(&mut self, end: usize) {
         if end > self.last_index {
-            self.output += &self.source[self.last_index..end];
+            self.output += &self.source[(self.last_index - self.base)..(end - self.base)];
         }
         self.last_index = end;
     }
     fn skip_until(&mut self, end: usize) {
         self.last_index = end;
     }
-}
 
-impl<'a> Rule<'a> for Linter {
-    type Language = JavaScript;
-
-    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+    fn enter_inner<'a>(&mut self, node: &Node<'a, JavaScript>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
                 return Ok(true);
             }
             "comment" => {
@@ -150,11 +150,30 @@ impl<'a> Rule<'a> for Linter {
 
         Ok(true)
     }
+}
+
+impl<'a> Rule<'a> for Linter {
+    type Language = JavaScript;
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        if !self.started {
+            self.started = true;
+            self.source = node.text()?.to_string();
+            self.base = node.start_abs();
+            self.last_index = node.start_abs();
+        }
+
+        let descend = self.enter_inner(node)?;
+        if descend {
+            self.depth += 1;
+        }
+        Ok(descend)
+    }
 
     fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
-        if node.kind() == "program" {
-            let len = self.source.len();
-            self.copy_until(len);
+        self.depth -= 1;
+        if self.depth == 0 {
+            self.copy_until(node.end_abs());
         }
         Ok(())
     }

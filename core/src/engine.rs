@@ -94,6 +94,12 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
     pub fn language_rules() -> Vec<&'a str> {
         B::language_rules()
     }
+    pub fn root(&self) -> &Tree<'a, HashMapStorage<B::Language>> {
+        &self.root
+    }
+    pub fn root_mut(&mut self) -> &mut Tree<'a, HashMapStorage<B::Language>> {
+        &mut self.root
+    }
 }
 
 pub trait CleanBackend {

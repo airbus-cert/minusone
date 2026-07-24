@@ -27,7 +27,9 @@ pub trait Rule<'a> {
 }
 
 pub struct RuleSet<'a, T> {
-    rules: Vec<Box<dyn RuleMut<'a, Language = T>>>,
+    // keeps the original (non-lowercased) rule name alongside each rule,
+    // so callers can report which rule fired without re-deriving casing
+    rules: Vec<(&'a str, Box<dyn RuleMut<'a, Language = T>>)>,
 }
 
 impl<'a, T> RuleSet<'a, T> {
@@ -35,11 +37,7 @@ impl<'a, T> RuleSet<'a, T> {
         full_ruleset: Vec<(&'a str, Box<dyn RuleMut<'a, Language = T>>)>,
         ctx: RuleSetBuilderType,
     ) -> Self {
-        let (full_names, full_rules): (Vec<String>, Vec<Box<dyn RuleMut<'a, Language = T>>>) =
-            full_ruleset
-                .into_iter()
-                .map(|(n, r)| (n.to_lowercase(), r))
-                .unzip();
+        let low_names: Vec<String> = full_ruleset.iter().map(|(n, _)| n.to_lowercase()).collect();
 
         let low_input: Vec<String> = match &ctx {
             RuleSetBuilderType::WithRules(r) | RuleSetBuilderType::WithoutRules(r) => {
@@ -48,7 +46,7 @@ impl<'a, T> RuleSet<'a, T> {
         };
 
         for rule in &low_input {
-            if !full_names.contains(rule) {
+            if !low_names.contains(rule) {
                 warn!("Unknown rule: '{}', skipping", rule);
             }
         }
@@ -56,18 +54,18 @@ impl<'a, T> RuleSet<'a, T> {
         // delete unknown rules
         let low_input: Vec<String> = low_input
             .into_iter()
-            .filter(|s| full_names.contains(s))
+            .filter(|s| low_names.contains(s))
             .collect();
 
         Self {
-            rules: full_names
-                .iter()
-                .zip(full_rules)
-                .filter(|(name, _)| match &ctx {
-                    RuleSetBuilderType::WithRules(_) => low_input.contains(name),
-                    RuleSetBuilderType::WithoutRules(_) => !low_input.contains(name),
+            rules: full_ruleset
+                .into_iter()
+                .zip(low_names)
+                .filter(|(_, low_name)| match &ctx {
+                    RuleSetBuilderType::WithRules(_) => low_input.contains(low_name),
+                    RuleSetBuilderType::WithoutRules(_) => !low_input.contains(low_name),
                 })
-                .map(|(_, rule)| rule)
+                .map(|((name, rule), _)| (name, rule))
                 .collect(),
         }
     }
@@ -86,7 +84,9 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
-        self.rules.iter_mut().try_for_each(|r| r.enter(node, flow))
+        self.rules
+            .iter_mut()
+            .try_for_each(|(_, r)| r.enter(node, flow))
     }
 
     fn leave(
@@ -94,7 +94,124 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
         node: &mut NodeMut<'a, Self::Language>,
         flow: ControlFlow,
     ) -> MinusOneResult<()> {
-        self.rules.iter_mut().try_for_each(|r| r.leave(node, flow))
+        self.rules
+            .iter_mut()
+            .try_for_each(|(_, r)| r.leave(node, flow))
+    }
+}
+
+pub enum LeaveStepOutcome<'a> {
+    Changed {
+        rule_name: &'a str,
+        before: String,
+        after: String,
+        resume_at: usize,
+    },
+    Finished,
+}
+
+impl<'a, T: Clone + PartialEq> RuleSet<'a, T> {
+    pub fn leave_traced_step(
+        &mut self,
+        node: &mut NodeMut<'a, T>,
+        flow: ControlFlow,
+        start_at: usize,
+        mut render: impl for<'b> FnMut(&Node<'b, T>) -> MinusOneResult<String>,
+    ) -> MinusOneResult<LeaveStepOutcome<'a>> {
+        let node_id = node.id();
+        let child_ids: Vec<usize> = {
+            let view = node.view();
+            (0..view.child_count())
+                .filter_map(|i| view.child(i).map(|c| c.id()))
+                .collect()
+        };
+
+        for i in start_at..self.rules.len() {
+            let before = node.view().data().cloned();
+            let before_children: Vec<Option<T>> = {
+                let view = node.view();
+                (0..view.child_count())
+                    .filter_map(|i| view.child(i))
+                    .map(|c| c.data().cloned())
+                    .collect()
+            };
+
+            let name = self.rules[i].0;
+            self.rules[i].1.leave(node, flow)?;
+
+            let after = node.view().data().cloned();
+            let changed = match (&before, &after) {
+                (None, Some(_)) => true,
+                (Some(a), Some(b)) => a != b,
+                _ => false,
+            };
+
+            if changed {
+                let after = after.unwrap();
+                let after_children: Vec<Option<T>> = {
+                    let view = node.view();
+                    (0..view.child_count())
+                        .filter_map(|i| view.child(i))
+                        .map(|c| c.data().cloned())
+                        .collect()
+                };
+
+                match &before {
+                    Some(b) => node.set_by_node_id(node_id, b.clone()),
+                    None => node.remove_by_node_id(node_id),
+                }
+                for (&id, val) in child_ids.iter().zip(&before_children) {
+                    match val {
+                        Some(v) => node.set_by_node_id(id, v.clone()),
+                        None => node.remove_by_node_id(id),
+                    }
+                }
+                let before_text = render(&node.view())?;
+
+                node.set_by_node_id(node_id, after);
+                for (&id, val) in child_ids.iter().zip(&after_children) {
+                    match val {
+                        Some(v) => node.set_by_node_id(id, v.clone()),
+                        None => node.remove_by_node_id(id),
+                    }
+                }
+                let after_text = render(&node.view())?;
+
+                return Ok(LeaveStepOutcome::Changed {
+                    rule_name: name,
+                    before: before_text,
+                    after: after_text,
+                    resume_at: i + 1,
+                });
+            }
+        }
+
+        Ok(LeaveStepOutcome::Finished)
+    }
+
+    pub fn leave_traced(
+        &mut self,
+        node: &mut NodeMut<'a, T>,
+        flow: ControlFlow,
+        mut render: impl for<'b> FnMut(&Node<'b, T>) -> MinusOneResult<String>,
+        mut on_change: impl FnMut(&mut NodeMut<'a, T>, &'a str, String, String) -> MinusOneResult<()>,
+    ) -> MinusOneResult<()> {
+        let mut start_at = 0;
+        loop {
+            match self.leave_traced_step(node, flow, start_at, &mut render)? {
+                LeaveStepOutcome::Changed {
+                    rule_name,
+                    before,
+                    after,
+                    resume_at,
+                } => {
+                    on_change(node, rule_name, before, after)?;
+                    start_at = resume_at;
+                }
+                LeaveStepOutcome::Finished => break,
+            }
+        }
+        Ok(())
     }
 }
 
