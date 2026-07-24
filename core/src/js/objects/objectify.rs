@@ -3,6 +3,7 @@ use crate::js::JavaScript::*;
 use crate::js::Value::*;
 use crate::js::array::flatten_array;
 use crate::js::utils::native_function;
+use log::trace;
 use std::collections::HashMap;
 
 fn function_name_from_source(source: &str) -> String {
@@ -171,7 +172,7 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         map.extend(array_builtins(arr.clone()));
     }
 
-    println!(
+    trace!(
         "To string override: {}",
         to_string_override
             .as_ref()

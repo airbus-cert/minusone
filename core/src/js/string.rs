@@ -69,12 +69,10 @@ impl<'a> RuleMut<'a> for ParseString {
                 Ok(())
             }
             "new_expression" => {
-                println!("ParseString (L): new expression");
                 let is_string = view
                     .child(1)
                     .map(|f| f.text().ok() == Some("String"))
                     .unwrap_or(false);
-                println!("ParseString (L): is_string: {}", is_string);
 
                 if let Some(args) = view.child(2)
                     && is_string
