@@ -100,22 +100,46 @@ impl<'a, T> RuleMut<'a> for RuleSet<'a, T> {
     }
 }
 
+pub enum LeaveStepOutcome<'a> {
+    Changed {
+        rule_name: &'a str,
+        before: String,
+        after: String,
+        resume_at: usize,
+    },
+    Finished,
+}
+
 impl<'a, T: Clone + PartialEq> RuleSet<'a, T> {
-    /// Like `leave`, but calls back `on_change` with the name of any rule
-    /// that just altered the current node.
-    pub fn leave_traced(
+    pub fn leave_traced_step(
         &mut self,
         node: &mut NodeMut<'a, T>,
         flow: ControlFlow,
+        start_at: usize,
         mut render: impl for<'b> FnMut(&Node<'b, T>) -> MinusOneResult<String>,
-        mut on_change: impl FnMut(&mut NodeMut<'a, T>, &'a str, String, String) -> MinusOneResult<()>,
-    ) -> MinusOneResult<()> {
-        for (name, rule) in self.rules.iter_mut() {
-            let before = node.view().data().cloned();
-            let before_text = render(&node.view())?;
-            rule.leave(node, flow)?;
-            let after = node.view().data().cloned();
+    ) -> MinusOneResult<LeaveStepOutcome<'a>> {
+        let node_id = node.id();
+        let child_ids: Vec<usize> = {
+            let view = node.view();
+            (0..view.child_count())
+                .filter_map(|i| view.child(i).map(|c| c.id()))
+                .collect()
+        };
 
+        for i in start_at..self.rules.len() {
+            let before = node.view().data().cloned();
+            let before_children: Vec<Option<T>> = {
+                let view = node.view();
+                (0..view.child_count())
+                    .filter_map(|i| view.child(i))
+                    .map(|c| c.data().cloned())
+                    .collect()
+            };
+
+            let name = self.rules[i].0;
+            self.rules[i].1.leave(node, flow)?;
+
+            let after = node.view().data().cloned();
             let changed = match (&before, &after) {
                 (None, Some(_)) => true,
                 (Some(a), Some(b)) => a != b,
@@ -123,8 +147,68 @@ impl<'a, T: Clone + PartialEq> RuleSet<'a, T> {
             };
 
             if changed {
+                let after = after.unwrap();
+                let after_children: Vec<Option<T>> = {
+                    let view = node.view();
+                    (0..view.child_count())
+                        .filter_map(|i| view.child(i))
+                        .map(|c| c.data().cloned())
+                        .collect()
+                };
+
+                match &before {
+                    Some(b) => node.set_by_node_id(node_id, b.clone()),
+                    None => node.remove_by_node_id(node_id),
+                }
+                for (&id, val) in child_ids.iter().zip(&before_children) {
+                    match val {
+                        Some(v) => node.set_by_node_id(id, v.clone()),
+                        None => node.remove_by_node_id(id),
+                    }
+                }
+                let before_text = render(&node.view())?;
+
+                node.set_by_node_id(node_id, after);
+                for (&id, val) in child_ids.iter().zip(&after_children) {
+                    match val {
+                        Some(v) => node.set_by_node_id(id, v.clone()),
+                        None => node.remove_by_node_id(id),
+                    }
+                }
                 let after_text = render(&node.view())?;
-                on_change(node, name, before_text, after_text)?;
+
+                return Ok(LeaveStepOutcome::Changed {
+                    rule_name: name,
+                    before: before_text,
+                    after: after_text,
+                    resume_at: i + 1,
+                });
+            }
+        }
+
+        Ok(LeaveStepOutcome::Finished)
+    }
+
+    pub fn leave_traced(
+        &mut self,
+        node: &mut NodeMut<'a, T>,
+        flow: ControlFlow,
+        mut render: impl for<'b> FnMut(&Node<'b, T>) -> MinusOneResult<String>,
+        mut on_change: impl FnMut(&mut NodeMut<'a, T>, &'a str, String, String) -> MinusOneResult<()>,
+    ) -> MinusOneResult<()> {
+        let mut start_at = 0;
+        loop {
+            match self.leave_traced_step(node, flow, start_at, &mut render)? {
+                LeaveStepOutcome::Changed {
+                    rule_name,
+                    before,
+                    after,
+                    resume_at,
+                } => {
+                    on_change(node, rule_name, before, after)?;
+                    start_at = resume_at;
+                }
+                LeaveStepOutcome::Finished => break,
             }
         }
         Ok(())

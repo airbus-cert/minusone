@@ -38,6 +38,7 @@ pub mod join;
 pub mod linter;
 pub mod loops;
 pub mod method;
+pub mod step;
 pub mod strategy;
 pub mod string;
 pub mod switch;
@@ -225,6 +226,17 @@ impl<'a> PowershellRuleSet<'a> {
         ) -> MinusOneResult<()>,
     ) -> MinusOneResult<()> {
         self.ruleset.leave_traced(node, flow, render, on_change)
+    }
+
+    /// See `RuleSet::leave_traced_step`.
+    pub fn leave_traced_step(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Powershell>,
+        flow: crate::tree::ControlFlow,
+        start_at: usize,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, Powershell>) -> MinusOneResult<String>,
+    ) -> MinusOneResult<crate::rule::LeaveStepOutcome<'a>> {
+        self.ruleset.leave_traced_step(node, flow, start_at, render)
     }
 }
 

@@ -36,7 +36,8 @@ fn diff_span<'a>(prev: &'a str, cur: &'a str) -> (usize, usize, &'a str, &'a str
 
     let max_suffix = max_common - prefix;
     let mut suffix = 0;
-    while suffix < max_suffix && prev_b[prev_b.len() - 1 - suffix] == cur_b[cur_b.len() - 1 - suffix]
+    while suffix < max_suffix
+        && prev_b[prev_b.len() - 1 - suffix] == cur_b[cur_b.len() - 1 - suffix]
     {
         suffix += 1;
     }
@@ -67,7 +68,12 @@ fn common_prefix_len(a: &str, b: &str) -> usize {
     n
 }
 
-fn locate_node_diff(prev_full: &str, cur_full: &str, old: &str, new: &str) -> Option<(usize, usize)> {
+fn locate_node_diff(
+    prev_full: &str,
+    cur_full: &str,
+    old: &str,
+    new: &str,
+) -> Option<(usize, usize)> {
     let shared_lead = common_prefix_len(old, new);
     let raw_prefix = common_prefix_len(prev_full, cur_full);
     let dstart = raw_prefix.checked_sub(shared_lead)?;
@@ -123,16 +129,12 @@ fn steps_to_json(initial: &str, steps: &[Step]) -> String {
             let hint = (step.start as i64 + (prev_full.len() as i64 - initial.len() as i64))
                 .clamp(0, prev_full.len() as i64) as usize;
             match find_nearest_occurrence(prev_full, &step.old, hint) {
-                Some((dstart, dend)) => {
-                    (dstart, dend, step.old.as_str(), step.new.as_str(), true)
-                }
+                Some((dstart, dend)) => (dstart, dend, step.old.as_str(), step.new.as_str(), true),
                 None => (0, 0, step.old.as_str(), step.new.as_str(), false),
             }
         } else if step.has_node_diff {
             match locate_node_diff(prev_full, &step.source, &step.old, &step.new) {
-                Some((dstart, dend)) => {
-                    (dstart, dend, step.old.as_str(), step.new.as_str(), true)
-                }
+                Some((dstart, dend)) => (dstart, dend, step.old.as_str(), step.new.as_str(), true),
                 None => {
                     let (dstart, dend, old, new) = diff_span(prev_full, &step.source);
                     (dstart, dend, old, new, true)

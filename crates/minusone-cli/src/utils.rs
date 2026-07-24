@@ -116,8 +116,7 @@ pub(crate) fn run_deobf_ps_traced(
         warn!("Custom rule selection is not supported in trace mode; running the full ruleset");
     }
 
-    let (cleaned, mut steps) =
-        PowershellBackend::remove_extra_traced(source, cli.step_all)?;
+    let (cleaned, mut steps) = PowershellBackend::remove_extra_traced(source, cli.step_all)?;
     let mut engine = DeobfuscateEngine::<PowershellBackend>::from_source(&cleaned)?;
 
     steps.extend(engine.deobfuscate_traced(cli.step_all)?);

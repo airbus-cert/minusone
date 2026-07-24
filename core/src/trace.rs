@@ -1,6 +1,6 @@
 use crate::tree::Node;
 
-
+#[derive(Clone)]
 pub struct Step {
     pub phase: &'static str,
     pub rule: String,
@@ -64,6 +64,28 @@ pub fn push_main_step(
         new,
         has_node_diff: true,
     });
+}
+
+pub enum Stepper {
+    Js(crate::js::step::JsStepper),
+    Ps(crate::ps::step::PsStepper),
+}
+
+impl Stepper {
+    pub fn next(&mut self) -> Option<Step> {
+        match self {
+            Stepper::Js(s) => s.next(),
+            Stepper::Ps(s) => s.next(),
+        }
+    }
+}
+
+impl Iterator for Stepper {
+    type Item = Step;
+
+    fn next(&mut self) -> Option<Step> {
+        Stepper::next(self)
+    }
 }
 
 pub fn find_root<'a, T>(node: Node<'a, T>) -> Node<'a, T> {
