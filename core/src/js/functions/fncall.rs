@@ -3,7 +3,7 @@ use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::Undefined;
 use crate::js::JavaScriptRuleSet;
-use crate::js::Value::{Bool, Num, Str};
+use crate::js::Value::{BigInt, Bool, Num, Str};
 use crate::js::backend::JavaScriptBackend;
 use crate::js::build_javascript_tree;
 use crate::js::functions::function::function_value_from_node;
@@ -13,7 +13,7 @@ use crate::js::utils::{get_positional_arguments, js_to_string_value, method_name
 use crate::rule::{RuleMut, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Tracks function declarations with predictable return values
 ///
@@ -47,8 +47,9 @@ pub struct FnCall {
     var_shapes: HashMap<String, FunctionShape>,
     object_field_shapes: HashMap<(String, String), FunctionShape>,
     shapes_by_source: HashMap<String, FunctionShape>,
-    // All top-level function declarations as raw source, can hoist + resolve nested calls.
-    fn_decl_prelude: String,
+    // Top-level function declarations as (name, raw source), can hoist + resolve nested calls.
+    // Only the ones a body can actually reach are re-emitted into its sub-program.
+    fn_decls: Vec<(String, String)>,
 }
 
 #[derive(Clone)]
@@ -254,14 +255,74 @@ impl FnCall {
             }
             JavaScript::Raw(Str(s)) => Some(format!("'{}'", Self::escape_js_string(s))),
             JavaScript::Raw(Bool(b)) => Some(b.to_string()),
+            JavaScript::Raw(BigInt(b)) => Some(format!("{}n", b)),
+            JavaScript::Undefined => Some("undefined".to_string()),
+            JavaScript::Null => Some("null".to_string()),
+            JavaScript::NaN => Some("NaN".to_string()),
             JavaScript::Array(items) => {
                 let parts: Option<Vec<String>> =
                     items.iter().map(Self::js_value_to_source).collect();
                 Some(format!("[{}]", parts?.join(",")))
             }
+            JavaScript::Object {
+                map,
+                to_string_override,
+            } => {
+                // A custom toString has no object-literal syntax; rendering only
+                // the map would silently drop it.
+                if to_string_override.is_some() {
+                    return None;
+                }
+                // HashMap iteration order is not stable, and the sub-program is
+                // keyed by its source, so sort to keep it reproducible.
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                let mut parts = Vec::with_capacity(keys.len());
+                for key in keys {
+                    parts.push(format!(
+                        "'{}':{}",
+                        Self::escape_js_string(key),
+                        Self::js_value_to_source(map.get(key)?)?
+                    ));
+                }
+                Some(format!("{{{}}}", parts.join(",")))
+            }
+            JavaScript::Regex { pattern, flags } => {
+                if Self::regex_literal_is_safe(pattern) {
+                    Some(format!("/{}/{}", pattern, flags))
+                } else {
+                    None
+                }
+            }
             JavaScript::Function { source, .. } => Some(format!("({})", source)),
+            // Bytes / Buffer / Iterator have no literal syntax to round-trip through.
             _ => None,
         }
+    }
+
+    /// Whether `pattern` can be re-emitted verbatim between two slashes.
+    ///
+    /// An unescaped `/` would close the literal early and a raw line terminator
+    /// is not allowed inside one at all.
+    fn regex_literal_is_safe(pattern: &str) -> bool {
+        if pattern.is_empty() {
+            return false;
+        }
+        let mut escaped = false;
+        for c in pattern.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match c {
+                '\\' => escaped = true,
+                '/' => return false,
+                '\n' | '\r' | '\u{2028}' | '\u{2029}' => return false,
+                _ => {}
+            }
+        }
+        // A trailing backslash would escape the closing slash.
+        !escaped
     }
 
     fn escape_js_string(s: &str) -> String {
@@ -273,7 +334,13 @@ impl FnCall {
                 '\n' => out.push_str("\\n"),
                 '\r' => out.push_str("\\r"),
                 '\t' => out.push_str("\\t"),
-                '\0' => out.push_str("\\0"),
+                // `\0` followed by a digit would be read back as a legacy octal
+                // escape, so always use the two-digit hex form.
+                '\0' => out.push_str("\\x00"),
+                // U+2028 / U+2029 are line terminators in JS: raw, they break
+                // out of the string literal.
+                '\u{2028}' => out.push_str("\\u2028"),
+                '\u{2029}' => out.push_str("\\u2029"),
                 c if (c as u32) < 0x20 => {
                     out.push_str(&format!("\\x{:02x}", c as u32));
                 }
@@ -343,18 +410,77 @@ impl FnCall {
         false
     }
 
+    /// Maximal identifier-like tokens of a JS source.
+    ///
+    /// This over-approximates: a name that only appears inside a string literal
+    /// is reported as referenced. It never under-approximates, because a real
+    /// reference is always a maximal identifier token in the source. Using it to
+    /// decide which declarations a body needs can therefore only keep too many,
+    /// never drop one that was needed.
+    fn identifier_tokens(src: &str) -> HashSet<String> {
+        let mut out = HashSet::new();
+        let mut current = String::new();
+        for c in src.chars() {
+            if c.is_alphanumeric() || c == '_' || c == '$' {
+                current.push(c);
+            } else if !current.is_empty() {
+                out.insert(std::mem::take(&mut current));
+            }
+        }
+        if !current.is_empty() {
+            out.insert(current);
+        }
+        out
+    }
+
+    /// Prelude restricted to the declarations `body` can reach, transitively.
+    ///
+    /// Re-emitting every top-level declaration into every sub-program made the
+    /// synthesised source grow with the whole file instead of with the function
+    /// being resolved, which is quadratic over a file's call sites. A body
+    /// typically reaches none or a couple of other functions.
+    fn prelude_for(decls: &[(String, String)], body: &str) -> String {
+        if decls.is_empty() {
+            return String::new();
+        }
+
+        let mut needed: HashSet<&str> = HashSet::new();
+        let mut frontier = Self::identifier_tokens(body);
+
+        while !frontier.is_empty() {
+            let mut next = HashSet::new();
+            for (name, src) in decls {
+                if needed.contains(name.as_str()) || !frontier.contains(name.as_str()) {
+                    continue;
+                }
+                needed.insert(name.as_str());
+                next.extend(Self::identifier_tokens(src));
+            }
+            frontier = next;
+        }
+
+        // Source order, so hoisting stays identical to the original program.
+        let mut prelude = String::new();
+        for (name, src) in decls {
+            if needed.contains(name.as_str()) {
+                prelude.push_str(src);
+                prelude.push('\n');
+            }
+        }
+        prelude
+    }
+
     fn evaluate_shape_via_subtree(
         shape: &FunctionShape,
         args: &[JavaScript],
-        prelude: &str,
+        decls: &[(String, String)],
     ) -> Option<JavaScript> {
         if args.len() > shape.params.len() {
             return None;
         }
 
-        let mut program = String::new();
-        if !prelude.is_empty() {
-            program.push_str(prelude);
+        let mut program = Self::prelude_for(decls, &shape.body_inner);
+        if !program.is_empty() {
             program.push('\n');
         }
 
@@ -528,19 +654,21 @@ impl FnCall {
         None
     }
 
-    fn build_program_prelude(program: &Node<JavaScript>) -> String {
-        let mut prelude = String::new();
+    fn collect_fn_decls(program: &Node<JavaScript>) -> Vec<(String, String)> {
+        let mut decls = Vec::new();
         for child in program.iter() {
             if matches!(
                 child.kind(),
                 "function_declaration" | "generator_function_declaration"
-            ) && let Ok(src) = child.text()
+            ) && let Some(name_node) = child.named_child("name")
+                && name_node.kind() == "identifier"
+                && let Ok(name) = name_node.text()
+                && let Ok(src) = child.text()
             {
-                prelude.push_str(src);
-                prelude.push('\n');
+                decls.push((name.to_string(), src.to_string()));
             }
         }
-        prelude
+        decls
     }
 
     fn resolve_member_call_semantic_fallback<'a>(
@@ -563,8 +691,8 @@ impl FnCall {
 
         let shape = object_field_shapes.get(&(base.to_string(), key.to_string()))?;
         let args = Self::extract_positional_call_args(call_node)?;
-        let prelude = Self::build_program_prelude(&program);
-        Self::evaluate_shape_via_subtree(shape, &args, &prelude)
+        let decls = Self::collect_fn_decls(&program);
+        Self::evaluate_shape_via_subtree(shape, &args, &decls)
     }
 
     fn resolve_identifier_call_semantic_fallback<'a>(
@@ -590,8 +718,8 @@ impl FnCall {
 
         let shape = Self::resolve_shape_with_aliases(fn_name, &var_shapes, &aliases)?;
         let args = Self::extract_positional_call_args(call_node)?;
-        let prelude = Self::build_program_prelude(&program);
-        Self::evaluate_shape_via_subtree(&shape, &args, &prelude)
+        let decls = Self::collect_fn_decls(&program);
+        Self::evaluate_shape_via_subtree(&shape, &args, &decls)
     }
 
     fn is_eval_callee(callee: &Node<JavaScript>) -> bool {
@@ -719,7 +847,7 @@ impl FnCall {
     ) -> Option<JavaScript> {
         let _guard = GlobalRecursionGuard::enter()?;
         let args = Self::extract_positional_call_args(view)?;
-        Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decl_prelude)
+        Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decls)
     }
 
     fn try_resolve_identifier_call(
@@ -758,21 +886,15 @@ impl<'a> RuleMut<'a> for FnCall {
             self.var_shapes.clear();
             self.object_field_shapes.clear();
             self.shapes_by_source.clear();
-            self.fn_decl_prelude.clear();
+            self.fn_decls.clear();
 
             for child in view.iter() {
                 // Hoist top-level function_declarations so forward calls resolve.
                 Self::hoist_function_declaration(&child, &mut self.var_shapes);
-                // Collect function declaration source for sub-program prelude.
-                if matches!(
-                    child.kind(),
-                    "function_declaration" | "generator_function_declaration"
-                ) && let Ok(src) = child.text()
-                {
-                    self.fn_decl_prelude.push_str(src);
-                    self.fn_decl_prelude.push('\n');
-                }
             }
+            // Keep the declaration sources so a sub-program can re-emit the
+            // subset its body actually reaches.
+            self.fn_decls = Self::collect_fn_decls(&view);
         }
         Ok(())
     }
@@ -1227,6 +1349,92 @@ mod tests {
         );
 
         assert!(output.ends_with("console.log('minusone');"));
+    }
+
+    #[test]
+    fn test_fncall_nested_call_through_prelude() {
+        // `b`'s body reaches `a`, so the sub-program must still carry `a`'s
+        // declaration even though the prelude is now filtered.
+        assert_eq!(
+            deobfuscate(
+                "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(b(2));"
+            ),
+            "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(7);"
+        );
+    }
+
+    #[test]
+    fn test_prelude_for_keeps_only_reachable_declarations() {
+        let decls = vec![
+            ("a".to_string(), "function a(x) { return x; }".to_string()),
+            ("b".to_string(), "function b(y) { return y; }".to_string()),
+        ];
+
+        let prelude = FnCall::prelude_for(&decls, "return a(1);");
+        assert!(prelude.contains("function a"));
+        assert!(!prelude.contains("function b"));
+
+        assert_eq!(FnCall::prelude_for(&decls, "return 1;"), "");
+    }
+
+    #[test]
+    fn test_prelude_for_is_transitive() {
+        let decls = vec![
+            ("a".to_string(), "function a(x) { return x * 2; }".to_string()),
+            (
+                "b".to_string(),
+                "function b(y) { return a(y) + 3; }".to_string(),
+            ),
+            ("c".to_string(), "function c(z) { return z; }".to_string()),
+        ];
+
+        // The body only names `b`, but `b` reaches `a`.
+        let prelude = FnCall::prelude_for(&decls, "return b(1);");
+        assert!(prelude.contains("function a"));
+        assert!(prelude.contains("function b"));
+        assert!(!prelude.contains("function c"));
+    }
+
+    #[test]
+    fn test_escape_js_string_escapes_line_separators() {
+        // U+2028 / U+2029 are line terminators: raw, they break the literal.
+        assert_eq!(FnCall::escape_js_string("a\u{2028}b"), "a\\u2028b");
+        assert_eq!(FnCall::escape_js_string("a\u{2029}b"), "a\\u2029b");
+        // `\0` before a digit must not become a legacy octal escape.
+        assert_eq!(FnCall::escape_js_string("\u{0}1"), "\\x001");
+    }
+
+    #[test]
+    fn test_regex_literal_is_safe() {
+        assert!(FnCall::regex_literal_is_safe("ab+c"));
+        assert!(FnCall::regex_literal_is_safe("a\\/b"));
+        assert!(!FnCall::regex_literal_is_safe("a/b"));
+        assert!(!FnCall::regex_literal_is_safe("a\nb"));
+        assert!(!FnCall::regex_literal_is_safe("a\\"));
+        assert!(!FnCall::regex_literal_is_safe(""));
+    }
+
+    #[test]
+    fn test_js_value_to_source_covers_special_values() {
+        use crate::js::JavaScript;
+
+        assert_eq!(
+            FnCall::js_value_to_source(&JavaScript::Undefined).as_deref(),
+            Some("undefined")
+        );
+        assert_eq!(
+            FnCall::js_value_to_source(&JavaScript::Null).as_deref(),
+            Some("null")
+        );
+        assert_eq!(
+            FnCall::js_value_to_source(&JavaScript::NaN).as_deref(),
+            Some("NaN")
+        );
+        // No literal syntax to round-trip through.
+        assert_eq!(
+            FnCall::js_value_to_source(&JavaScript::Buffer(vec![1, 2])),
+            None
+        );
     }
 
     #[test]
