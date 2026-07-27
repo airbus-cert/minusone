@@ -5,13 +5,16 @@ pub mod jsfuck_tests {
     use crate::js::bool::ParseBool;
     use crate::js::bool::*;
     use crate::js::comparator::*;
+    use crate::js::encode_decode::EncodeDecodeBuiltins;
     use crate::js::forward::*;
     use crate::js::functions::fncall::*;
     use crate::js::functions::function::*;
     use crate::js::integer::*;
+    use crate::js::jsfuck::*;
     use crate::js::linter::Linter;
     use crate::js::objects::object::*;
     use crate::js::post_process::BracketCallToMember;
+    use crate::js::regex::{ParseRegex, RegexExec};
     use crate::js::specials::*;
     use crate::js::string::*;
     use crate::js::var::*;
@@ -46,6 +49,8 @@ pub mod jsfuck_tests {
             BoolAlgebra::default(),
             AddBool::default(),
             CombineArrays::default(),
+            ArrayConcat::default(),
+            ArrayJoin::default(),
             StringBuiltins::default(),
             ArrayBuiltins::default(),
             BracketCharAt::default(),
@@ -59,9 +64,13 @@ pub mod jsfuck_tests {
             B64::default(),
             Var::default(),
             FnCall::default(),
+            FromCharCode::default(),
+            EncodeDecodeBuiltins::default(),
+            ParseRegex::default(),
+            RegexExec::default(),
+            JsFuckLevelNine::default(),
             StrictEq::default(),
             LooseEq::default(),
-            CmpOrd,
         ))
         .unwrap();
 
@@ -98,6 +107,67 @@ pub mod jsfuck_tests {
         assert_eq!("'x'", deobfuscate("(+(101))['to'+String['name']](34)[1]"));
         assert_eq!("'y'", deobfuscate("(NaN+[Infinity])[10]"));
         assert_eq!("'z'", deobfuscate("(+(35))['to'+String['name']](36)"));
+    }
+
+    /// see [this](https://stackoverflow.com/a/63713987)
+    #[test]
+    fn test_jsfuck_level_nine() {
+        assert_eq!("'A'", deobfuscate(r#"Function("return 'A'")()"#));
+        assert_eq!("'AB'", deobfuscate(r#"Function("return 'AB'")()"#));
+        assert_eq!("'A'", deobfuscate(r#"Function("return '\\u0041'")()"#));
+        assert_eq!(
+            "'\u{20ac}'",
+            deobfuscate(r#"[]["flat"]["constructor"]("return '€'")()"#)
+        );
+        assert_eq!(
+            "'\u{20ac}'",
+            deobfuscate(r#"Function("return '\\u20ac'")()"#)
+        ); // €
+        assert_eq!(
+            "'\u{00e9}'",
+            deobfuscate(r#"Function("return '\\u00e9'")()"#)
+        ); // é
+        assert_eq!(
+            "'\u{4e2d}'",
+            deobfuscate(r#"Function("return '\\u4e2d'")()"#)
+        ); // 中
+        assert_eq!(
+            "'\u{20ac}$'",
+            deobfuscate(r#"Function("return '\\u20ac\\u0024'")()"#)
+        );
+        assert_eq!(
+            "'\u{1f600}'",
+            deobfuscate(r#"Function("return '\u{1f600}'")()"#)
+        );
+        assert_eq!("'AB'", deobfuscate(r#"Function("return '\x41\x42'")()"#));
+        assert_eq!(
+            "[]['flat'].constructor('return 1+1')()",
+            deobfuscate(r#"[]["flat"]["constructor"]("return 1+1")()"#)
+        );
+    }
+
+    /// jsfuck.com builds
+    #[test]
+    fn test_octal_string_escape() {
+        // assembles it at runtime, so `\\164` in source => `\164` => 't'.
+        assert_eq!(
+            "'at('",
+            deobfuscate(r#"[]["fill"]["constructor"]("return'a\\164\\50'")()"#)
+        );
+    }
+
+    #[test]
+    fn test_regexp_via_value_constructor() {
+        assert_eq!(
+            "'\\\\'",
+            deobfuscate(r#"([]+(/x/)["constructor"]("/"))[1]"#)
+        );
+    }
+
+    #[test]
+    fn test_empty_regexp_source() {
+        assert_eq!("'?'", deobfuscate("([]+RegExp())[2]"));
+        assert_eq!("':'", deobfuscate("([]+RegExp())[3]"));
     }
 
     #[test]
@@ -196,5 +266,83 @@ pub mod jsfuck_tests {
                 "Deobfuscation mismatch for sample: {stem}"
             );
         }
+    }
+
+    /// Digits recovered from radix toString and exponential number strings.
+    #[test]
+    fn test_jsfuck_digits_constructions() {
+        assert_eq!("'0'", deobfuscate("(+(\"11e100\")+[])[6]"));
+        assert_eq!("'1'", deobfuscate("(+(\"11e100\")+[])[0]"));
+        assert_eq!("'2'", deobfuscate("(+(2))[\"toString\"](3)"));
+        assert_eq!("'3'", deobfuscate("(+(3))[\"toString\"](4)"));
+        assert_eq!("'4'", deobfuscate("(+(4))[\"toString\"](5)"));
+        assert_eq!("'5'", deobfuscate("(+(5))[\"toString\"](6)"));
+        assert_eq!("'6'", deobfuscate("(+(6))[\"toString\"](7)"));
+        assert_eq!("'7'", deobfuscate("(+(\".0000001\")+[])[3]"));
+        assert_eq!("'8'", deobfuscate("(+(8))[\"toString\"](9)"));
+        assert_eq!("'9'", deobfuscate("(+(9))[\"toString\"](10)"));
+    }
+    /// Every lowercase letter via JSFuck's filter/iterator/constructor/radix atoms.
+    #[test]
+    fn test_jsfuck_full_lower_alphabet() {
+        assert_eq!("'a'", deobfuscate("(false+[])[1]"));
+        assert_eq!("'b'", deobfuscate("([][\"entries\"]()+[])[2]"));
+        assert_eq!("'c'", deobfuscate("([][\"filter\"]+[])[3]"));
+        assert_eq!("'d'", deobfuscate("(undefined+[])[2]"));
+        assert_eq!("'e'", deobfuscate("(false+[])[4]"));
+        assert_eq!("'f'", deobfuscate("(false+[])[0]"));
+        assert_eq!("'g'", deobfuscate("(([]+[])[\"constructor\"]+[])[14]"));
+        assert_eq!("'h'", deobfuscate("(+(17))[\"toString\"](18)"));
+        assert_eq!("'i'", deobfuscate("(undefined+[])[5]"));
+        assert_eq!("'j'", deobfuscate("([][\"entries\"]()+[])[3]"));
+        assert_eq!("'k'", deobfuscate("(+(20))[\"toString\"](21)"));
+        assert_eq!("'l'", deobfuscate("(false+[])[2]"));
+        assert_eq!("'m'", deobfuscate("((+[])[\"constructor\"]+[])[11]"));
+        assert_eq!("'n'", deobfuscate("(undefined+[])[1]"));
+        assert_eq!("'o'", deobfuscate("([][\"filter\"]+[])[6]"));
+        assert_eq!("'p'", deobfuscate("(+(25))[\"toString\"](26)"));
+        assert_eq!("'q'", deobfuscate("(+(26))[\"toString\"](27)"));
+        assert_eq!("'r'", deobfuscate("(true+[])[1]"));
+        assert_eq!("'s'", deobfuscate("(false+[])[3]"));
+        assert_eq!("'t'", deobfuscate("(true+[])[0]"));
+        assert_eq!("'u'", deobfuscate("(true+[])[2]"));
+        assert_eq!("'v'", deobfuscate("([][\"filter\"]+[])[25]"));
+        assert_eq!("'w'", deobfuscate("(+(32))[\"toString\"](33)"));
+        assert_eq!("'x'", deobfuscate("(+(33))[\"toString\"](34)"));
+        assert_eq!("'y'", deobfuscate("([][\"entries\"]()+[])[12]"));
+        assert_eq!("'z'", deobfuscate("(+(35))[\"toString\"](36)"));
+    }
+
+    #[test]
+    fn test_jsfuck_upper_alphabet() {
+        assert_eq!("'A'", deobfuscate("([][\"entries\"]()+[])[8]"));
+        assert_eq!("'B'", deobfuscate("((![])[\"constructor\"]+[])[9]"));
+        assert_eq!(
+            "'F'",
+            deobfuscate("([][\"filter\"][\"constructor\"]+[])[9]")
+        );
+        assert_eq!("'I'", deobfuscate("([][\"entries\"]()+[])[14]"));
+        assert_eq!("'N'", deobfuscate("(NaN+[])[0]"));
+        assert_eq!("'S'", deobfuscate("(([]+[])[\"constructor\"]+[])[9]"));
+    }
+
+    #[test]
+    fn test_jsfuck_symbols() {
+        assert_eq!("' '", deobfuscate("([][\"filter\"]+[])[8]"));
+        assert_eq!("'\"'", deobfuscate("(\"\"[\"fontcolor\"]())[12]"));
+        assert_eq!("'('", deobfuscate("([][\"filter\"]+[])[15]"));
+        assert_eq!("')'", deobfuscate("([][\"filter\"]+[])[16]"));
+        assert_eq!("'+'", deobfuscate("(+(\"11e100\")+[])[4]"));
+        assert_eq!("','", deobfuscate("([[]][\"concat\"]([[]])+[])[0]"));
+        assert_eq!("'-'", deobfuscate("(+(\".0000001\")+[])[2]"));
+        assert_eq!("'.'", deobfuscate("(+(\"11e100\")+[])[1]"));
+        assert_eq!("'/'", deobfuscate("(\"\"[\"italics\"]())[4]"));
+        assert_eq!("'<'", deobfuscate("(\"\"[\"italics\"]())[0]"));
+        assert_eq!("'='", deobfuscate("(\"\"[\"fontcolor\"]())[11]"));
+        assert_eq!("'>'", deobfuscate("(\"\"[\"italics\"]())[2]"));
+        assert_eq!("'['", deobfuscate("([][\"filter\"]+[])[20]"));
+        assert_eq!("']'", deobfuscate("([][\"filter\"]+[])[32]"));
+        assert_eq!("'{'", deobfuscate("([][\"filter\"]+[])[18]"));
+        assert_eq!("'}'", deobfuscate("([][\"filter\"]+[])[34]"));
     }
 }
