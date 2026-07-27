@@ -1,23 +1,20 @@
+use self::access::*;
+use self::array::*;
+use self::bool::*;
+use self::cast::*;
+use self::foreach::*;
+use self::forward::*;
+use self::hash::*;
+use self::integer::*;
+use self::join::*;
+use self::linter::*;
+use self::loops::*;
+use self::method::*;
+use self::string::*;
+use self::switch::*;
+use self::typing::*;
+use self::var::*;
 use crate::error::{Error, MinusOneResult};
-use crate::ps::access::{AccessArray, AccessHashMap, AccessString};
-use crate::ps::array::{AddArray, ComputeArrayExpr, NewObjectArray, ParseArrayLiteral, ParseRange};
-use crate::ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
-use crate::ps::cast::{Cast, CastNull};
-use crate::ps::foreach::{ForEach, PSItemInferrator};
-use crate::ps::forward::Forward;
-use crate::ps::hash::ParseHash;
-use crate::ps::integer::{AddInt, MultInt, ParseInt};
-use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
-use crate::ps::linter::RemoveComment;
-use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
-use crate::ps::method::{DecodeBase64, FromUTF, Length};
-use crate::ps::string::{
-    ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
-    StringSplitMethod,
-};
-use crate::ps::switch::Switch;
-use crate::ps::typing::ParseType;
-use crate::ps::var::{StaticVar, Var};
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
@@ -45,6 +42,7 @@ pub mod switch;
 mod tool;
 pub mod trace;
 pub mod typing;
+pub mod utils;
 pub mod var;
 //todo: add : mod r#static;
 
@@ -179,6 +177,7 @@ impl_powershell_ruleset!(
     ParseType,    // Parse type
     DecodeBase64, // Decode calls to FromBase64
     FromUTF,      // Decode calls to FromUTF{8,16}.GetText
+    NewStringMethod, // Infer [System.String]::new(@(char codes)) constructor
     Length,       // Decode attribute length of string and array
     BoolAlgebra,  // Add support to boolean algebra (or and)
     Var,          // Variable replacement in case of predictable flow

@@ -1,8 +1,9 @@
 use crate::error::MinusOneResult;
 use crate::ps::Powershell;
-use crate::ps::Powershell::{Array, Raw};
+use crate::ps::Powershell::{Array, Raw, Type};
 use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
+use crate::ps::utils::conversion::*;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
@@ -364,14 +365,143 @@ impl<'a> RuleMut<'a> for StringSplitMethod {
     }
 }
 
+/// This rule will infer the [System.String]::new(...) constructor, mirroring the
+/// public `System.String` constructor overloads reachable from PowerShell source:
+///
+/// - `string(char[] value)` -> [System.string]::new(@(72, 101, 108, 108, 111)) => "Hello"
+/// - `string(char[] value, int startIndex, int length)`
+/// - `string(char c, int count)` -> repeats a char
+///
+/// The pointer-based overloads (`char*`, `sbyte*`, `sbyte*, int, int`, `sbyte*, int, int, Encoding`)
+/// are not reachable from safe PowerShell script text, so they are not handled.
+#[derive(Default)]
+pub struct NewStringMethod;
+
+impl<'a> RuleMut<'a> for NewStringMethod {
+    type Language = Powershell;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+        if view.kind() == "invokation_expression"
+            && let (
+                Some(primary_expression),
+                Some(operator),
+                Some(member_name),
+                Some(arguments_list),
+            ) = (view.child(0), view.child(1), view.child(2), view.child(3))
+        {
+            match (
+                primary_expression.data(),
+                operator.text()?,
+                &member_name.text()?.to_string(),
+                member_name.data(),
+            ) {
+                (Some(Type(typename)), "::", m, _)
+                | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
+                    if m.clone().normalize() == "new"
+                        && (typename == "system.string" || typename == "string") =>
+                {
+                    if let Some(argument_expression_list) =
+                        arguments_list.named_child("argument_expression_list")
+                    {
+                        let arg_1 = argument_expression_list.child(0);
+                        let arg_2 = argument_expression_list.child(2);
+                        let arg_3 = argument_expression_list.child(4);
+
+                        match (arg_1, arg_2, arg_3) {
+                            // string(char[] value), PowerShell also implicitly coerces a plain string argument into a char[] to match this overload
+                            (Some(a1), None, None) => {
+                                if let Some(Array(values)) = a1.data()
+                                    && let Some(chars) = to_chars(values)
+                                {
+                                    let result: String = chars.into_iter().collect();
+                                    trace!(
+                                        "NewStringMethod (L): Setting node with result: {:?}",
+                                        result
+                                    );
+                                    node.set(Raw(Str(result)));
+                                } else if let Some(Raw(Str(s))) = a1.data() {
+                                    trace!(
+                                        "NewStringMethod (L): Setting node with coerced string result: {:?}",
+                                        s
+                                    );
+                                    node.set(Raw(Str(s.clone())));
+                                }
+                            }
+                            // string(char c, int count)
+                            (Some(a1), Some(a2), None) => {
+                                if let (Some(Raw(c)), Some(Raw(Num(count)))) =
+                                    (a1.data(), a2.data())
+                                    && let Some(c) = to_char(c)
+                                    && *count >= 0
+                                {
+                                    let result: String =
+                                        std::iter::repeat(c).take(*count as usize).collect();
+                                    trace!(
+                                        "NewStringMethod (L): Setting node with repeated char result: {:?}",
+                                        result
+                                    );
+                                    node.set(Raw(Str(result)));
+                                }
+                            }
+                            // string(char[] value, int startIndex, int length)
+                            (Some(a1), Some(a2), Some(a3)) => {
+                                if let (
+                                    Some(Array(values)),
+                                    Some(Raw(Num(start))),
+                                    Some(Raw(Num(length))),
+                                ) = (a1.data(), a2.data(), a3.data())
+                                    && let Some(chars) = to_chars(values)
+                                    && *start >= 0
+                                    && *length >= 0
+                                {
+                                    let start = *start as usize;
+                                    let length = *length as usize;
+                                    if let Some(slice) = chars.get(start..start + length) {
+                                        let result: String = slice.iter().collect();
+                                        trace!(
+                                            "NewStringMethod (L): Setting node with sliced result: {:?}",
+                                            result
+                                        );
+                                        node.set(Raw(Str(result)));
+                                    }
+                                }
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::ps::Powershell::Raw;
     use crate::ps::Value::Str;
-    use crate::ps::array::ParseArrayLiteral;
+    use crate::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
-    use crate::ps::string::{ConcatString, FormatString, ParseString, StringReplaceOp};
+    use crate::ps::integer::ParseInt;
+    use crate::ps::string::{
+        ConcatString, FormatString, NewStringMethod, ParseString, StringReplaceOp,
+    };
+    use crate::ps::typing::ParseType;
 
     #[test]
     fn test_concat_two_elements() {
@@ -441,6 +571,144 @@ mod test {
                 .data()
                 .expect("Inferred type"),
             Raw(Str("hello toto".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_new_string_from_char_codes() {
+        let mut tree =
+            build_powershell_tree("[System.String]::new(@(72, 101, 108, 108, 111))").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
+            ParseType::default(),
+            NewStringMethod::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("Hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_new_string_short_alias() {
+        let mut tree = build_powershell_tree("[string]::new(@(72, 105))").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
+            ParseType::default(),
+            NewStringMethod::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("Hi".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_new_string_repeat_char() {
+        let mut tree = build_powershell_tree("[System.String]::new([char]65, 5)").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            crate::ps::cast::Cast::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
+            ParseType::default(),
+            NewStringMethod::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("AAAAA".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_new_string_slice() {
+        let mut tree =
+            build_powershell_tree("[System.String]::new(@(72, 101, 108, 108, 111), 1, 3)").unwrap();
+        tree.apply_mut(&mut (
+            ParseInt::default(),
+            Forward::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
+            ParseType::default(),
+            NewStringMethod::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("ell".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_new_string_from_plain_string() {
+        // Real PowerShell coerces a plain string argument into a char[] to match
+        // the string(char[]) overload, so [System.String]::new("test") => "test"
+        let mut tree = build_powershell_tree("[System.String]::new(\"test string\")").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            ParseType::default(),
+            NewStringMethod::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("test string".to_string()))
         );
     }
 
