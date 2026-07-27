@@ -13,7 +13,7 @@ pub mod jsfuck_tests {
     use crate::js::jsfuck::*;
     use crate::js::linter::Linter;
     use crate::js::objects::object::*;
-    use crate::js::post_process::BracketCallToMember;
+    use crate::js::post_process::BracketToMember;
     use crate::js::regex::{ParseRegex, RegexExec};
     use crate::js::specials::*;
     use crate::js::string::*;
@@ -25,7 +25,7 @@ pub mod jsfuck_tests {
 
     fn deobfuscate(input: &str) -> String {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
         let input = bracket_to_member.clear().unwrap();
 
@@ -141,7 +141,7 @@ pub mod jsfuck_tests {
         );
         assert_eq!("'AB'", deobfuscate(r#"Function("return '\x41\x42'")()"#));
         assert_eq!(
-            "[]['flat'].constructor('return 1+1')()",
+            "[].flat.constructor('return 1+1')()",
             deobfuscate(r#"[]["flat"]["constructor"]("return 1+1")()"#)
         );
     }

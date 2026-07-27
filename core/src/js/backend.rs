@@ -153,11 +153,11 @@ fn remove_extra_impl(
     // simplify bracket calls to member expressions to help some rules
     {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member)?;
         current = bracket_to_member.clear()?;
     }
-    on_step("BracketCallToMember", &current);
+    on_step("BracketToMember", &current);
 
     Ok(current)
 }
@@ -208,10 +208,10 @@ pub fn clean_impl(
 
     // simplify bracket calls to member expressions to make it more "human readable"
     let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
-    let mut bracket_to_member = BracketCallToMember::default();
+    let mut bracket_to_member = BracketToMember::default();
     tree.apply(&mut bracket_to_member)?;
     current = bracket_to_member.clear()?;
-    on_step("BracketCallToMember", &current);
+    on_step("BracketToMember", &current);
 
     let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
     let mut global_this_simplifier = GlobalThisSimplifier::default();
