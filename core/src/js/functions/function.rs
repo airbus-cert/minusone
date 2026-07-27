@@ -1,7 +1,7 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Function, NaN, Raw};
-use crate::js::Value::{Bool, Str};
+use crate::js::Value::{Bool, Num, Str};
 use crate::js::array::flatten_array;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -218,6 +218,14 @@ impl<'a> RuleMut<'a> for ConcatFunction {
                 (Some(NaN), Some(Function { source, .. })) => {
                     trace!("Concat: reducing NaN + function");
                     node.reduce(Raw(Str(format!("NaN{}", source))));
+                }
+                (Some(Function { source, .. }), Some(Raw(Num(n)))) => {
+                    trace!("Concat: reducing function + number");
+                    node.reduce(Raw(Str(format!("{}{}", source, Num(*n)))));
+                }
+                (Some(Raw(Num(n))), Some(Function { source, .. })) => {
+                    trace!("Concat: reducing number + function");
+                    node.reduce(Raw(Str(format!("{}{}", Num(*n), source))));
                 }
                 _ => {}
             }

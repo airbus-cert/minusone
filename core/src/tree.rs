@@ -418,6 +418,11 @@ impl<'a, T> NodeMut<'a, T> {
         self.storage.set(node_id, data)
     }
 
+    /// Remove any data associated with a node
+    pub fn remove_by_node_id(&mut self, node_id: usize) {
+        self.storage.remove(node_id)
+    }
+
     /// Reduce data node
     /// It will delete associated data to all children
     ///
@@ -909,7 +914,7 @@ impl<'a, T> Node<'a, T> {
         }
     }
 
-    fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
+    pub fn apply(&self, rule: &mut impl Rule<'a, Language = T>) -> MinusOneResult<()> {
         let mut is_visiting = true;
         // Stack use to call 'leave' method when all children are handled
         let mut stack: Vec<(TreeNode, usize, bool)> = vec![];

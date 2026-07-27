@@ -3,7 +3,9 @@ extern crate minusone;
 use minusone::engine::DeobfuscationBackend;
 use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
+use minusone::trace::Stepper as CoreStepper;
 use minusone::{engine::DeobfuscateEngine, error::Error as MinusoneError};
+use std::cell::RefCell;
 use std::fmt::{Debug, Display};
 
 enum MinusonejsError {
@@ -131,6 +133,66 @@ impl Guest for Minusone {
         match result {
             Ok(r) => return_res(r),
             Err(e) => return_err(e.to_string()),
+        }
+    }
+}
+
+fn run_stepper(
+    source: &str,
+    language: &str,
+    record_all: bool,
+) -> Result<CoreStepper, MinusonejsError> {
+    match language.to_lowercase().as_str() {
+        "ps" | "ps1" | "powershell" => PowershellBackend::stepper(source, false, record_all),
+        "js" | "javascript" => JavaScriptBackend::stepper(source, false, record_all),
+        _ => {
+            return Err(MinusonejsError::JsError(format!(
+                "Unsupported language: {}. Supported languages are: {:?}",
+                language, LANGUAGES
+            )));
+        }
+    }
+    .map_err(MinusonejsError::MinusoneError)
+}
+
+struct StepperResource(RefCell<CoreStepper>);
+
+impl exports::airbus_cert::minusone::trace::GuestStepper for StepperResource {
+    fn next(&self) -> Option<exports::airbus_cert::minusone::trace::TraceStep> {
+        Iterator::next(&mut *self.0.borrow_mut()).map(|step| {
+            exports::airbus_cert::minusone::trace::TraceStep {
+                phase: step.phase.to_string(),
+                rule: step.rule,
+                kind: step.kind.to_string(),
+                start: step.start as u32,
+                end: step.end as u32,
+                source: step.source,
+                old: step.old,
+                new: step.new,
+            }
+        })
+    }
+}
+
+impl exports::airbus_cert::minusone::trace::Guest for Minusone {
+    type Stepper = StepperResource;
+
+    fn new_stepper(
+        source: String,
+        language: String,
+        record_all: bool,
+    ) -> (
+        Option<exports::airbus_cert::minusone::trace::Stepper>,
+        String,
+    ) {
+        match run_stepper(&source, &language, record_all) {
+            Ok(stepper) => (
+                Some(exports::airbus_cert::minusone::trace::Stepper::new(
+                    StepperResource(RefCell::new(stepper)),
+                )),
+                String::new(),
+            ),
+            Err(e) => (None, e.to_string()),
         }
     }
 }

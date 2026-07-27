@@ -1,8 +1,8 @@
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
-use crate::js::array::flatten_array;
-use crate::js::utils::native_function;
+use crate::js::utils::{js_to_string_value, native_function};
+use log::trace;
 use std::collections::HashMap;
 
 fn function_name_from_source(source: &str) -> String {
@@ -92,13 +92,10 @@ fn array_builtins(array: Vec<JavaScript>) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
     map.insert("length".to_string(), Raw(Num(array.len() as f64)));
 
-    map.insert(
-        "flat".to_string(),
-        Function {
-            source: "function flat() { [native code] }".to_string(),
-            return_value: None,
-        },
-    );
+    // jsfuck native code harvesters
+    for name in ["flat", "filter", "fill", "find", "keys", "values"] {
+        map.insert(name.to_string(), native_function(name));
+    }
 
     map
 }
@@ -133,11 +130,7 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
             "toString".to_string(),
             Function {
                 source: "function toString() {}".to_string(),
-                return_value: Some(Box::new(Raw(Str(match value {
-                    Raw(Str(s)) => s.clone(),
-                    Array(a) => flatten_array(a, None),
-                    any => any.to_string(),
-                })))),
+                return_value: Some(Box::new(Raw(Str(js_to_string_value(value))))),
             },
         );
     }
@@ -171,7 +164,7 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         map.extend(array_builtins(arr.clone()));
     }
 
-    println!(
+    trace!(
         "To string override: {}",
         to_string_override
             .as_ref()
