@@ -485,8 +485,10 @@ impl<'a> RuleMut<'a> for ObjectField {
                     if let Some(base) = base
                         && let Some(value) = Self::get_by_path(&base, &access.keys)
                     {
-                        if access.keys.last().map(|k| k.as_str()) == Some("toString")
-                            && let Some(parent) = view.parent()
+                        if matches!(
+                            access.keys.last().map(|k| k.as_str()),
+                            Some("toString") | Some("fontcolor")
+                        ) && let Some(parent) = view.parent()
                             && parent.kind() == "call_expression"
                             && parent
                                 .named_child("function")

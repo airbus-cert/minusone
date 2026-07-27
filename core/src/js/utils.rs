@@ -1,6 +1,7 @@
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Function, NaN, Raw};
+use crate::js::JavaScript::{Array, Function, NaN, Raw};
 use crate::js::Value::{Num, Str};
+use crate::js::array::flatten_array;
 use crate::tree::Node;
 
 /// see [this](https://stackoverflow.com/a/63713987)
@@ -170,5 +171,13 @@ pub fn native_function(name: &str) -> JavaScript {
     Function {
         source: format!("function {name}() {{ [native code] }}"),
         return_value: None,
+    }
+}
+
+pub fn js_to_string_value(value: &JavaScript) -> String {
+    match value {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
     }
 }

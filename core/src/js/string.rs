@@ -6,7 +6,9 @@ use crate::js::array::flatten_array;
 use crate::js::integer::ParseInt;
 use crate::js::objects::objectify::as_object;
 use crate::js::regex::RegexExec;
-use crate::js::utils::{get_positional_arguments, js_index_from_optional_arg, method_name};
+use crate::js::utils::{
+    get_positional_arguments, js_index_from_optional_arg, js_to_string_value, method_name,
+};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{error, trace, warn};
@@ -369,11 +371,7 @@ fn string_builtin_code_point_at(input: &str, args: &[JavaScript]) -> Option<Java
 fn string_builtin_concat(input: &str, args: &[JavaScript]) -> Option<JavaScript> {
     let mut result = input.to_string();
     for arg in args {
-        let arg = match arg {
-            Raw(Str(s)) => s.clone(),
-            Array(a) => flatten_array(a, None),
-            any => any.to_string(),
-        };
+        let arg = js_to_string_value(arg);
         result.push_str(&arg);
     }
     Some(Raw(Str(result)))
@@ -384,11 +382,7 @@ fn string_builtin_start_with(input: &str, args: &[JavaScript]) -> Option<JavaScr
         return Some(Raw(Bool(false)));
     }
 
-    let to_find = match args.first()? {
-        Raw(Str(s)) => s.clone(),
-        Array(a) => flatten_array(a, None),
-        any => any.to_string(),
-    };
+    let to_find = js_to_string_value(args.first()?);
 
     Some(Raw(Bool(input.starts_with(&to_find))))
 }
@@ -398,12 +392,7 @@ fn string_builtin_end_with(input: &str, args: &[JavaScript]) -> Option<JavaScrip
         return Some(Raw(Bool(false)));
     }
 
-    let to_find = match args.first()? {
-        Raw(Str(s)) => s.clone(),
-        Array(a) => flatten_array(a, None),
-        any => any.to_string(),
-    };
-
+    let to_find = js_to_string_value(args.first()?);
     Some(Raw(Bool(input.ends_with(&to_find))))
 }
 
@@ -412,12 +401,7 @@ fn string_builtin_includes(input: &str, args: &[JavaScript]) -> Option<JavaScrip
         return Some(Raw(Bool(false)));
     }
 
-    let to_find = match args.first()? {
-        Raw(Str(s)) => s.clone(),
-        Array(a) => flatten_array(a, None),
-        any => any.to_string(),
-    };
-
+    let to_find = js_to_string_value(args.first()?);
     Some(Raw(Bool(input.contains(&to_find))))
 }
 
@@ -426,12 +410,7 @@ fn string_builtin_index_of(input: &str, args: &[JavaScript]) -> Option<JavaScrip
         return Some(Raw(Num(-1.0)));
     }
 
-    let to_find = match args.first()? {
-        Raw(Str(s)) => s.clone(),
-        Array(a) => flatten_array(a, None),
-        any => any.to_string(),
-    };
-
+    let to_find = js_to_string_value(args.first()?);
     Some(Raw(Num(input
         .find(&to_find)
         .map(|i| i as f64)
@@ -443,12 +422,7 @@ fn string_builtin_last_index_of(input: &str, args: &[JavaScript]) -> Option<Java
         return Some(Raw(Num(-1.0)));
     }
 
-    let to_find = match args.first()? {
-        Raw(Str(s)) => s.clone(),
-        Array(a) => flatten_array(a, None),
-        any => any.to_string(),
-    };
-
+    let to_find = js_to_string_value(args.first()?);
     Some(Raw(Num(input
         .rfind(&to_find)
         .map(|i| i as f64)
