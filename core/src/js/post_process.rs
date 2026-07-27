@@ -724,6 +724,28 @@ impl RemoveUnused {
         }
     }
 
+    fn has_side_effects(node: &Node<()>) -> bool {
+        match node.kind() {
+            "call_expression"
+            | "new_expression"
+            | "await_expression"
+            | "yield_expression"
+            | "assignment_expression"
+            | "augmented_assignment_expression"
+            | "update_expression" => true,
+            _ => node.iter().any(|child| Self::has_side_effects(&child)),
+        }
+    }
+
+    fn single_declarator_initializer<'a>(node: &'a Node<'a, ()>) -> Option<Node<'a, ()>> {
+        for child in node.iter() {
+            if child.kind() == "variable_declarator" {
+                return child.named_child("value");
+            }
+        }
+        None
+    }
+
     fn negate_condition_text(text: &str) -> String {
         let trimmed = text.trim();
         if trimmed.starts_with('(') && trimmed.ends_with(')') {
@@ -757,6 +779,17 @@ impl<'a> Rule<'a> for RemoveUnused {
                 if let Some(var_name) = Self::single_declarator_name(node)
                     && self.rule.is_unused(&var_name)
                 {
+                    if let Some(init) = Self::single_declarator_initializer(node) {
+                        if Self::has_side_effects(&init) {
+                            let init_text = init.text()?.trim().to_string();
+                            trace!(
+                                "RemoveUnusedVar: replacing declaration of '{}' with side-effecting initializer",
+                                var_name
+                            );
+                            self.replace_node_with_text(node, &format!("{};", init_text))?;
+                            return Ok(false);
+                        }
+                    }
                     trace!("RemoveUnusedVar: removing declaration of '{}'", var_name);
                     self.remove_node(node)?;
                     return Ok(false);
@@ -779,6 +812,20 @@ impl<'a> Rule<'a> for RemoveUnused {
                             {
                                 let var_name = left.text()?.to_string();
                                 if self.rule.is_unused(&var_name) {
+                                    if let Some(right) = child.child(2) {
+                                        if Self::has_side_effects(&right) {
+                                            let rhs_text = right.text()?.trim().to_string();
+                                            trace!(
+                                                "RemoveUnusedVar: replacing assignment to '{}' with side-effecting RHS",
+                                                var_name
+                                            );
+                                            self.replace_node_with_text(
+                                                node,
+                                                &format!("{};", rhs_text),
+                                            )?;
+                                            return Ok(false);
+                                        }
+                                    }
                                     trace!(
                                         "RemoveUnusedVar: removing assignment to '{}'",
                                         var_name
@@ -1892,6 +1939,30 @@ mod test_js_deadcode {
         assert_eq!(
             clean("console.log((foo(), \"b\"));"),
             "console.log((foo(), \"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_keep_call_when_var_is_unused() {
+        assert_eq!(
+            clean("var a = foo(); console.log('ok');"),
+            "foo(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_keep_call_when_assignment_is_unused() {
+        assert_eq!(
+            clean("var a = 1; a = foo(); console.log('ok');"),
+            "foo(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_var_with_pure_initializer() {
+        assert_eq!(
+            clean("var a = 1 + 2; console.log('ok');"),
+            "console.log('ok');"
         );
     }
 
