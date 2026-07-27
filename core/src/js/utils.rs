@@ -1,7 +1,55 @@
 use crate::js::JavaScript;
-use crate::js::JavaScript::Raw;
-use crate::js::Value::Str;
+use crate::js::JavaScript::{Array, Function, NaN, Raw};
+use crate::js::Value::{Num, Str};
+use crate::js::array::flatten_array;
 use crate::tree::Node;
+
+/// see [this](https://stackoverflow.com/a/63713987)
+pub fn builder_returned_identifier(callee: &Node<JavaScript>) -> Option<String> {
+    if callee.kind() == "parenthesized_expression" {
+        let inner = callee.iter().find(|c| !matches!(c.kind(), "(" | ")"))?;
+        return builder_returned_identifier(&inner);
+    }
+    if callee.kind() != "call_expression" {
+        return None;
+    }
+    if !get_positional_arguments(callee.named_child("arguments")).is_empty() {
+        return None;
+    }
+
+    let inner = callee.named_child("function").or_else(|| callee.child(0))?;
+    if inner.kind() != "call_expression" {
+        return None;
+    }
+
+    let inner_callee = inner.named_child("function").or_else(|| inner.child(0))?;
+    let is_function_constructor = method_name(&inner_callee).as_deref() == Some("constructor")
+        || inner_callee
+            .text()
+            .map(|t| t == "Function")
+            .unwrap_or(false);
+    if !is_function_constructor {
+        return None;
+    }
+
+    let inner_args = get_positional_arguments(inner.named_child("arguments"));
+    if inner_args.len() != 1 {
+        return None;
+    }
+    let Some(Raw(Str(body))) = inner_args[0].data() else {
+        return None;
+    };
+
+    let name = body.trim().strip_prefix("return")?.trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
 
 pub fn method_name(callee: &Node<JavaScript>) -> Option<String> {
     match callee.kind() {
@@ -45,20 +93,51 @@ pub fn to_js_uint32(x: f64) -> u32 {
 }
 
 pub fn is_write_target(node: &Node<JavaScript>) -> bool {
+    let mut child_start = node.start_abs();
+    let mut child_end = node.end_abs();
     let mut current = node.parent();
+
     while let Some(parent) = current {
         match parent.kind() {
             "variable_declarator" => {
                 if let Some(name_child) = parent.child(0) {
-                    return node.start_abs() >= name_child.start_abs()
-                        && node.end_abs() <= name_child.end_abs();
+                    return child_start >= name_child.start_abs()
+                        && child_end <= name_child.end_abs();
                 }
+                return false;
             }
             "assignment_expression" | "augmented_assignment_expression" => {
                 if let Some(left) = parent.child(0) {
-                    return node.start_abs() >= left.start_abs()
-                        && node.end_abs() <= left.end_abs();
+                    return child_start >= left.start_abs() && child_end <= left.end_abs();
                 }
+                return false;
+            }
+            "subscript_expression" => {
+                let in_index = parent
+                    .named_child("index")
+                    .or_else(|| parent.child(2))
+                    .map(|index| child_start >= index.start_abs() && child_end <= index.end_abs())
+                    .unwrap_or(false);
+                if in_index {
+                    return false;
+                }
+                child_start = parent.start_abs();
+                child_end = parent.end_abs();
+                current = parent.parent();
+                continue;
+            }
+            "member_expression" => {
+                let in_property = parent
+                    .named_child("property")
+                    .map(|prop| child_start >= prop.start_abs() && child_end <= prop.end_abs())
+                    .unwrap_or(false);
+                if in_property {
+                    return false;
+                }
+                child_start = parent.start_abs();
+                child_end = parent.end_abs();
+                current = parent.parent();
+                continue;
             }
             "update_expression" => return true,
             _ => {}
@@ -68,4 +147,37 @@ pub fn is_write_target(node: &Node<JavaScript>) -> bool {
     }
 
     false
+}
+
+pub fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
+    match value {
+        None => 0,
+        Some(v) => match v.as_js_num() {
+            Raw(Num(n)) if n.is_finite() => n.trunc() as i64,
+            Raw(Num(_)) | NaN => 0,
+            _ => 0,
+        },
+    }
+}
+
+pub fn as_known_string(value: &JavaScript) -> String {
+    match value {
+        Raw(Str(s)) => s.clone(),
+        any => any.to_string(),
+    }
+}
+
+pub fn native_function(name: &str) -> JavaScript {
+    Function {
+        source: format!("function {name}() {{ [native code] }}"),
+        return_value: None,
+    }
+}
+
+pub fn js_to_string_value(value: &JavaScript) -> String {
+    match value {
+        Raw(Str(s)) => s.clone(),
+        Array(a) => flatten_array(a, None),
+        any => any.to_string(),
+    }
 }

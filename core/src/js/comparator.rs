@@ -58,63 +58,16 @@ impl<'a> RuleMut<'a> for StrictEq {
                 return Ok(());
             }
 
-            let eq: Option<bool> = match (left.data(), right.data()) {
-                (Some(Raw(Num(l))), Some(Raw(Num(r)))) => {
-                    trace!("StrictEq (L): {} {} {} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(BigInt(l))), Some(Raw(BigInt(r)))) => {
-                    trace!("StrictEq (L): {}n {} {}n = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(Str(l))), Some(Raw(Str(r)))) => {
-                    trace!("StrictEq (L): {:?} {} {:?} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Raw(Bool(l))), Some(Raw(Bool(r)))) => {
-                    trace!("StrictEq (L): {} {} {} = {}", l, op_str, r, l == r);
-                    Some(l == r)
-                }
-                (Some(Undefined), Some(Undefined)) => {
-                    let res = op_str == "===";
-                    trace!("StrictEq (L): undefined {} undefined = {}", op_str, res);
-                    Some(res)
-                }
-                (Some(Null), Some(Null)) => {
-                    let res = op_str == "===";
-                    trace!("StrictEq (L): null {} null = {}", op_str, res);
-                    Some(res)
-                }
-                // NaN is never strictly equal to anything, including itself ??
-                (Some(NaN), _) | (_, Some(NaN)) => {
-                    trace!("StrictEq (L): NaN {} _ = false", op_str);
-                    Some(false)
-                }
-                // cross-type: always false for ===
-                (Some(Raw(Num(_))), Some(Raw(Str(_))))
-                | (Some(Raw(Str(_))), Some(Raw(Num(_))))
-                | (Some(Raw(Num(_))), Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), Some(Raw(Num(_))))
-                | (Some(Raw(Str(_))), Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), Some(Raw(Str(_))))
-                | (Some(Raw(BigInt(_))), Some(Raw(Num(_))))
-                | (Some(Raw(Num(_))), Some(Raw(BigInt(_))))
-                | (Some(Raw(BigInt(_))), Some(Raw(Str(_))))
-                | (Some(Raw(Str(_))), Some(Raw(BigInt(_))))
-                | (Some(Raw(BigInt(_))), Some(Raw(Bool(_))))
-                | (Some(Raw(Bool(_))), Some(Raw(BigInt(_))))
-                | (Some(Raw(_)), Some(Undefined))
-                | (Some(Undefined), Some(Raw(_))) => {
-                    trace!("StrictEq (L): cross-type {} = false", op_str);
-                    Some(false)
-                }
-                _ => None,
-            };
+            if let (Some(left), Some(right)) = (left.data(), right.data()) {
+                //let eq = strict_eq(left, right, op_str);
+                let eq = if op_str == "===" {
+                    left == right
+                } else {
+                    left != right
+                };
 
-            if let Some(is_eq) = eq {
-                let result = if op_str == "===" { is_eq } else { !is_eq };
-                trace!("StrictEq (L): result = {}", result);
-                node.reduce(Raw(Bool(result)));
+                trace!("StrictEq (L): result = {}", eq);
+                node.reduce(Raw(Bool(eq)));
             }
         }
 
@@ -483,103 +436,5 @@ fn js_str_to_num(s: &str) -> Option<f64> {
         Some(0.0)
     } else {
         trimmed.parse::<f64>().ok()
-    }
-}
-
-#[cfg(test)]
-mod tests_js_comparator {
-    use super::*;
-    use crate::js::bool::ParseBool;
-    use crate::js::build_javascript_tree;
-    use crate::js::integer::ParseInt;
-    use crate::js::linter::Linter;
-    use crate::js::string::ParseString;
-
-    fn deobfuscate_comparator(input: &str) -> String {
-        let mut tree = build_javascript_tree(input).unwrap();
-        tree.apply_mut(&mut (
-            ParseInt::default(),
-            ParseString::default(),
-            ParseBool::default(),
-            StrictEq::default(),
-            LooseEq::default(),
-            CmpOrd::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        linter.output
-    }
-
-    #[test]
-    fn test_strict_eq_num() {
-        assert_eq!(deobfuscate_comparator("var x = 1 === 1;"), "var x = true;");
-        assert_eq!(deobfuscate_comparator("var x = 1 === 2;"), "var x = false;");
-    }
-
-    #[test]
-    fn test_strict_eq_cross_type() {
-        assert_eq!(
-            deobfuscate_comparator("var x = 1 === \"1\";"),
-            "var x = false;",
-        );
-    }
-
-    #[test]
-    fn test_strict_neq_num() {
-        assert_eq!(deobfuscate_comparator("var x = 1 !== 2;"), "var x = true;",);
-    }
-
-    #[test]
-    fn test_loose_eq_num() {
-        assert_eq!(deobfuscate_comparator("var x = 42 == 42;"), "var x = true;",);
-    }
-
-    #[test]
-    fn test_loose_eq_str_num() {
-        assert_eq!(deobfuscate_comparator("\"42\" == 42;"), "true;",);
-        assert_eq!(deobfuscate_comparator("\"abc\" == 0;"), "false;",);
-    }
-
-    #[test]
-    fn test_loose_eq_bool_num() {
-        assert_eq!(deobfuscate_comparator("true == 1;"), "true;",);
-        assert_eq!(deobfuscate_comparator("false == 0;"), "true;",);
-        assert_eq!(deobfuscate_comparator("true == 2;"), "false;",);
-    }
-
-    #[test]
-    fn test_loose_eq_empty_str_num() {
-        assert_eq!(deobfuscate_comparator("\"\" == 0;"), "true;",);
-    }
-
-    #[test]
-    fn test_loose_neq() {
-        assert_eq!(deobfuscate_comparator("1 != 2;"), "true;",);
-    }
-
-    #[test]
-    fn test_cmp_num() {
-        assert_eq!(deobfuscate_comparator("3 < 5;"), "true;");
-        assert_eq!(deobfuscate_comparator("5 > 3;"), "true;");
-        assert_eq!(deobfuscate_comparator("3 <= 3;"), "true;");
-        assert_eq!(deobfuscate_comparator("4 >= 5;"), "false;");
-    }
-
-    #[test]
-    fn test_cmp_str_lex() {
-        assert_eq!(deobfuscate_comparator("\"abc\" < \"abd\";"), "true;",);
-    }
-
-    #[test]
-    fn test_cmp_bool_num() {
-        assert_eq!(deobfuscate_comparator("true > 0;"), "true;",);
-    }
-
-    #[test]
-    fn test_cmp_str_num() {
-        assert_eq!(deobfuscate_comparator("\"10\" > 9;"), "true;",);
-        assert_eq!(deobfuscate_comparator("\"abc\" < 5;"), "false;",);
     }
 }

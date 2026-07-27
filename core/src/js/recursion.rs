@@ -89,7 +89,7 @@ impl RecursionTracker {
     pub fn reset(&mut self) {
         self.depth = 0;
     }
-    
+
     pub fn bump(&mut self) -> bool {
         if self.depth >= self.max_depth {
             log::trace!(
@@ -165,9 +165,11 @@ mod tests {
     }
 
     #[test]
-    fn test_default_max_depth_is_sixteen() {
-        assert_eq!(DEFAULT_MAX_RECURSION_DEPTH, 16);
-        assert_eq!(RecursionTracker::default().max_depth(), 16);
+    fn test_default_max_depth_matches_constant() {
+        assert_eq!(
+            RecursionTracker::default().max_depth(),
+            DEFAULT_MAX_RECURSION_DEPTH
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use crate::engine::{CleanEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::js::JavaScript::Undefined;
 use crate::js::JavaScriptRuleSet;
 use crate::js::Value::{Bool, Num, Str};
 use crate::js::backend::JavaScriptBackend;
@@ -8,7 +9,7 @@ use crate::js::build_javascript_tree;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::recursion::GlobalRecursionGuard;
 use crate::js::strategy::JavaScriptStrategy;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{get_positional_arguments, js_to_string_value, method_name};
 use crate::rule::{RuleMut, RuleSetBuilderType};
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -372,7 +373,7 @@ impl FnCall {
     }
 
     fn stabilise_via_minusone(program: &str) -> Option<String> {
-        let cleaned = JavaScriptBackend::remove_extra(program).ok()?;
+        let cleaned = JavaScriptBackend::remove_extra(program, false).ok()?;
         const SUBTREE_FIXPOINT_ITER_CAP: usize = 8;
         let mut current = cleaned;
         for _ in 0..SUBTREE_FIXPOINT_ITER_CAP {
@@ -388,7 +389,7 @@ impl FnCall {
             let linted = linter.output;
 
             let post_cleaned = match CleanEngine::<JavaScriptBackend>::from_source(&linted) {
-                Ok(mut e) => e.clean().unwrap_or(linted),
+                Ok(mut e) => e.clean(false).unwrap_or(linted),
                 Err(_) => return None,
             };
 
@@ -986,6 +987,25 @@ impl<'a> RuleMut<'a> for FnCall {
                             );
                             node.reduce(return_value.as_ref().clone());
                         }
+                    } else if method_name(&func_node).as_deref() == Some("fontcolor")
+                        && let Some(object_node) = func_node.named_child("object")
+                        && let Some(JavaScript::Raw(Str(base))) = object_node.data()
+                    {
+                        let color = js_to_string_value(
+                            get_positional_arguments(view.named_child("arguments"))
+                                .first()
+                                .and_then(|arg| arg.data())
+                                .unwrap_or(&Undefined),
+                        )
+                        .replace('"', "&quot;");
+
+                        trace!(
+                            "FnCall (L): Resolving fontcolor call on {:?} with color {:?}",
+                            base, color
+                        );
+                        node.reduce(JavaScript::Raw(Str(format!(
+                            "<font color=\"{color}\">{base}</font>"
+                        ))));
                     } else if let Some(return_value) =
                         func_node.data().and_then(Self::function_return_from_value)
                     {
@@ -1033,7 +1053,6 @@ impl<'a> RuleMut<'a> for FnCall {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::js::build_javascript_tree;
@@ -1075,6 +1094,22 @@ mod tests {
         assert_eq!(
             deobfuscate("function test() { return 'hello'; } console.log(test());"),
             "function test() { return 'hello'; } console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_fontcolor_with_arg() {
+        assert_eq!(
+            deobfuscate("console.log('minusone'.fontcolor('red'));"),
+            "console.log('<font color=\"red\">minusone</font>');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_fontcolor_escapes_quote_in_arg() {
+        assert_eq!(
+            deobfuscate("console.log(''.fontcolor('0false\"'));"),
+            "console.log('<font color=\"0false&quot;\"></font>');"
         );
     }
 

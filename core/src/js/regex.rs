@@ -3,7 +3,7 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::{Array, Null, Raw, Regex, Undefined};
 use crate::js::Value::{Bool, Num, Str};
 use crate::js::string::Concat;
-use crate::js::utils::{get_positional_arguments, method_name};
+use crate::js::utils::{builder_returned_identifier, get_positional_arguments, method_name};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
@@ -31,7 +31,7 @@ use std::collections::HashSet;
 pub struct ParseRegex;
 
 impl ParseRegex {
-    fn parse_regex_literal(raw: &str) -> Option<(String, String)> {
+    pub fn parse_regex_literal(raw: &str) -> Option<(String, String)> {
         if !raw.starts_with('/') {
             return None;
         }
@@ -76,7 +76,16 @@ impl ParseRegex {
         args: Option<Node<JavaScript>>,
     ) -> Option<JavaScript> {
         let callee = callee?;
-        if callee.text().ok()? != "RegExp" {
+        // `RegExp(...)` directly, reached through the JSFuck universal builder `Function("return RegExp")()(...)`
+        let is_regexp = callee.text().ok().as_deref() == Some("RegExp")
+            || builder_returned_identifier(&callee).as_deref() == Some("RegExp")
+            || (method_name(&callee).as_deref() == Some("constructor")
+                && callee
+                    .child(0)
+                    .or_else(|| callee.named_child("object"))
+                    .and_then(|o| o.data().cloned())
+                    .is_some_and(|d| matches!(d, JavaScript::Regex { .. })));
+        if !is_regexp {
             return None;
         }
 
@@ -181,7 +190,8 @@ pub struct RegexExec;
 
 impl RegexExec {
     pub fn compile(pattern: &str, flags: &str) -> Option<regex::Regex> {
-        let mut builder = RegexBuilder::new(pattern);
+        let normalized = normalize_js_pattern_for_rust(pattern)?;
+        let mut builder = RegexBuilder::new(&normalized);
         for flag in flags.chars() {
             match flag {
                 'i' => {
@@ -203,6 +213,95 @@ impl RegexExec {
 
         builder.build().ok()
     }
+}
+
+fn normalize_js_pattern_for_rust(pattern: &str) -> Option<String> {
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        let Some(next) = chars.next() else {
+            out.push('\\');
+            break;
+        };
+
+        match next {
+            // js supported escapes
+            'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'b' | 'B' | 'f' | 'n' | 'r' | 't' | 'v' | '0'
+            | 'p' | 'P' => {
+                out.push('\\');
+                out.push(next);
+            }
+            // escaped regex punctuation
+            '^' | '$' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|' | '/'
+            | '\\' => {
+                out.push('\\');
+                out.push(next);
+            }
+            // control escape \cX
+            'c' => {
+                out.push('\\');
+                out.push('c');
+                if let Some(control) = chars.next() {
+                    out.push(control);
+                } else {
+                    return None;
+                }
+            }
+            // hex escape
+            'x' => {
+                out.push('\\');
+                out.push('x');
+                for _ in 0..2 {
+                    if let Some(hex) = chars.next() {
+                        out.push(hex);
+                    } else {
+                        return None;
+                    }
+                }
+            }
+            // unicode escapes
+            'u' => {
+                if matches!(chars.peek(), Some('{')) {
+                    out.push('\\');
+                    out.push('u');
+                    out.push('{');
+                    chars.next();
+                    while let Some(ch) = chars.next() {
+                        out.push(ch);
+                        if ch == '}' {
+                            break;
+                        }
+                    }
+                } else {
+                    let mut hex = String::new();
+                    for _ in 0..4 {
+                        if let Some(h) = chars.next() {
+                            hex.push(h);
+                        } else {
+                            return None;
+                        }
+                    }
+                    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                        return None;
+                    }
+                    out.push_str("\\x{");
+                    out.push_str(&hex);
+                    out.push('}');
+                }
+            }
+            // back references and named does not seem supported by rust-lang/regex
+            '1'..='9' | 'k' => return None,
+            // unknown escape -> treat as literal
+            other => out.push(other),
+        }
+    }
+
+    Some(out)
 }
 
 impl<'a> RuleMut<'a> for RegexExec {
@@ -362,79 +461,5 @@ impl<'a> RuleMut<'a> for RegexConcat {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests_js_regex {
-    use super::*;
-    use crate::js::build_javascript_tree;
-    use crate::js::integer::ParseInt;
-    use crate::js::linter::Linter;
-    use crate::js::objects::object::ObjectField;
-    use crate::js::string::{Concat, ParseString};
-
-    fn deobfuscate(input: &str) -> String {
-        let mut tree = build_javascript_tree(input).unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseRegex::default(),
-            ParseInt::default(),
-            Concat::default(),
-            RegexConcat::default(),
-            ObjectField::default(),
-            RegexExec::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        linter.output
-    }
-
-    #[test]
-    fn test_parse_regex_literal() {
-        assert_eq!(deobfuscate("var r = /ab+/gi;"), "var r = /ab+/gi;");
-    }
-
-    #[test]
-    fn test_parse_regex_constructor() {
-        assert_eq!(
-            deobfuscate("var r = RegExp('ab+', 'i');"),
-            "var r = /ab+/i;"
-        );
-        assert_eq!(
-            deobfuscate("var r = new RegExp('a+', 'm');"),
-            "var r = /a+/m;"
-        );
-    }
-
-    #[test]
-    fn test_regex_test_and_exec() {
-        assert_eq!(
-            deobfuscate("var a = /ab+/.test('zabbbz');"),
-            "var a = true;"
-        );
-        assert_eq!(deobfuscate("var a = /ab+/.test('zzz');"), "var a = false;");
-        assert_eq!(
-            deobfuscate("var m = /a(b+)/.exec('zabbbz');"),
-            "var m = ['abbb', 'bbb'];"
-        );
-        assert_eq!(deobfuscate("var m = /a+/.exec('zzz');"), "var m = null;");
-    }
-
-    #[test]
-    fn test_regexp_concat() {
-        assert_eq!(
-            deobfuscate("var m = RegExp + '';"),
-            "var m = 'function RegExp() { [native code] }';"
-        );
-    }
-
-    #[test]
-    fn test_regex_concat() {
-        assert_eq!(deobfuscate("var m = /a/ + 'a';"), "var m = '/a/a';");
-        assert_eq!(deobfuscate("var m = /a/ + 1;"), "var m = '/a/1';");
-        assert_eq!(deobfuscate("var m = /a/g + /a/i;"), "var m = '/a/g/a/i';");
     }
 }

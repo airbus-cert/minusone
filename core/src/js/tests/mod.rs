@@ -1,1 +1,13 @@
+mod array_tests;
+mod b64_tests;
+mod bool_tests;
+mod comparator_tests;
+mod encode_decode_tests;
+mod integer_tests;
 mod jsfuck;
+mod maths_tests;
+mod post_process_tests;
+mod regex_tests;
+mod specials_tests;
+mod string_tests;
+mod var_tests;

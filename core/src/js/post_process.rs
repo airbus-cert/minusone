@@ -219,26 +219,26 @@ impl<'a> Rule<'a> for ForToWhile {
 ///
 /// # Example
 /// ```
-/// use minusone::js::post_process::BracketCallToMember;
+/// use minusone::js::post_process::BracketToMember;
 /// use minusone::js::build_javascript_tree_for_storage;
 /// use minusone::tree::EmptyStorage;
 ///
 /// let source = "console['log']('minusone');";
 /// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
 ///
-/// let mut bracket_to_member = BracketCallToMember::default();
+/// let mut bracket_to_member = BracketToMember::default();
 /// tree.apply(&mut bracket_to_member).unwrap();
 ///
 /// assert_eq!(bracket_to_member.clear().unwrap(), "console.log('minusone');");
 /// ```
 #[derive(Default)]
-pub struct BracketCallToMember {
+pub struct BracketToMember {
     source: String,
     output: String,
     last_index: usize,
 }
 
-impl BracketCallToMember {
+impl BracketToMember {
     pub fn clear(mut self) -> MinusOneResult<String> {
         if self.last_index < self.source.len() {
             self.output += &self.source[self.last_index..];
@@ -254,9 +254,9 @@ impl BracketCallToMember {
         }
     }
 
-    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
-        let start = node.start_abs().min(self.source.len());
-        let end = node.end_abs().min(self.source.len());
+    fn replace_range_with_text(&mut self, start: usize, end: usize, replacement: &str) {
+        let start = start.min(self.source.len());
+        let end = end.min(self.source.len());
 
         if start < self.last_index || end <= self.last_index || end <= start {
             return;
@@ -307,18 +307,14 @@ impl BracketCallToMember {
         chars.all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric())
     }
 
-    fn bracket_call_to_member_text(node: &Node<()>) -> Option<String> {
-        if node.kind() != "call_expression" {
+    fn bracket_to_member_replacement(node: &Node<()>) -> Option<(usize, usize, String)> {
+        if node.kind() != "subscript_expression" {
             return None;
         }
 
-        let callee = node.child(0)?;
-        if callee.kind() != "subscript_expression" {
-            return None;
-        }
+        let object = node.child(0)?;
+        let index = node.named_child("index").or_else(|| node.child(2))?;
 
-        let object = callee.child(0)?;
-        let index = callee.named_child("index").or_else(|| callee.child(2))?;
         if index.kind() != "string" {
             return None;
         }
@@ -328,42 +324,135 @@ impl BracketCallToMember {
             return None;
         }
 
-        let args = node.child(1)?;
-        if args.kind() != "arguments" {
-            return None;
-        }
+        let start = object.end_abs();
+        let end = node.end_abs();
 
-        Some(format!(
-            "{}.{}{}",
-            object.text().ok()?.trim(),
-            key,
-            args.text().ok()?.trim()
-        ))
+        Some((start, end, format!(".{}", key)))
     }
 }
 
-impl<'a> Rule<'a> for BracketCallToMember {
+impl<'a> Rule<'a> for BracketToMember {
     type Language = ();
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
-        match node.kind() {
-            "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
-            }
-            "call_expression" => {
-                if let Some(replacement) = Self::bracket_call_to_member_text(node) {
-                    trace!("BracketCallToMember: rewriting bracket call to member call");
-                    self.replace_node_with_text(node, &replacement);
-                    return Ok(false);
-                }
-            }
-            _ => {}
+        if node.kind() == "program" {
+            self.source = node.text()?.to_string();
+            self.last_index = 0;
         }
         Ok(true)
     }
 
-    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        if node.kind() == "subscript_expression" {
+            if let Some((start, end, replacement)) = Self::bracket_to_member_replacement(node) {
+                trace!("BracketToMember: rewriting bracket access to member access");
+                self.replace_range_with_text(start, end, &replacement);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Simplifies globalThis calls. most of the time, it requires `BracketToMember` to be called first.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::GlobalThisSimplifier;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "globalThis.eval('alert(1)');";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut bracket_to_member = GlobalThisSimplifier::default();
+/// tree.apply(&mut bracket_to_member).unwrap();
+///
+/// assert_eq!(bracket_to_member.clear().unwrap(), "eval('alert(1)');");
+/// ```
+#[derive(Default)]
+pub struct GlobalThisSimplifier {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl GlobalThisSimplifier {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_range_with_text(&mut self, start: usize, end: usize, replacement: &str) {
+        let start = start.min(self.source.len());
+        let end = end.min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn global_this_replacement(node: &Node<()>) -> Option<(usize, usize, String)> {
+        if node.kind() != "member_expression" {
+            return None;
+        }
+
+        let object = node.child(0)?;
+        let object_text = object.text().ok()?;
+        let object_str = object_text.trim();
+
+        if !["globalThis", "globalthis", "global", "self", "window"].contains(&object_str) {
+            return None;
+        }
+
+        let dot = node.child(1)?;
+        if dot.kind() != "." {
+            return None;
+        }
+
+        Some((object.start_abs(), dot.end_abs(), String::new()))
+    }
+}
+
+impl<'a> Rule<'a> for GlobalThisSimplifier {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        if node.kind() == "program" {
+            self.source = node.text()?.to_string();
+            self.last_index = 0;
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        if node.kind() == "member_expression" {
+            if let Some((start, end, replacement)) = Self::global_this_replacement(node) {
+                trace!("GlobalThisSimplifier: removing global object reference");
+                self.replace_range_with_text(start, end, &replacement);
+            }
+        }
         Ok(())
     }
 }
@@ -573,6 +662,22 @@ impl RemoveUnused {
         }
     }
 
+    fn statement_block_is_empty(block: &Node<()>) -> bool {
+        Self::block_inner_text(block)
+            .map(|inner| inner.trim().is_empty())
+            .unwrap_or(false)
+    }
+
+    fn else_clause_body_text(else_clause: &Node<()>) -> Option<String> {
+        for child in else_clause.iter() {
+            if child.kind() == "else" {
+                continue;
+            }
+            return Some(child.text().ok()?.trim().to_string());
+        }
+        None
+    }
+
     fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) -> MinusOneResult<()> {
         let start = node.start_abs().min(self.source.len());
         let end = node.end_abs().min(self.source.len());
@@ -595,6 +700,43 @@ impl RemoveUnused {
         }
         self.last_index = end;
         Ok(())
+    }
+
+    fn trim_output_trailing_space(&mut self) {
+        if self.output.ends_with(' ') {
+            self.output.pop();
+        }
+    }
+
+    fn has_side_effects(node: &Node<()>) -> bool {
+        match node.kind() {
+            "call_expression"
+            | "new_expression"
+            | "await_expression"
+            | "yield_expression"
+            | "assignment_expression"
+            | "augmented_assignment_expression"
+            | "update_expression" => true,
+            _ => node.iter().any(|child| Self::has_side_effects(&child)),
+        }
+    }
+
+    fn single_declarator_initializer<'a>(node: &'a Node<'a, ()>) -> Option<Node<'a, ()>> {
+        for child in node.iter() {
+            if child.kind() == "variable_declarator" {
+                return child.named_child("value");
+            }
+        }
+        None
+    }
+
+    fn negate_condition_text(text: &str) -> String {
+        let trimmed = text.trim();
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            format!("!{}", trimmed)
+        } else {
+            format!("!({})", trimmed)
+        }
     }
 }
 
@@ -621,6 +763,17 @@ impl<'a> Rule<'a> for RemoveUnused {
                 if let Some(var_name) = Self::single_declarator_name(node)
                     && self.rule.is_unused(&var_name)
                 {
+                    if let Some(init) = Self::single_declarator_initializer(node) {
+                        if Self::has_side_effects(&init) {
+                            let init_text = init.text()?.trim().to_string();
+                            trace!(
+                                "RemoveUnusedVar: replacing declaration of '{}' with side-effecting initializer",
+                                var_name
+                            );
+                            self.replace_node_with_text(node, &format!("{};", init_text))?;
+                            return Ok(false);
+                        }
+                    }
                     trace!("RemoveUnusedVar: removing declaration of '{}'", var_name);
                     self.remove_node(node)?;
                     return Ok(false);
@@ -643,6 +796,20 @@ impl<'a> Rule<'a> for RemoveUnused {
                             {
                                 let var_name = left.text()?.to_string();
                                 if self.rule.is_unused(&var_name) {
+                                    if let Some(right) = child.child(2) {
+                                        if Self::has_side_effects(&right) {
+                                            let rhs_text = right.text()?.trim().to_string();
+                                            trace!(
+                                                "RemoveUnusedVar: replacing assignment to '{}' with side-effecting RHS",
+                                                var_name
+                                            );
+                                            self.replace_node_with_text(
+                                                node,
+                                                &format!("{};", rhs_text),
+                                            )?;
+                                            return Ok(false);
+                                        }
+                                    }
                                     trace!(
                                         "RemoveUnusedVar: removing assignment to '{}'",
                                         var_name
@@ -684,6 +851,56 @@ impl<'a> Rule<'a> for RemoveUnused {
             // if statements with known boolean conditions
             "if_statement" => {
                 if let Some(condition) = node.named_child("condition") {
+                    let consequence = node.named_child("consequence");
+                    let consequence_empty = consequence
+                        .as_ref()
+                        .is_some_and(|block| block.kind() == "statement_block")
+                        && consequence
+                            .as_ref()
+                            .is_some_and(Self::statement_block_is_empty);
+
+                    if consequence_empty {
+                        let mut else_body = None;
+                        for child in node.iter() {
+                            if child.kind() == "else_clause" {
+                                else_body = Self::else_clause_body_text(&child);
+                                if let Some(body) = &else_body {
+                                    if body.trim().is_empty() {
+                                        trace!("RemoveUnusedVar: removing empty else clause");
+                                        self.remove_node(&child)?;
+                                        return Ok(false);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                        if let Some(body) = else_body {
+                            if Self::is_literal_bool(&condition, true) {
+                                trace!("RemoveUnusedVar: removing if (true) with empty body");
+                                self.remove_node(node)?;
+                                return Ok(false);
+                            } else if Self::is_literal_bool(&condition, false) {
+                                trace!(
+                                    "RemoveUnusedVar: replacing if (false) ... else with else body"
+                                );
+                                self.replace_node_with_text(node, &body)?;
+                                return Ok(false);
+                            } else {
+                                let cond_text = condition.text()?;
+                                let negated = Self::negate_condition_text(&cond_text);
+                                let replacement = format!("if ({}) {}", negated, body);
+                                trace!("RemoveUnusedVar: flipping empty if into negated else");
+                                self.replace_node_with_text(node, &replacement)?;
+                                return Ok(false);
+                            }
+                        } else {
+                            trace!("RemoveUnusedVar: removing empty if statement");
+                            self.remove_node(node)?;
+                            return Ok(false);
+                        }
+                    }
+
                     if Self::is_literal_bool(&condition, false) {
                         if Self::has_else_clause(node) {
                             // if (false) { ... } else { BODY } -> keep BODY
@@ -729,6 +946,73 @@ impl<'a> Rule<'a> for RemoveUnused {
                         trace!("RemoveUnusedVar: simplifying deterministic switch");
                         self.replace_node_with_text(node, &replacement)?;
                     }
+                    return Ok(false);
+                }
+            }
+            "while_statement" => {
+                if let Some(condition) = node.named_child("condition") {
+                    if Self::is_literal_bool(&condition, false) {
+                        trace!("RemoveUnusedVar: removing dead while (false) loop");
+                        self.remove_node(node)?;
+                        return Ok(false);
+                    }
+                }
+            }
+            "else_clause" => {
+                for child in node.iter() {
+                    if child.kind() == "statement_block" && Self::statement_block_is_empty(&child) {
+                        trace!("RemoveUnusedVar: removing empty else clause");
+                        self.remove_node(node)?;
+                        self.trim_output_trailing_space();
+                        return Ok(false);
+                    }
+                }
+            }
+            "try_statement" => {
+                let try_block = node.named_child("body");
+                let try_empty = try_block
+                    .as_ref()
+                    .is_some_and(|block| block.kind() == "statement_block")
+                    && try_block
+                        .as_ref()
+                        .is_some_and(Self::statement_block_is_empty);
+
+                let mut catch_empty = true;
+                let mut saw_catch = false;
+                let mut finally_text = None;
+
+                for child in node.iter() {
+                    if child.kind() == "catch_clause" {
+                        saw_catch = true;
+                        for catch_child in child.iter() {
+                            if catch_child.kind() == "statement_block" {
+                                catch_empty = Self::statement_block_is_empty(&catch_child);
+                                break;
+                            }
+                        }
+                    } else if child.kind() == "finally_clause" {
+                        for finally_child in child.iter() {
+                            if finally_child.kind() == "statement_block" {
+                                finally_text = Self::block_inner_text(&finally_child);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if saw_catch && !catch_empty {
+                    catch_empty = false;
+                }
+
+                if try_empty && catch_empty {
+                    if let Some(inner) = finally_text {
+                        trace!("RemoveUnusedVar: unwrapping finally-only try statement");
+                        self.replace_node_with_text(node, &inner)?;
+                        return Ok(false);
+                    }
+
+                    trace!("RemoveUnusedVar: removing empty try statement");
+                    self.remove_node(node)?;
                     return Ok(false);
                 }
             }
@@ -1178,6 +1462,107 @@ impl<'a> Rule<'a> for ReduceSequenceExpression {
     }
 }
 
+/// Sanitize var names by replacing \uXXXX by their unicode character.
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::SanitizeVarNames;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "let \\u0061 = 1;";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut sanitize = SanitizeVarNames::default();
+/// tree.apply(&mut sanitize).unwrap();
+///
+/// assert_eq!(sanitize.clear().unwrap(), "let a = 1;");
+/// ```
+#[derive(Default)]
+pub struct SanitizeVarNames {
+    source: String,
+    output: String,
+    last_index: usize,
+}
+
+impl SanitizeVarNames {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        self.last_index = end;
+    }
+}
+
+impl<'a> Rule<'a> for SanitizeVarNames {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+            }
+            "identifier" | "member_identifier" | "property_identifier" => {
+                if let Some(text) = node.text().ok() {
+                    if text.contains("\\u") {
+                        let mut real_name = String::new();
+                        let mut i = 0;
+                        while i < text.len() {
+                            if text[i..].starts_with("\\u") && i + 6 <= text.len() {
+                                if let Ok(code_point) = u32::from_str_radix(&text[i + 2..i + 6], 16)
+                                {
+                                    if let Some(ch) = char::from_u32(code_point) {
+                                        real_name.push(ch);
+                                        i += 6;
+                                        continue;
+                                    }
+                                }
+                            }
+                            real_name.push(text.as_bytes()[i] as char);
+                            i += 1;
+                        }
+                        trace!("SanitizeVarNames: replacing {} with {}", text, real_name);
+                        self.replace_node_with_text(node, &real_name);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test_js_deadcode {
     use super::*;
@@ -1206,9 +1591,14 @@ mod test_js_deadcode {
         let rewritten = for_to_while.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
-        let mut bracket_to_member = BracketCallToMember::default();
+        let mut bracket_to_member = BracketToMember::default();
         tree.apply(&mut bracket_to_member).unwrap();
         let rewritten = bracket_to_member.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut global_this_simplifier = GlobalThisSimplifier::default();
+        tree.apply(&mut global_this_simplifier).unwrap();
+        let rewritten = global_this_simplifier.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
         let mut unused = UnusedVar::default();
@@ -1216,6 +1606,13 @@ mod test_js_deadcode {
         let mut remover = RemoveUnused::new(unused);
         tree.apply(&mut remover).unwrap();
         remover.clear().unwrap()
+    }
+
+    fn sanitize(input: &str) -> String {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut sanitize = SanitizeVarNames::default();
+        tree.apply(&mut sanitize).unwrap();
+        sanitize.clear().unwrap()
     }
 
     #[test]
@@ -1440,6 +1837,15 @@ mod test_js_deadcode {
     }
 
     #[test]
+    fn test_global_this_simplifier() {
+        assert_eq!(clean("globalThis.eval('alert(1)');"), "eval('alert(1)');");
+        assert_eq!(
+            clean("globalThis['eval']('alert(1)');"),
+            "eval('alert(1)');"
+        );
+    }
+
+    #[test]
     fn test_stress_many_removals_no_slice_panic() {
         let mut input = String::new();
         for i in 0..200 {
@@ -1517,6 +1923,49 @@ mod test_js_deadcode {
         assert_eq!(
             clean("console.log((foo(), \"b\"));"),
             "console.log((foo(), \"b\"));"
+        );
+    }
+
+    #[test]
+    fn test_keep_call_when_var_is_unused() {
+        assert_eq!(
+            clean("var a = foo(); console.log('ok');"),
+            "foo(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_keep_call_when_assignment_is_unused() {
+        assert_eq!(
+            clean("var a = 1; a = foo(); console.log('ok');"),
+            "foo(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_var_with_pure_initializer() {
+        assert_eq!(
+            clean("var a = 1 + 2; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_sanitize() {
+        assert_eq!(sanitize("let \\u0061 = 0;"), "let a = 0;");
+        assert_eq!(
+            sanitize("console.\\u006c\\u006f\\u0067();"),
+            "console.log();"
+        );
+        assert_eq!(
+            sanitize("function \\u006d\\u0069\\u006e\\u0075\\u0073\\u006f\\u006e\\u0065(){}"),
+            "function minusone(){}"
+        );
+        assert_eq!(
+            sanitize(
+                "function minusone(\\u006d\\u0069\\u006e\\u0075, \\u0073\\u006f\\u006e\\u0065){}"
+            ),
+            "function minusone(minu, sone){}"
         );
     }
 }

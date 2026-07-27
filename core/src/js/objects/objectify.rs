@@ -1,14 +1,9 @@
 use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
+use crate::js::utils::{js_to_string_value, native_function};
+use log::trace;
 use std::collections::HashMap;
-
-fn native_function(name: &str) -> JavaScript {
-    Function {
-        source: format!("function {name}() {{ [native code] }}"),
-        return_value: None,
-    }
-}
 
 fn function_name_from_source(source: &str) -> String {
     let trimmed = source.trim();
@@ -42,6 +37,7 @@ pub fn constructor_name(value: &JavaScript) -> &'static str {
         Null => "null",
         Object { .. } => "Object",
         Buffer(_) => "Buffer",
+        Iterator { .. } => "Iterator",
     }
 }
 
@@ -49,6 +45,13 @@ fn string_builtins(s: &str) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
 
     map.insert("length".to_string(), Raw(Num(s.chars().count() as f64)));
+    map.insert(
+        "valueOf".to_string(),
+        Function {
+            source: format!("function valueOf() {{ [native code] }}"),
+            return_value: Some(Box::new(Raw(Str(s.to_string())))),
+        },
+    );
 
     let tags = vec![
         ("big", "big"),
@@ -85,23 +88,14 @@ fn string_builtins(s: &str) -> HashMap<String, JavaScript> {
     map
 }
 
-fn array_builtins(_v: Vec<JavaScript>) -> HashMap<String, JavaScript> {
+fn array_builtins(array: Vec<JavaScript>) -> HashMap<String, JavaScript> {
     let mut map = HashMap::new();
+    map.insert("length".to_string(), Raw(Num(array.len() as f64)));
 
-    map.insert(
-        "entries".to_string(),
-        Function {
-            source: "[object Array Iterator]".to_string(),
-            return_value: Some(Box::new(Raw(Str("[object Array Iterator]".to_string())))),
-        },
-    );
-    map.insert(
-        "flat".to_string(),
-        Function {
-            source: "function flat() { [native code] }".to_string(),
-            return_value: None,
-        },
-    );
+    // jsfuck native code harvesters
+    for name in ["flat", "filter", "fill", "find", "keys", "values"] {
+        map.insert(name.to_string(), native_function(name));
+    }
 
     map
 }
@@ -121,22 +115,28 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
         });
     }
 
+    let mut to_string_override = None;
+
     let mut map = HashMap::new();
     map.insert(
         "constructor".to_string(),
         native_function(constructor_name(value)),
     );
-    if !matches!(value, NaN | Undefined | Buffer(_)) {
+    if !matches!(
+        value,
+        NaN | Undefined | Buffer(_) | Array(_) | Iterator { .. }
+    ) {
         map.insert(
             "toString".to_string(),
             Function {
                 source: "function toString() {}".to_string(),
-                return_value: Some(Box::new(Raw(Str(value.to_string())))),
+                return_value: Some(Box::new(Raw(Str(js_to_string_value(value))))),
             },
         );
     }
 
     if let Array(array) = value {
+        map.insert("length".to_string(), Raw(Num(array.len() as f64)));
         map.insert("at".to_string(), native_function("at"));
         let reversed_array = array.clone().iter().rev().cloned().collect();
         map.insert(
@@ -156,16 +156,25 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
     }
 
     if let Raw(Str(s)) = value {
-        map.extend(string_builtins(s));
+        map.extend(string_builtins(s.as_str()));
+        to_string_override = Some(s.to_owned());
     }
 
     if let Array(arr) = value {
         map.extend(array_builtins(arr.clone()));
     }
 
+    trace!(
+        "To string override: {}",
+        to_string_override
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("None")
+    );
+
     Some(Object {
         map,
-        to_string_override: None,
+        to_string_override,
     })
 }
 

@@ -1,9 +1,9 @@
-#![feature(str_from_utf16_endian)]
 extern crate clap;
 extern crate clap_help;
 extern crate minusone;
 
 mod cli;
+mod trace_view;
 mod utils;
 
 use crate::cli::*;
@@ -17,7 +17,7 @@ use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use std::{fs, process};
 use termimad::ansi;
-use utils::{get_available_rules, run_deobf};
+use utils::*;
 
 const FLEXIBLE_B64: GeneralPurpose = GeneralPurpose::new(
     &alphabet::STANDARD,
@@ -161,12 +161,34 @@ fn main() {
     let now = std::time::Instant::now();
 
     let result = match lang {
-        Language::Powershell => {
-            run_deobf::<PowershellBackend>(&source, cli_clone, rule_set, skip_rule_set)
-        }
-        Language::Javascript => {
-            run_deobf::<JavaScriptBackend>(&source, cli_clone, rule_set, skip_rule_set)
-        }
+        Language::Powershell if cli.step => run_deobf_ps_traced(
+            &source,
+            cli_clone,
+            rule_set,
+            skip_rule_set,
+            cli.keep_dead_code,
+        ),
+        Language::Powershell => run_deobf::<PowershellBackend>(
+            &source,
+            cli_clone,
+            rule_set,
+            skip_rule_set,
+            cli.keep_dead_code,
+        ),
+        Language::Javascript if cli.step => run_deobf_js_traced(
+            &source,
+            cli_clone,
+            rule_set,
+            skip_rule_set,
+            cli.keep_dead_code,
+        ),
+        Language::Javascript => run_deobf::<JavaScriptBackend>(
+            &source,
+            cli_clone,
+            rule_set,
+            skip_rule_set,
+            cli.keep_dead_code,
+        ),
     };
 
     if cli.time {

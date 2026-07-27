@@ -1971,18 +1971,6 @@ mod test {
         )
         .unwrap();
 
-        // We are waiting for
-        println!(
-            "{:?}",
-            tree.root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(4)
-                .unwrap()
-                .data()
-        );
-
         assert_eq!(
             *tree
                 .root()
