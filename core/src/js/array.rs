@@ -890,11 +890,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                     let combined = format!(
                         "{}{}",
                         flatten_array(left_values, None),
-                        match javascript {
-                            Raw(Str(s)) => s.clone(),
-                            Array(a) => flatten_array(a, None),
-                            any => any.to_string(),
-                        }
+                        js_to_string_value(javascript)
                     );
                     trace!(
                         "CombineArrays (L): combining array and non-raw => left: {:?}, right: {:?} => '{}'",
@@ -905,11 +901,7 @@ impl<'a> RuleMut<'a> for CombineArrays {
                 (Some(javascript), "+", Some(Array(right_values))) => {
                     let combined = format!(
                         "{}{}",
-                        match javascript {
-                            Raw(Str(s)) => s.clone(),
-                            Array(a) => flatten_array(a, None),
-                            any => any.to_string(),
-                        },
+                        js_to_string_value(javascript),
                         flatten_array(right_values, None)
                     );
                     trace!(
