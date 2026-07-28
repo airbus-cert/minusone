@@ -2,24 +2,12 @@ use crate::error::MinusOneResult;
 use crate::ps::Powershell::Raw;
 use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
+use crate::ps::utils::string::escape_string;
 use crate::ps::var::{UnusedVar, Var, find_variable_node};
 use crate::ps::{LoopStatus, Powershell};
 use crate::regex::Regex;
 use crate::rule::Rule;
 use crate::tree::Node;
-
-fn escape_string(src: &str) -> String {
-    let mut result = String::new();
-    let mut previous = None;
-    for c in src.chars() {
-        if c == '"' && previous != Some('`') {
-            result.push('`');
-        }
-        result.push(c);
-        previous = Some(c);
-    }
-    result
-}
 
 fn remove_useless_token(src: &str) -> String {
     src.replace("`", "")
@@ -564,5 +552,44 @@ impl<'a> Rule<'a> for RemoveUnusedVar {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::ps::build_powershell_tree;
+    use crate::ps::forward::Forward;
+    use crate::ps::linter::Linter;
+    use crate::ps::string::ParseString;
+
+    fn assert_roundtrips(source: &str, expected_output: &str) {
+        let mut tree = build_powershell_tree(source).unwrap();
+        tree.apply_mut(&mut (ParseString::default(), Forward::default()))
+            .unwrap();
+
+        let mut ps_litter_view = Linter::default();
+        tree.apply(&mut ps_litter_view).unwrap();
+
+        assert_eq!(ps_litter_view.output, expected_output);
+    }
+
+    #[test]
+    fn test_escape_newline_on_output() {
+        assert_roundtrips("\"a`nb\"", "\"a`nb\"");
+    }
+
+    #[test]
+    fn test_escape_dollar_on_output() {
+        assert_roundtrips("\"a`$b\"", "\"a`$b\"");
+    }
+
+    #[test]
+    fn test_escape_backtick_on_output() {
+        assert_roundtrips("\"a``b\"", "\"a``b\"");
+    }
+
+    #[test]
+    fn test_escape_control_chars_on_output() {
+        assert_roundtrips("\"a`tb`0c\"", "\"a`tb`0c\"");
     }
 }
