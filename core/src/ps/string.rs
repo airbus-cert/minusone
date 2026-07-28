@@ -4,6 +4,7 @@ use crate::ps::Powershell::{Array, Raw, Type};
 use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
 use crate::ps::utils::conversion::*;
+use crate::ps::utils::string::*;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
@@ -42,43 +43,49 @@ impl<'a> RuleMut<'a> for ParseString {
                 )));
             }
             "expandable_string_literal" => {
-                // expand what is expandable
-                let value = String::from(view.text()?);
-                // Parse string by removing the double quote
-                let mut result = String::from(&value[1..value.len() - 1]).replace("\"\"", "\"");
+                // Only $.variable / $.sub_expression (and an occasional lone trailing "$")
+                // show up as children; everything else -- literal text, `` `escapes ``
+                // source (e.g. a `` `$foo `` escape sequence looks like a $foo reference once
+                // partially processed), causing an unrelated substitution to clobber it.
+                let text = view.text()?;
+                let end = text.len() - 1; // exclude closing quote
+                let mut result = String::new();
+                let mut cursor = 1usize; // skip opening quote
 
                 for child in view.iter() {
-                    // relicate token from tree-sitter
-                    if child.kind() == "$" {
-                        continue;
+                    let child_start = child.start_rel();
+                    let child_end = child.end_rel();
+
+                    if child_start > cursor {
+                        result.push_str(&unescape_literal_segment(&text[cursor..child_start]));
                     }
 
-                    if let Some(v) = child.data() {
+                    if child.kind() == "$" {
+                        result.push_str(child.text()?);
+                    } else if let Some(v) = child.data() {
                         match v {
-                            Raw(Str(s)) => {
-                                result = result.replace(child.text()?, s);
-                            }
-                            Raw(Num(n)) => {
-                                result = result.replace(child.text()?, n.to_string().as_str());
-                            }
-                            Raw(Bool(true)) => {
-                                result = result.replace(child.text()?, "True");
-                            }
-                            Raw(Bool(false)) => {
-                                result = result.replace(child.text()?, "False");
-                            }
+                            Raw(Str(s)) => result.push_str(s),
+                            Raw(Num(n)) => result.push_str(&n.to_string()),
+                            Raw(Bool(true)) => result.push_str("True"),
+                            Raw(Bool(false)) => result.push_str("False"),
                             Powershell::HashMap(_) => {
-                                result =
-                                    result.replace(child.text()?, "System.Collections.Hashtable");
+                                result.push_str("System.Collections.Hashtable")
                             }
-                            _ => (),
+                            _ => result.push_str(child.text()?),
                         }
                     } else {
                         // the expandable string have non inferred child
                         // so can't be inferred
                         return Ok(());
                     }
+
+                    cursor = cursor.max(child_end);
                 }
+
+                if end > cursor {
+                    result.push_str(&unescape_literal_segment(&text[cursor..end]));
+                }
+
                 trace!(
                     "ParseString (L): Setting node with expanded string: {:?}",
                     result
@@ -523,6 +530,121 @@ mod test {
                 .data()
                 .expect("Inferred type"),
             Raw(Str("ab".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_backtick_escape_sequences() {
+        let mut tree = build_powershell_tree("\"a`nb`tc`0d`ae`bf`ff`vg`\"h`` i\"").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), Forward::default()))
+            .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("a\nb\tc\0d\u{7}e\u{8}f\u{c}f\u{b}g\"h` i".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_backtick_unknown_escape_drops_backtick() {
+        let mut tree = build_powershell_tree("\"a`zb\"").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), Forward::default()))
+            .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("azb".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_backtick_escaped_dollar_not_expanded() {
+        let mut tree = build_powershell_tree("$x = \"world\"\n\"hello `$x = $x\"").unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseString::default(),
+                Forward::default(),
+                crate::ps::var::Var::default(),
+            ),
+            crate::ps::strategy::PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap() // program
+                .child(0)
+                .unwrap() // statement_list
+                .child(1)
+                .unwrap() // second statement (the expandable string)
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("hello $x = world".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_no_collision_when_substituted_value_looks_like_another_reference() {
+        let mut tree =
+            build_powershell_tree("$y = \"resolved\"\n$x = \"literal `$y text\"\n\"a=$x b=$y\"")
+                .unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseString::default(),
+                Forward::default(),
+                crate::ps::var::Var::default(),
+            ),
+            crate::ps::strategy::PowershellStrategy::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap() // program
+                .child(0)
+                .unwrap() // statement_list
+                .child(2)
+                .unwrap() // third statement (the expandable string)
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("a=literal $y text b=resolved".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_verbatim_string_ignores_backtick() {
+        let mut tree = build_powershell_tree("'a`nb'").unwrap();
+        tree.apply_mut(&mut (ParseString::default(), Forward::default()))
+            .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("a`nb".to_string()))
         );
     }
 
