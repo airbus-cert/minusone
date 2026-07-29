@@ -2,6 +2,7 @@ use self::access::*;
 use self::array::*;
 use self::bool::*;
 use self::cast::*;
+use self::crypto::*;
 use self::encoding::*;
 use self::foreach::*;
 use self::forward::*;
@@ -28,6 +29,7 @@ pub mod backend;
 pub mod bool;
 pub mod cast;
 pub mod comparison;
+pub mod crypto;
 pub mod encoding;
 pub mod foreach;
 pub mod forward;
@@ -179,6 +181,8 @@ impl_powershell_ruleset!(
     Not,          // It will infer the ! operator
     ParseType,    // Parse type
     DecodeBase64, // Decode calls to FromBase64
+    AesType,      // Resolve AES algorithm objects and CreateDecryptor/CreateEncryptor(key, iv)
+    AesTransformFinalBlock, // Decode/encode calls to TransformFinalBlock(bytes, offset, count)
     EncodingType, // Resolve [System.Text.Encoding] statics, constructors and GetEncoding(...)
     EncodingGetString, // Decode calls to Encoding.GetString(byte[])
     EncodingGetBytes, // Encode calls to Encoding.GetBytes(string)
