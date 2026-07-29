@@ -21,7 +21,9 @@ integration = []
 aes = "0.9.2"
 base64 = { workspace = true }
 cbc = "0.2.1"
+cfb8 = "0.9.1"
 colored = "3"
+ecb = "0.2.0"
 half = "2.7.1"
 log = { workspace = true }
 num = "0.4.3"

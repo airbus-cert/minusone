@@ -119,6 +119,7 @@ pub enum Powershell {
     HashEntry(Value, Value),
     Type(String), // Will infer type
     Bytes(Vec<u8>),
+    Crypto(AesState), // Tracks a partially/fully configured AES algorithm or transform object
     Unknown,
 }
 

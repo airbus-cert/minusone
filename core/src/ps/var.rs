@@ -1,6 +1,8 @@
 use crate::error::{Error, MinusOneResult};
-use crate::ps::Powershell::{self, Array, Null, Raw, Type};
+use crate::ps::Powershell::{self, Array, Crypto, Null, Raw, Type};
 use crate::ps::Value::{self, Bool, Num, Str};
+use crate::ps::crypto::assign_aes_property;
+use crate::ps::tool::StringTool;
 use crate::regex::Regex;
 use crate::rule::{Rule, RuleMut};
 use crate::scope::ScopeManager;
@@ -213,6 +215,20 @@ pub fn find_variable_node<'a, T>(node: &Node<'a, T>) -> Option<Node<'a, T>> {
     None
 }
 
+fn find_member_assignment<'a, T>(node: &Node<'a, T>) -> Option<(Node<'a, T>, Node<'a, T>)> {
+    for child in node.iter() {
+        if child.kind() == "member_access"
+            && let (Some(obj), Some(member_name)) = (child.child(0), child.child(2))
+            && obj.kind() == "variable"
+        {
+            return Some((obj, member_name));
+        } else if let Some(found) = find_member_assignment(&child) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 impl<'a> RuleMut<'a> for Var {
     type Language = Powershell;
 
@@ -286,23 +302,41 @@ impl<'a> RuleMut<'a> for Var {
                 // Assign var value if it's possible
                 if let (Some(left), Some(operator), Some(right)) =
                     (view.child(0), view.child(1), view.child(2))
-                    && let Some(var) = find_variable_node(&left)
-                    && let Some(var_name) = Var::extract(var.text()?)
                 {
-                    let scope = self.scope_manager.current_mut();
-                    if let (current_value, Some(new_value)) =
-                        (scope.get_var(&var_name), right.data())
+                    if let Some(var) = find_variable_node(&left)
+                        && let Some(var_name) = Var::extract(var.text()?)
                     {
-                        // only predictable assignment is handled of local var
+                        let scope = self.scope_manager.current_mut();
+                        if let (current_value, Some(new_value)) =
+                            (scope.get_var(&var_name), right.data())
+                        {
+                            // only predictable assignment is handled of local var
+                            let is_local = scope.is_local(&var_name).unwrap_or(true);
+                            if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
+                                match assign_handler(current_value, operator, new_value) {
+                                    Some(assign_value) => scope.assign(
+                                        &var_name,
+                                        assign_value,
+                                        node.is_ongoing_transaction(),
+                                    ),
+                                    _ => scope.forget(&var_name, node.is_ongoing_transaction()),
+                                }
+                            }
+                        }
+                    } else if operator.text()? == "="
+                        && let Some((obj, member_name)) = find_member_assignment(&left)
+                        && let Some(var_name) = Var::extract(obj.text()?)
+                        && let Some(new_value) = right.data()
+                    {
+                        // Property assignment on a tracked object, e.g. $aes.Key = $keyBytes
+                        let member = member_name.text()?.to_string().normalize();
+                        let scope = self.scope_manager.current_mut();
                         let is_local = scope.is_local(&var_name).unwrap_or(true);
                         if flow == ControlFlow::Continue(BranchFlow::Predictable) || is_local {
-                            match assign_handler(current_value, operator, new_value) {
-                                Some(assign_value) => scope.assign(
-                                    &var_name,
-                                    assign_value,
-                                    node.is_ongoing_transaction(),
-                                ),
-                                _ => scope.forget(&var_name, node.is_ongoing_transaction()),
+                            if let Some(Crypto(state)) = scope.get_var_mut(&var_name)
+                                && !assign_aes_property(state, &member, new_value)
+                            {
+                                scope.forget(&var_name, node.is_ongoing_transaction());
                             }
                         }
                     }

@@ -125,6 +125,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfb8"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f2b823af3723db9d6326eed3102949445a3323378bab7d6ecb9107ff3cb9a08"
+dependencies = [
+ "cipher",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -409,6 +418,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "ecb"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbfbf3db731928d6912bc3beda911d55b834cee3df6131ba79b337a1298a3fa9"
+dependencies = [
+ "cipher",
 ]
 
 [[package]]
@@ -760,7 +778,9 @@ dependencies = [
  "aes",
  "base64",
  "cbc",
+ "cfb8",
  "colored",
+ "ecb",
  "half",
  "log",
  "num",
