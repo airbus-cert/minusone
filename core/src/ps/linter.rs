@@ -1,5 +1,5 @@
 use crate::error::MinusOneResult;
-use crate::ps::Powershell::Raw;
+use crate::ps::Powershell::{Bytes, Raw};
 use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
 use crate::ps::utils::string::escape_string;
@@ -315,6 +315,17 @@ impl<'a> Rule<'a> for Linter {
                 }
                 Raw(Bool(false)) => {
                     self.write("$false".to_string().as_str());
+                    return Ok(false);
+                }
+                Bytes(bytes) => {
+                    let joined = bytes
+                        .iter()
+                        .map(|b| b.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    self.write("@(");
+                    self.write(&joined);
+                    self.write(")");
                     return Ok(false);
                 }
                 _ => (),

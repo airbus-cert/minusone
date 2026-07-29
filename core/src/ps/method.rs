@@ -71,6 +71,16 @@ impl<'a> RuleMut<'a> for Length {
                     );
                     node.set(Raw(Num(value.len() as i64)))
                 }
+                (Some(Powershell::Bytes(value)), ".", m, _)
+                | (Some(Powershell::Bytes(value)), ".", _, Some(Raw(Str(m))))
+                    if m.clone().normalize() == "length" =>
+                {
+                    trace!(
+                        "Length (L): Setting node with bytes length: {}",
+                        value.len()
+                    );
+                    node.set(Raw(Num(value.len() as i64)))
+                }
                 (Some(Raw(Str(s))), ".", m, None)
                 | (Some(Raw(Str(s))), ".", _, Some(Raw(Str(m))))
                     if m.clone().normalize() == "length" =>
@@ -87,7 +97,10 @@ impl<'a> RuleMut<'a> for Length {
 
 /// This rule will infer the [System.Convert]::FromBase64String function
 ///
-/// [System.Text.Encoding]::utf8.getstring([System.Convert]::FromBase64String('Zm9v')) => 'foo'
+/// [System.Convert]::FromBase64String('Zm9v') => @(102, 111, 111)
+///
+/// Combined with [`crate::ps::encoding::EncodingGetString`], this lets a full
+/// `[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('Zm9v'))` chain fold to `'foo'`.
 ///
 /// # Example
 /// ```
@@ -100,7 +113,8 @@ impl<'a> RuleMut<'a> for Length {
 /// use minusone::ps::linter::Linter;
 /// use minusone::ps::string::ParseString;
 /// use minusone::ps::typing::ParseType;
-/// use minusone::ps::method::{DecodeBase64, FromUTF};
+/// use minusone::ps::method::DecodeBase64;
+/// use minusone::ps::encoding::{EncodingType, EncodingGetString};
 ///
 /// let mut tree = build_powershell_tree("[System.Text.Encoding]::utf8.getstring([System.Convert]::FromBase64String('Zm9v'))").unwrap();
 /// tree.apply_mut(&mut (
@@ -108,7 +122,8 @@ impl<'a> RuleMut<'a> for Length {
 ///     Forward::default(),
 ///     ParseType::default(),
 ///     DecodeBase64::default(),
-///     FromUTF::default()
+///     EncodingType::default(),
+///     EncodingGetString::default()
 /// )).unwrap();
 ///
 /// let mut ps_litter_view = Linter::default();
@@ -188,13 +203,11 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
                     {
                         match general_purpose::STANDARD.decode(s) {
                             Ok(bytes) => {
-                                let decoded_array: Vec<_> =
-                                    bytes.iter().map(|b| Num(*b as i64)).collect();
                                 trace!(
-                                    "DecodeBase64 (L): Setting node with decoded base64 array: {:?}",
-                                    decoded_array
+                                    "DecodeBase64 (L): Setting node with decoded bytes: {:?}",
+                                    bytes
                                 );
-                                node.set(Array(decoded_array));
+                                node.set(Powershell::Bytes(bytes));
                             }
                             Err(e) => {
                                 warn!(
@@ -213,197 +226,16 @@ impl<'a> RuleMut<'a> for DecodeBase64 {
     }
 }
 
-/// This rule will infer the [System.Text.Encoding]::utf8.getstring function
-///
-/// [System.Text.Encoding]::utf8.getstring([System.Convert]::FromBase64String('Zm9v')) => 'foo'
-///
-/// # Example
-/// ```
-/// extern crate tree_sitter;
-/// extern crate tree_sitter_powershell;
-///
-/// use minusone::tree::{HashMapStorage, Tree};
-/// use minusone::ps::build_powershell_tree;
-/// use minusone::ps::forward::Forward;
-/// use minusone::ps::linter::Linter;
-/// use minusone::ps::string::ParseString;
-/// use minusone::ps::typing::ParseType;
-/// use minusone::ps::method::{DecodeBase64, FromUTF};
-///
-/// let mut tree = build_powershell_tree("[System.Text.Encoding]::utf8.getstring([System.Convert]::FromBase64String('Zm9v'))").unwrap();
-/// tree.apply_mut(&mut (
-///     ParseString::default(),
-///     Forward::default(),
-///     ParseType::default(),
-///     DecodeBase64::default(),
-///     FromUTF::default()
-/// )).unwrap();
-///
-/// let mut ps_litter_view = Linter::default();
-/// tree.apply(&mut ps_litter_view).unwrap();
-///
-/// assert_eq!(ps_litter_view.output, "\"foo\"");
-/// ```
-#[derive(Default)]
-pub struct FromUTF;
-
-impl<'a> RuleMut<'a> for FromUTF {
-    type Language = Powershell;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
-    }
-
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() == "member_access" {
-            if let (Some(type_lit), Some(op), Some(member_name)) =
-                (view.child(0), view.child(1), view.child(2))
-            {
-                match (
-                    type_lit.data(),
-                    op.text()?,
-                    &member_name.text()?.to_string(),
-                    member_name.data(),
-                ) {
-                    (Some(Type(typename)), "::", m, _)
-                    | (Some(Type(typename)), "::", _, Some(Raw(Str(m))))
-                        if ["utf8", "utf16", "unicode", "ascii"]
-                            .contains(&m.clone().normalize().as_str())
-                            && (typename == "system.text.encoding"
-                                || typename == "text.encoding") =>
-                    {
-                        // infer type of member access
-                        let mut function_typename = String::from("text.encoding.");
-                        function_typename += &m.clone().normalize();
-                        trace!(
-                            "FromUTF (L): Setting node with encoding type: {:?}",
-                            function_typename
-                        );
-                        node.set(Type(function_typename));
-                    }
-
-                    (Some(Type(typename)), ".", m, _)
-                    | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                        if [
-                            "text.encoding.utf8",
-                            "text.encoding.utf16",
-                            "text.encoding.unicode",
-                            "text.encoding.ascii",
-                        ]
-                        .contains(&typename.as_str())
-                            && m.clone().normalize() == "getstring" =>
-                    {
-                        let mut function_typename = typename.clone();
-                        function_typename += ".getstring";
-                        trace!(
-                            "FromUTF (L): Setting node with getstring type: {:?}",
-                            function_typename
-                        );
-                        node.set(Type(function_typename));
-                    }
-                    _ => (),
-                }
-            }
-        } else if view.kind() == "invokation_expression"
-            && let (Some(type_node), Some(op), Some(member_name), Some(args_list)) =
-                (view.child(0), view.child(1), view.child(2), view.child(3))
-        {
-            match (
-                type_node.data(),
-                op.text()?,
-                &member_name.text()?.to_string(),
-                member_name.data(),
-            ) {
-                (Some(Type(typename)), ".", m, _)
-                | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                    if ((typename == "text.encoding.utf8"
-                        || typename == "text.encoding.ascii")
-                        && m.clone().normalize() == "getstring")
-                        || ((typename == "text.encoding.utf8.getstring"
-                            || typename == "text.encoding.ascii.getstring")
-                            && m.clone().normalize() == "invoke") =>
-                {
-                    if let Some(argument_expression_list) =
-                        args_list.named_child("argument_expression_list")
-                        && let Some(arg_1) = argument_expression_list.child(0)
-                        && let Some(Array(a)) = arg_1.data()
-                    {
-                        let mut int_vec = Vec::new();
-                        for value in a.iter() {
-                            if let Num(n) = value {
-                                int_vec.push(*n as u8);
-                            }
-                        }
-                        if let Ok(s) = String::from_utf8(int_vec) {
-                            trace!(
-                                "FromUTF (L): Setting node with UTF-8 decoded string: {:?}",
-                                s
-                            );
-                            node.set(Raw(Str(s)));
-                        }
-                    }
-                }
-                (Some(Type(typename)), ".", m, _)
-                | (Some(Type(typename)), ".", _, Some(Raw(Str(m))))
-                    if ((typename == "text.encoding.utf16"
-                        || typename == "text.encoding.unicode")
-                        && m.clone().normalize() == "getstring")
-                        || ((typename == "text.encoding.utf16.getstring"
-                            || typename == "text.encoding.unicode.getstring")
-                            && m.clone().normalize() == "invoke") =>
-                {
-                    if let Some(argument_expression_list) =
-                        args_list.named_child("argument_expression_list")
-                        && let Some(arg_1) = argument_expression_list.child(0)
-                        && let Some(Array(a)) = arg_1.data()
-                    {
-                        let mut int_vec = Vec::new();
-                        for value in a.iter() {
-                            if let Num(n) = value {
-                                int_vec.push(*n as u8);
-                            }
-                        }
-
-                        let int_vec: Vec<u16> = int_vec
-                            .chunks_exact(2)
-                            .map(|a| u16::from_ne_bytes([a[0], a[1]]))
-                            .collect();
-                        let int_vec = int_vec.as_slice();
-
-                        if let Ok(s) = String::from_utf16(int_vec) {
-                            trace!(
-                                "FromUTF (L): Setting node with UTF-16 decoded string: {:?}",
-                                s
-                            );
-                            node.set(Raw(Str(s)));
-                        }
-                    }
-                }
-                _ => (),
-            }
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use crate::ps::Powershell::{Array, Raw};
-    use crate::ps::Value::{Num, Str};
+    use crate::ps::Powershell;
+    use crate::ps::Powershell::Raw;
+    use crate::ps::Value::Num;
     use crate::ps::array::{ComputeArrayExpr, ParseArrayLiteral};
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
-    use crate::ps::method::{DecodeBase64, FromUTF, Length};
+    use crate::ps::method::{DecodeBase64, Length};
     use crate::ps::string::ParseString;
     use crate::ps::typing::ParseType;
 
@@ -480,7 +312,7 @@ mod test {
                 .unwrap()
                 .data()
                 .expect("Inferred type"),
-            Array(vec![Num(102), Num(111), Num(111)])
+            Powershell::Bytes(vec![102, 111, 111])
         );
     }
 
@@ -530,96 +362,6 @@ mod test {
                 .unwrap()
                 .data(),
             None
-        );
-    }
-
-    #[test]
-    fn test_decode_utf8() {
-        let mut tree =
-            build_powershell_tree("[System.Text.Encoding]::utf8.getstring(@(102, 111, 111))")
-                .unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            FromUTF::default(),
-            ParseType::default(),
-            ParseInt::default(),
-            ParseArrayLiteral::default(),
-            ComputeArrayExpr::default(),
-        ))
-        .unwrap();
-
-        assert_eq!(
-            *tree
-                .root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .data()
-                .expect("Inferred type"),
-            Raw(Str("foo".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_decode_utf16() {
-        let mut tree = build_powershell_tree(
-            "[System.Text.Encoding]::utf16.getstring(@(102, 0, 111, 0, 111, 0))",
-        )
-        .unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            FromUTF::default(),
-            ParseType::default(),
-            ParseInt::default(),
-            ParseArrayLiteral::default(),
-            ComputeArrayExpr::default(),
-        ))
-        .unwrap();
-
-        assert_eq!(
-            *tree
-                .root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .data()
-                .expect("Inferred type"),
-            Raw(Str("foo".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_decode_utf16_with_invoke() {
-        let mut tree = build_powershell_tree(
-            "[System.Text.Encoding]::'utf16'.'getstring'.invoke(@(102, 0, 111, 0, 111, 0))",
-        )
-        .unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            FromUTF::default(),
-            ParseType::default(),
-            ParseInt::default(),
-            ParseString::default(),
-            ParseArrayLiteral::default(),
-            ComputeArrayExpr::default(),
-        ))
-        .unwrap();
-
-        assert_eq!(
-            *tree
-                .root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .data()
-                .expect("Inferred type"),
-            Raw(Str("foo".to_string()))
         );
     }
 }
