@@ -2,6 +2,7 @@ use self::access::*;
 use self::array::*;
 use self::bool::*;
 use self::cast::*;
+use self::encoding::*;
 use self::foreach::*;
 use self::forward::*;
 use self::hash::*;
@@ -27,6 +28,7 @@ pub mod backend;
 pub mod bool;
 pub mod cast;
 pub mod comparison;
+pub mod encoding;
 pub mod foreach;
 pub mod forward;
 pub mod hash;
@@ -114,6 +116,7 @@ pub enum Powershell {
     HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type
+    Bytes(Vec<u8>),
     Unknown,
 }
 
@@ -176,7 +179,9 @@ impl_powershell_ruleset!(
     Not,          // It will infer the ! operator
     ParseType,    // Parse type
     DecodeBase64, // Decode calls to FromBase64
-    FromUTF,      // Decode calls to FromUTF{8,16}.GetText
+    EncodingType, // Resolve [System.Text.Encoding] statics, constructors and GetEncoding(...)
+    EncodingGetString, // Decode calls to Encoding.GetString(byte[])
+    EncodingGetBytes, // Encode calls to Encoding.GetBytes(string)
     NewStringMethod, // Infer [System.String]::new(@(char codes)) constructor
     Length,       // Decode attribute length of string and array
     BoolAlgebra,  // Add support to boolean algebra (or and)
