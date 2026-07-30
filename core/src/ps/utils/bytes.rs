@@ -1,5 +1,5 @@
 use crate::ps::Powershell;
-use crate::ps::Powershell::{Array, Bytes};
+use crate::ps::Powershell::{Array, Bytes, Stream};
 use crate::ps::Value::Num;
 
 pub fn bytes_from_array(values: &[crate::ps::Value]) -> Option<Vec<u8>> {
@@ -16,6 +16,7 @@ pub fn bytes_from_data(data: &Powershell) -> Option<Vec<u8>> {
     match data {
         Array(a) => bytes_from_array(a),
         Bytes(b) => Some(b.clone()),
+        Stream(b) => Some(b.clone()),
         _ => None,
     }
 }
