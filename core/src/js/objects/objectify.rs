@@ -38,6 +38,7 @@ pub fn constructor_name(value: &JavaScript) -> &'static str {
         Object { .. } => "Object",
         Buffer(_) => "Buffer",
         Iterator { .. } => "Iterator",
+        ForLoopResult(_) => "undefined",
     }
 }
 

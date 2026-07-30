@@ -3,6 +3,7 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::r#loop::loop_invariant_get;
 use crate::js::objects::objectify::as_object;
 use crate::js::utils::{get_positional_arguments, is_write_target};
 use crate::rule::RuleMut;
@@ -478,6 +479,7 @@ impl<'a> RuleMut<'a> for ObjectField {
                             .get_var(&base_name)
                             .cloned()
                             .or(access.base_value)
+                            .or_else(|| loop_invariant_get(&base_name))
                     } else {
                         access.base_value
                     };

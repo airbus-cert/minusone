@@ -4,11 +4,13 @@ use crate::js::JavaScript::*;
 use crate::js::Value::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
+use crate::js::r#loop::*;
 use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{BranchFlow, ControlFlow, Node, NodeMut};
 use log::{trace, warn};
+use std::collections::HashMap;
 
 /// Var is a variable manager that will try to track
 /// static variable assignments and propagate them in the code
@@ -85,6 +87,36 @@ impl Var {
         Ok(())
     }
 
+    fn snapshot_scope(&self) -> String {
+        let scope = self.scope_manager.current();
+        let mut out = String::new();
+        for name in scope.get_var_names() {
+            if let Some(value) = scope.get_var(&name) {
+                out.push_str(&format!("var {name} = {value};\n"));
+            }
+        }
+        out
+    }
+
+    fn collect_scope_state(&self) -> HashMap<String, JavaScript> {
+        let scope = self.scope_manager.current();
+        let mut state = HashMap::new();
+        for name in scope.get_var_names() {
+            if let Some(value) = scope.get_var(&name) {
+                state.insert(name, value.clone());
+            }
+        }
+        state
+    }
+
+    fn index_from_data(data: &JavaScript) -> Option<usize> {
+        match data {
+            Raw(Num(n)) if n.is_finite() && n.fract() == 0.0 && *n >= 0.0 => Some(*n as usize),
+            Raw(Str(s)) => s.parse::<usize>().ok(),
+            _ => None,
+        }
+    }
+
     fn parse_array_index(node: &Node<JavaScript>) -> Option<usize> {
         if let Some(data) = node.data() {
             return match data {
@@ -116,6 +148,14 @@ impl<'a> RuleMut<'a> for Var {
             "program" => {
                 self.scope_manager.reset();
                 inject_js_globals(self.scope_manager.current_mut(), false);
+                clear_for_loop_results();
+
+                let ongoing = node.is_ongoing_transaction();
+                let scope = self.scope_manager.current_mut();
+                inject_loop_seed(|name, value| {
+                    scope.assign(name, value.clone(), ongoing);
+                    scope.set_non_local(name);
+                });
             }
             // fn scopes: entering -> new scope
             "function_declaration"
@@ -125,6 +165,9 @@ impl<'a> RuleMut<'a> for Var {
             | "generator_function_declaration"
             | "generator_function" => {
                 self.scope_manager.enter();
+                if let Some(body) = view.named_child("body") {
+                    self.forget_assigned_var(&body)?;
+                }
             }
             // bloc scopes but NOT when parent is a function, because we already pushed a scope for the function itself
             "statement_block" => {
@@ -135,11 +178,7 @@ impl<'a> RuleMut<'a> for Var {
                         | "arrow_function"
                         | "method_definition"
                         | "generator_function_declaration"
-                        | "generator_function" => {
-                            if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
-                                self.forget_assigned_var(&view)?;
-                            }
-                        }
+                        | "generator_function" => {}
                         _ => {
                             // Non-function block: push a block scope
                             self.scope_manager.enter();
@@ -153,6 +192,97 @@ impl<'a> RuleMut<'a> for Var {
                     if flow == ControlFlow::Continue(BranchFlow::Unpredictable) {
                         self.forget_assigned_var(&view)?;
                     }
+                }
+            }
+            "for_statement" => {
+                if let Some(init) = view.named_child("initializer") {
+                    self.forget_assigned_var(&init)?;
+                }
+                if let Some(increment) = view.named_child("increment") {
+                    self.forget_assigned_var(&increment)?;
+                }
+                if !is_for_loop_enabled() {
+                    return Ok(());
+                }
+                if for_depth_get() >= MAX_FOR_DEPTH {
+                    return Ok(());
+                }
+                if let Some(body) = view.named_child("body") {
+                    if body_has_bail_node(&body) {
+                        return Ok(());
+                    }
+                }
+                let Some((init_src, cond_src, update_src, body_src)) = extract_for_parts(&view)
+                else {
+                    return Ok(());
+                };
+                let scope_snapshot = self.snapshot_scope();
+                for_depth_inc();
+                let result = simulate_for_loop(
+                    &scope_snapshot,
+                    &init_src,
+                    &cond_src,
+                    &update_src,
+                    &body_src,
+                );
+                for_depth_dec();
+                if let Some(final_vars) = result {
+                    trace!(
+                        "ForLoop: simulated for_statement id={}, {} vars",
+                        node.id(),
+                        final_vars.len()
+                    );
+                    store_for_loop_result(node.id(), final_vars);
+                    set_inside_simulated_for(true);
+                }
+            }
+            "for_in_statement" => {
+                if let Some(left) = view.named_child("left") {
+                    self.forget_assigned_var(&left)?;
+                }
+                if !is_for_loop_enabled() || for_depth_get() >= MAX_FOR_DEPTH {
+                    return Ok(());
+                }
+                let (Some(left), Some(op), Some(right), Some(body)) = (
+                    view.named_child("left"),
+                    view.named_child("operator")
+                        .and_then(|o| o.text().ok().map(|s| s.to_string())),
+                    view.named_child("right"),
+                    view.named_child("body"),
+                ) else {
+                    return Ok(());
+                };
+                if left.kind() != "identifier" || body_has_bail_node(&body) {
+                    return Ok(());
+                }
+                let loop_var = left.text()?.to_string();
+                let iterable = right.data().cloned().or_else(|| {
+                    (right.kind() == "identifier")
+                        .then(|| right.text().ok())
+                        .flatten()
+                        .and_then(|name| self.scope_manager.current().get_var(name).cloned())
+                });
+                let Some(Array(elems)) = iterable else {
+                    return Ok(());
+                };
+                let iter_values: Vec<JavaScript> = match op.as_str() {
+                    "in" => (0..elems.len()).map(|i| Raw(Str(i.to_string()))).collect(),
+                    "of" => elems,
+                    _ => return Ok(()),
+                };
+                let body_src = body.text()?.to_string();
+                let state = self.collect_scope_state();
+                for_depth_inc();
+                let result = simulate_for_in_loop(&loop_var, &iter_values, &body_src, state);
+                for_depth_dec();
+                if let Some(final_vars) = result {
+                    trace!(
+                        "ForLoop: simulated for_in_statement id={}, {} vars",
+                        node.id(),
+                        final_vars.len()
+                    );
+                    store_for_loop_result(node.id(), final_vars);
+                    set_inside_simulated_for(true);
                 }
             }
             "}" => {
@@ -190,6 +320,24 @@ impl<'a> RuleMut<'a> for Var {
     ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
+            "program" if is_loop_seed_active() => {
+                let scope = self.scope_manager.current();
+                capture_loop_result(|name| scope.get_var(name).cloned());
+            }
+            "for_statement" | "for_in_statement" => {
+                if let Some(final_vars) = take_for_loop_result(node.id()) {
+                    set_inside_simulated_for(false);
+                    for (name, value) in &final_vars {
+                        trace!("ForLoop: assigning '{}' = {:?} after loop", name, value);
+                        self.scope_manager.current_mut().assign(
+                            name,
+                            value.clone(),
+                            node.is_ongoing_transaction(),
+                        );
+                    }
+                    node.set(ForLoopResult(final_vars));
+                }
+            }
             // var/let/const
             "variable_declarator" => {
                 // child(0) = name (identifier), child(1) = "=", child(2) = value
@@ -479,6 +627,35 @@ impl<'a> RuleMut<'a> for Var {
                         trace!("Var (L): Propagating variable '{}' = {:?}", var_name, data);
                         node.set(data.clone());
                     }
+                }
+            }
+            // read of a hoisted loop-invariant array element: `a[i]`
+            "subscript_expression" => {
+                if !is_write_target(&view)
+                    && let Some(obj) = view.named_child("object").or_else(|| view.child(0))
+                    && obj.kind() == "identifier"
+                    && let Some(idx) = view.named_child("index").or_else(|| view.child(2))
+                    && let Ok(name) = obj.text()
+                    && let Some(index) = idx.data().and_then(Self::index_from_data)
+                    && let Some(element) = loop_invariant_array_index(name, index)
+                {
+                    trace!("Var (L): hoisted array '{}' index {}", name, index);
+                    node.reduce(element);
+                }
+            }
+            // read of a hoisted loop-invariant array length: `a.length`
+            "member_expression" => {
+                if let Some(obj) = view.named_child("object").or_else(|| view.child(0))
+                    && obj.kind() == "identifier"
+                    && let Ok(name) = obj.text()
+                    && view
+                        .named_child("property")
+                        .map(|p| p.text().map(|t| t == "length").unwrap_or(false))
+                        .unwrap_or(false)
+                    && let Some(len) = loop_invariant_array_len(name)
+                {
+                    trace!("Var (L): hoisted array '{}' length {}", name, len);
+                    node.reduce(Raw(Num(len as f64)));
                 }
             }
             _ => {}
