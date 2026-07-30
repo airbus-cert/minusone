@@ -9,6 +9,58 @@ use ps::{build_powershell_tree_for_storage, remove_powershell_extra};
 
 pub struct PowershellBackend;
 
+impl PowershellBackend {
+    pub fn remove_extra_traced(
+        src: &str,
+        record_all: bool,
+    ) -> MinusOneResult<(String, Vec<crate::trace::Step>)> {
+        let mut steps = Vec::new();
+        let out = remove_powershell_extra(src)?;
+        crate::trace::push_text_step(&mut steps, "pre", "RemoveComment", &out, record_all);
+        Ok((out, steps))
+    }
+
+    pub fn lint_traced(
+        root: &Tree<HashMapStorage<ps::Powershell>>,
+        tab_chr: &str,
+        keep_dead_code: bool,
+        record_all: bool,
+    ) -> MinusOneResult<(String, Vec<crate::trace::Step>)> {
+        let mut steps = Vec::new();
+
+        let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
+        root.apply(&mut ps_linter_view)?;
+        crate::trace::push_text_step(
+            &mut steps,
+            "post",
+            "Linter",
+            &ps_linter_view.output,
+            record_all,
+        );
+
+        let out = CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?
+            .clean(keep_dead_code)?;
+        crate::trace::push_text_step(&mut steps, "post", "RemoveUnusedVar", &out, record_all);
+
+        Ok((out, steps))
+    }
+
+    /// Runs the full pre-process/reduce/lint pipeline and returns a
+    /// `Stepper` that hands out each recorded transform one at a time via
+    /// `next`.
+    pub fn stepper(
+        src: &str,
+        keep_dead_code: bool,
+        record_all: bool,
+    ) -> MinusOneResult<crate::trace::Stepper> {
+        Ok(crate::trace::Stepper::Ps(crate::ps::step::PsStepper::new(
+            src,
+            keep_dead_code,
+            record_all,
+        )?))
+    }
+}
+
 impl DeobfuscationBackend for PowershellBackend {
     type Language = ps::Powershell;
 
@@ -90,6 +142,19 @@ impl CleanBackend for PowershellBackend {
 impl<'a> DeobfuscateEngine<'a, PowershellBackend> {
     pub fn from_powershell(src: &'a str) -> MinusOneResult<Self> {
         Self::from_source(src)
+    }
+
+    pub fn deobfuscate_traced(
+        &mut self,
+        record_all: bool,
+    ) -> MinusOneResult<Vec<crate::trace::Step>> {
+        let mut tracer = ps::trace::TracingRuleSet::new(
+            ps::PowershellRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
+            record_all,
+        );
+        self.root_mut()
+            .apply_mut_with_strategy(&mut tracer, ps::strategy::PowershellStrategy)?;
+        Ok(tracer.steps)
     }
 }
 

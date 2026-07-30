@@ -23,11 +23,13 @@ impl Display for JavaScript {
                 write!(f, "[{}]", arr_str)
             }
             Regex { pattern, flags } => {
-                if pattern.is_empty() {
-                    write!(f, "RegExp('', '{})", flags) // avoid //g regex which is comment syntax
+                // empty regex so, `RegExp()` is `/(?:)/` (whose to_string is "?:", jsfuck related)
+                let source = if pattern.is_empty() {
+                    "(?:)".to_string()
                 } else {
-                    write!(f, "/{}/{}", pattern.replace('/', "\\/"), flags)
-                }
+                    pattern.replace('/', "\\/")
+                };
+                write!(f, "/{}/{}", source, flags)
             }
             Function { source, .. } => write!(f, "{}", source),
             Undefined => write!(f, "undefined"),

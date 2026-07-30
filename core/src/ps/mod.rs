@@ -1,23 +1,22 @@
+use self::access::*;
+use self::array::*;
+use self::bool::*;
+use self::cast::*;
+use self::crypto::*;
+use self::encoding::*;
+use self::foreach::*;
+use self::forward::*;
+use self::hash::*;
+use self::integer::*;
+use self::join::*;
+use self::linter::*;
+use self::loops::*;
+use self::method::*;
+use self::string::*;
+use self::switch::*;
+use self::typing::*;
+use self::var::*;
 use crate::error::{Error, MinusOneResult};
-use crate::ps::access::{AccessArray, AccessHashMap, AccessString};
-use crate::ps::array::{AddArray, ComputeArrayExpr, NewObjectArray, ParseArrayLiteral, ParseRange};
-use crate::ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
-use crate::ps::cast::{Cast, CastNull};
-use crate::ps::foreach::{ForEach, PSItemInferrator};
-use crate::ps::forward::Forward;
-use crate::ps::hash::ParseHash;
-use crate::ps::integer::{AddInt, MultInt, ParseInt};
-use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
-use crate::ps::linter::RemoveComment;
-use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
-use crate::ps::method::{DecodeBase64, FromUTF, Length};
-use crate::ps::string::{
-    ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
-    StringSplitMethod,
-};
-use crate::ps::switch::Switch;
-use crate::ps::typing::ParseType;
-use crate::ps::var::{StaticVar, Var};
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
@@ -30,6 +29,8 @@ pub mod backend;
 pub mod bool;
 pub mod cast;
 pub mod comparison;
+pub mod crypto;
+pub mod encoding;
 pub mod foreach;
 pub mod forward;
 pub mod hash;
@@ -38,11 +39,14 @@ pub mod join;
 pub mod linter;
 pub mod loops;
 pub mod method;
+pub mod step;
 pub mod strategy;
 pub mod string;
 pub mod switch;
 mod tool;
+pub mod trace;
 pub mod typing;
+pub mod utils;
 pub mod var;
 //todo: add : mod r#static;
 
@@ -114,6 +118,8 @@ pub enum Powershell {
     HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type
+    Bytes(Vec<u8>),
+    Crypto(AesState), // Tracks a partially/fully configured AES algorithm or transform object
     Unknown,
 }
 
@@ -176,7 +182,12 @@ impl_powershell_ruleset!(
     Not,          // It will infer the ! operator
     ParseType,    // Parse type
     DecodeBase64, // Decode calls to FromBase64
-    FromUTF,      // Decode calls to FromUTF{8,16}.GetText
+    AesType,      // Resolve AES algorithm objects and CreateDecryptor/CreateEncryptor(key, iv)
+    AesTransformFinalBlock, // Decode/encode calls to TransformFinalBlock(bytes, offset, count)
+    EncodingType, // Resolve [System.Text.Encoding] statics, constructors and GetEncoding(...)
+    EncodingGetString, // Decode calls to Encoding.GetString(byte[])
+    EncodingGetBytes, // Encode calls to Encoding.GetBytes(string)
+    NewStringMethod, // Infer [System.String]::new(@(char codes)) constructor
     Length,       // Decode attribute length of string and array
     BoolAlgebra,  // Add support to boolean algebra (or and)
     Var,          // Variable replacement in case of predictable flow
@@ -206,6 +217,35 @@ impl<'a> RuleMut<'a> for PowershellRuleSet<'a> {
         flow: crate::tree::ControlFlow,
     ) -> MinusOneResult<()> {
         self.ruleset.leave(node, flow)
+    }
+}
+
+impl<'a> PowershellRuleSet<'a> {
+    /// See `RuleSet::leave_traced`.
+    pub fn leave_traced(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Powershell>,
+        flow: crate::tree::ControlFlow,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, Powershell>) -> MinusOneResult<String>,
+        on_change: impl FnMut(
+            &mut crate::tree::NodeMut<'a, Powershell>,
+            &'a str,
+            String,
+            String,
+        ) -> MinusOneResult<()>,
+    ) -> MinusOneResult<()> {
+        self.ruleset.leave_traced(node, flow, render, on_change)
+    }
+
+    /// See `RuleSet::leave_traced_step`.
+    pub fn leave_traced_step(
+        &mut self,
+        node: &mut crate::tree::NodeMut<'a, Powershell>,
+        flow: crate::tree::ControlFlow,
+        start_at: usize,
+        render: impl for<'b> FnMut(&crate::tree::Node<'b, Powershell>) -> MinusOneResult<String>,
+    ) -> MinusOneResult<crate::rule::LeaveStepOutcome<'a>> {
+        self.ruleset.leave_traced_step(node, flow, start_at, render)
     }
 }
 
