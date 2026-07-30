@@ -2,6 +2,7 @@ use self::access::*;
 use self::array::*;
 use self::bool::*;
 use self::cast::*;
+use self::compression::*;
 use self::crypto::*;
 use self::encoding::*;
 use self::foreach::*;
@@ -29,6 +30,7 @@ pub mod backend;
 pub mod bool;
 pub mod cast;
 pub mod comparison;
+pub mod compression;
 pub mod crypto;
 pub mod encoding;
 pub mod foreach;
@@ -120,6 +122,7 @@ pub enum Powershell {
     Type(String), // Will infer type
     Bytes(Vec<u8>),
     Crypto(AesState), // Tracks a partially/fully configured AES algorithm or transform object
+    Stream(Vec<u8>),  // Tracks a Stream/StreamReader object backed by a known byte buffer
     Unknown,
 }
 
@@ -184,6 +187,8 @@ impl_powershell_ruleset!(
     DecodeBase64, // Decode calls to FromBase64
     AesType,      // Resolve AES algorithm objects and CreateDecryptor/CreateEncryptor(key, iv)
     AesTransformFinalBlock, // Decode/encode calls to TransformFinalBlock(bytes, offset, count)
+    StreamType,   // Resolve MemoryStream/GzipStream/DeflateStream/ZLibStream/StreamReader objects
+    StreamReadToEnd, // Decode calls to StreamReader.ReadToEnd()
     EncodingType, // Resolve [System.Text.Encoding] statics, constructors and GetEncoding(...)
     EncodingGetString, // Decode calls to Encoding.GetString(byte[])
     EncodingGetBytes, // Encode calls to Encoding.GetBytes(string)
