@@ -4,7 +4,7 @@ use crate::regex::Regex;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::{trace, warn};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 // to updated the list, just run `Get-Command` in you powershell and copy the output
@@ -12,24 +12,26 @@ use std::sync::OnceLock;
 const WIN_CMDLETS: &str = include_str!("cmdlets/win.txt");
 const UNIX_CMDLETS: &str = include_str!("cmdlets/unix.txt");
 
-static CMDLET_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+// maps lowercase cmdlet name -> original case
+static CMDLET_NAMES: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 fn parse_cmdlet_names(content: &str) -> impl Iterator<Item = String> + '_ {
     content.lines().filter_map(|line| {
         let mut columns = line.split_whitespace();
         match columns.next() {
             Some("Alias") | Some("Cmdlet") | Some("Function") => {
-                columns.next().map(|name| name.to_lowercase())
+                columns.next().map(|name| name.to_string())
             }
             _ => None,
         }
     })
 }
 
-fn cmdlet_names() -> &'static HashSet<String> {
+fn cmdlet_names() -> &'static HashMap<String, String> {
     CMDLET_NAMES.get_or_init(|| {
         parse_cmdlet_names(WIN_CMDLETS)
             .chain(parse_cmdlet_names(UNIX_CMDLETS))
+            .map(|name| (name.to_lowercase(), name))
             .collect()
     })
 }
@@ -40,7 +42,11 @@ pub fn resolve_wildcard_cmdlet(name: &str) -> Option<String> {
     }
 
     let re = Regex::new(&format!("^{}$", name.to_lowercase().replace('*', ".*"))).ok()?;
-    let matches: Vec<&String> = cmdlet_names().iter().filter(|n| re.is_match(n)).collect();
+    let matches: Vec<&String> = cmdlet_names()
+        .iter()
+        .filter(|(lower, _)| re.is_match(lower))
+        .map(|(_, original)| original)
+        .collect();
 
     match matches.len() {
         0 => None,
@@ -110,14 +116,14 @@ mod test {
                         hodOverride                  2.1.0.0    International\n\
                         Function        cd..\n";
         let names: Vec<String> = parse_cmdlet_names(content).collect();
-        assert_eq!(names, vec!["add-apppackage", "cd.."]);
+        assert_eq!(names, vec!["Add-AppPackage", "cd.."]);
     }
 
     #[test]
     fn test_resolve_unambiguous_wildcard() {
         assert_eq!(
             resolve_wildcard_cmdlet("G*t-Ch*dItem"),
-            Some("get-childitem".to_string())
+            Some("Get-ChildItem".to_string())
         );
     }
 
@@ -133,7 +139,7 @@ mod test {
 
     #[test]
     fn test_wildcard_cmdlet_rule_rewrites_output() {
-        let mut tree = build_powershell_tree("G*t-Ch*dItem -Path C:\\foo").unwrap();
+        let mut tree = build_powershell_tree("g*t-ch*ditem -Path C:\\foo").unwrap();
         tree.apply_mut_with_strategy(
             &mut (Forward::default(), WildcardCmdlet::default()),
             PowershellStrategy::default(),
@@ -143,6 +149,6 @@ mod test {
         let mut ps_litter_view = Linter::default();
         tree.apply(&mut ps_litter_view).unwrap();
 
-        assert_eq!(ps_litter_view.output, "Get-Childitem -Path C:\\foo");
+        assert_eq!(ps_litter_view.output, "Get-ChildItem -Path C:\\foo");
     }
 }

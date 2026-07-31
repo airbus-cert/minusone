@@ -86,6 +86,10 @@ impl<'a> Rule<'a> for Linter {
             // Normalize command name
             // If it's a Verb-Action name parse it and print it normalize
             "command_name" => {
+                if let Some(Raw(Str(resolved))) = node.data() {
+                    self.write(resolved.as_str());
+                    return Ok(false);
+                }
                 let re = Regex::new(r"([a-z]+)-([a-z]+)").unwrap();
                 let name = crate::ps::cmdlets::resolved_command_name(node)?;
                 if let Some(m) = re.captures(name.as_str()) {
