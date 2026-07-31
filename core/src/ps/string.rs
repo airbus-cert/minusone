@@ -148,6 +148,156 @@ impl<'a> RuleMut<'a> for ConcatString {
     }
 }
 
+/// Centralized dispatcher for string literal builtins (no-argument methods only).
+///
+/// This includes:
+/// - `str.ToLower()` / `str.ToLowerInvariant()`
+/// - `str.ToUpper()` / `str.ToUpperInvariant()`
+///
+/// Mirrors the JS `StringBuiltins` dispatcher (see `crate::js::string::StringBuiltins`).
+type StringBuiltinHandler = fn(&str) -> Powershell;
+
+const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
+    ("tolower", |input| Raw(Str(input.to_lowercase()))),
+    ("tolowerinvariant", |input| Raw(Str(input.to_lowercase()))),
+    ("toupper", |input| Raw(Str(input.to_uppercase()))),
+    ("toupperinvariant", |input| Raw(Str(input.to_uppercase()))),
+];
+
+fn dispatch_string_builtin(method: &str, input: &str) -> Option<Powershell> {
+    STRING_BUILTINS
+        .iter()
+        .find_map(|(name, handler)| (*name == method).then(|| handler(input)))
+}
+
+/// # Example
+/// ```
+/// use minusone::ps::build_powershell_tree;
+/// use minusone::ps::forward::Forward;
+/// use minusone::ps::linter::Linter;
+/// use minusone::ps::string::{ParseString, StringBuiltins};
+///
+/// let mut tree = build_powershell_tree("'HELLO'.ToLower()").unwrap();
+/// tree.apply_mut(&mut (ParseString::default(), Forward::default(), StringBuiltins::default())).unwrap();
+///
+/// let mut ps_litter_view = Linter::default();
+/// tree.apply(&mut ps_litter_view).unwrap();
+///
+/// assert_eq!(ps_litter_view.output, "\"hello\"");
+/// ```
+#[derive(Default)]
+pub struct StringBuiltins;
+
+impl<'a> RuleMut<'a> for StringBuiltins {
+    type Language = Powershell;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let view = node.view();
+
+        let (expression, operator, member_name, args_node, args_node_is_stray) =
+            if view.kind() == "invokation_expression" {
+                let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
+                    (view.child(0), view.child(1), view.child(2), view.child(3))
+                else {
+                    return Ok(());
+                };
+                (expression, operator, member_name, arguments_list, false)
+            } else if view.kind() == "array_literal_expression" && view.child_count() == 1 {
+                let Some(first) = view.child(0) else {
+                    return Ok(());
+                };
+                let member_access = match first.kind() {
+                    "member_access" => first,
+                    _ => match first.child(0) {
+                        Some(c) if c.kind() == "member_access" => c,
+                        _ => return Ok(()),
+                    },
+                };
+
+                let Some(parent) = view.parent() else {
+                    return Ok(());
+                };
+                if parent.kind() != "command_elements" {
+                    return Ok(());
+                }
+
+                // find the argument_list immediately following this node in the parent
+                let mut found_self = false;
+                let mut next_arg_list = None;
+                for sibling in parent.iter() {
+                    if found_self {
+                        if sibling.kind() == "argument_list" {
+                            next_arg_list = Some(sibling);
+                        }
+                        break;
+                    }
+                    if sibling.id() == view.id() {
+                        found_self = true;
+                    }
+                }
+                let Some(arguments_list) = next_arg_list else {
+                    return Ok(());
+                };
+
+                let (Some(expression), Some(operator), Some(member_name)) = (
+                    member_access.child(0),
+                    member_access.child(1),
+                    member_access.child(2),
+                ) else {
+                    return Ok(());
+                };
+                (expression, operator, member_name, arguments_list, true)
+            } else {
+                return Ok(());
+            };
+
+        if operator.text()? != "." {
+            return Ok(());
+        }
+
+        let Some(Raw(Str(input))) = expression.data() else {
+            return Ok(());
+        };
+
+        // these builtins all take no argument
+        if args_node.named_child("argument_expression_list").is_some() {
+            return Ok(());
+        }
+
+        let method = match member_name.data() {
+            Some(Raw(Str(m))) => m.clone().normalize(),
+            _ => member_name.text()?.to_string().normalize(),
+        };
+
+        let Some(result) = dispatch_string_builtin(&method, input) else {
+            return Ok(());
+        };
+
+        trace!(
+            "StringBuiltins (L): reducing '{}'.{}() to {:?}",
+            input, method, result
+        );
+
+        if args_node_is_stray {
+            node.set_by_node_id(args_node.id(), Powershell::DeadCode);
+        }
+        node.reduce(result);
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub struct StringReplaceMethod;
 
@@ -505,9 +655,8 @@ mod test {
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
-    use crate::ps::string::{
-        ConcatString, FormatString, NewStringMethod, ParseString, StringReplaceOp,
-    };
+    use crate::ps::linter::Linter;
+    use crate::ps::string::*;
     use crate::ps::typing::ParseType;
 
     #[test]
@@ -832,6 +981,90 @@ mod test {
                 .expect("Inferred type"),
             Raw(Str("test string".to_string()))
         );
+    }
+
+    #[test]
+    fn test_tolower() {
+        let mut tree = build_powershell_tree("'HeLLo'.ToLower()").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_toupper() {
+        let mut tree = build_powershell_tree("'HeLLo'.ToUpper()").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("HELLO".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_toupper_dynamic_member_name() {
+        let mut tree = build_powershell_tree("'hi'.'ToUpper'()").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("HI".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_touppertolower_as_command_argument() {
+        let mut tree = build_powershell_tree("Write-Host \"aBcDe\".ToLower()").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "Write-Host \"abcde\"");
     }
 
     #[test]
