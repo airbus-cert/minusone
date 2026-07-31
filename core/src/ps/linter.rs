@@ -87,7 +87,8 @@ impl<'a> Rule<'a> for Linter {
             // If it's a Verb-Action name parse it and print it normalize
             "command_name" => {
                 let re = Regex::new(r"([a-z]+)-([a-z]+)").unwrap();
-                if let Some(m) = re.captures(node.text()?.to_lowercase().as_str()) {
+                let name = crate::ps::cmdlets::resolved_command_name(node)?;
+                if let Some(m) = re.captures(name.as_str()) {
                     if let (Some(verb), Some(action)) = (m.get(1), m.get(2)) {
                         self.write(uppercase_first(verb.as_str()).as_str());
                         self.write("-");
@@ -95,7 +96,7 @@ impl<'a> Rule<'a> for Linter {
                         return Ok(false);
                     }
                 } else {
-                    self.write(node.text()?.to_lowercase().as_str());
+                    self.write(name.as_str());
                     return Ok(false);
                 }
             }
