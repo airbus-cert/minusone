@@ -154,6 +154,11 @@ impl<'a> RuleMut<'a> for ConcatString {
 /// - `str.ToLower()` / `str.ToLowerInvariant()`
 /// - `str.ToUpper()` / `str.ToUpperInvariant()`
 /// - `str.Replace(oldValue, newValue)`
+/// - `str.Contains(value)`
+/// - `str.IndexOf(value, [startIndex, [count]])`
+/// - `str.Substring(startIndex, [length])`
+/// - `str.Trim([char|char[]])`
+/// - `str.ToCharArray([startIndex, length])`
 ///
 /// Mirrors the JS `StringBuiltins` dispatcher (see `crate::js::string::StringBuiltins`).
 type StringBuiltinHandler = fn(&str, &[Powershell]) -> Option<Powershell>;
@@ -168,6 +173,11 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
         Some(Raw(Str(input.to_uppercase())))
     }),
     ("replace", string_builtin_replace),
+    ("contains", string_builtin_contains),
+    ("indexof", string_builtin_index_of),
+    ("substring", string_builtin_substring),
+    ("trim", string_builtin_trim),
+    ("tochararray", string_builtin_to_char_array),
 ];
 
 fn dispatch_string_builtin(method: &str, input: &str, args: &[Powershell]) -> Option<Powershell> {
@@ -323,6 +333,109 @@ fn string_builtin_replace(input: &str, args: &[Powershell]) -> Option<Powershell
         return None;
     };
     Some(Raw(Str(input.replace(from, &to.to_string()))))
+}
+
+fn string_builtin_contains(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Raw(Str(needle))) = args.first() else {
+        return None;
+    };
+    Some(Raw(Bool(input.contains(needle.as_str()))))
+}
+
+fn find_char_index(haystack: &[char], needle: &[char]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| haystack[i..i + needle.len()] == *needle)
+}
+
+fn string_builtin_index_of(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Raw(Str(needle))) = args.first() else {
+        return None;
+    };
+    let haystack: Vec<char> = input.chars().collect();
+    let needle: Vec<char> = needle.chars().collect();
+    let len = haystack.len();
+
+    let start = match args.get(1) {
+        None => 0,
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+
+    let end = match args.get(2) {
+        None => len,
+        Some(Raw(Num(n))) if *n >= 0 && start + (*n as usize) <= len => start + (*n as usize),
+        _ => return None,
+    };
+
+    let result = find_char_index(&haystack[start..end], &needle)
+        .map(|i| (start + i) as i64)
+        .unwrap_or(-1);
+    Some(Raw(Num(result)))
+}
+
+fn string_builtin_substring(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+
+    let start = match args.first() {
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+
+    let end = match args.get(1) {
+        None => len,
+        Some(Raw(Num(n))) if *n >= 0 && start + (*n as usize) <= len => start + (*n as usize),
+        _ => return None,
+    };
+
+    Some(Raw(Str(chars[start..end].iter().collect())))
+}
+
+fn string_builtin_trim(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    match args.first() {
+        None => Some(Raw(Str(input.trim().to_string()))),
+        Some(Raw(Str(c))) if c.chars().count() == 1 => {
+            let ch = c.chars().next()?;
+            Some(Raw(Str(input.trim_matches(ch).to_string())))
+        }
+        Some(Array(values)) => {
+            let chars = to_chars(values)?;
+            Some(Raw(Str(input
+                .trim_matches(|c: char| chars.contains(&c))
+                .to_string())))
+        }
+        _ => None,
+    }
+}
+
+fn string_builtin_to_char_array(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+
+    let (start, end) = match (args.first(), args.get(1)) {
+        (None, None) => (0, len),
+        (Some(Raw(Num(s))), Some(Raw(Num(l))))
+            if *s >= 0
+                && (*s as usize) <= len
+                && *l >= 0
+                && (*s as usize) + (*l as usize) <= len =>
+        {
+            (*s as usize, (*s as usize) + (*l as usize))
+        }
+        _ => return None,
+    };
+
+    Some(Array(
+        chars[start..end]
+            .iter()
+            .map(|c| Str(c.to_string()))
+            .collect(),
+    ))
 }
 
 #[derive(Default)]
@@ -630,6 +743,7 @@ mod test {
     use crate::ps::build_powershell_tree;
     use crate::ps::forward::Forward;
     use crate::ps::integer::ParseInt;
+    use crate::ps::join::JoinComparison;
     use crate::ps::linter::Linter;
     use crate::ps::string::*;
     use crate::ps::typing::ParseType;
@@ -1004,6 +1118,99 @@ mod test {
             deobfuscate("Write-Host \"aBcDe\".ToLower()"),
             "Write-Host \"abcde\""
         );
+    }
+
+    #[test]
+    fn test_contains() {
+        assert_eq!(deobfuscate("'hello'.Contains('ell')"), "$true");
+        assert_eq!(deobfuscate("'hello'.Contains('xyz')"), "$false");
+        assert_eq!(deobfuscate("'hello'.Contains('')"), "$true");
+    }
+
+    #[test]
+    fn test_index_of() {
+        assert_eq!(deobfuscate("'hello'.IndexOf('l')"), "2");
+        assert_eq!(deobfuscate("'hello'.IndexOf('z')"), "-1");
+        assert_eq!(deobfuscate("'hello'.IndexOf('')"), "0");
+        assert_eq!(deobfuscate("'hello'.IndexOf('l', 3)"), "3");
+        assert_eq!(deobfuscate("'hello'.IndexOf('l', 0, 2)"), "-1");
+        assert_eq!(deobfuscate("'hello'.IndexOf('l', 2, 1)"), "2");
+        assert_eq!(deobfuscate("'hello'.IndexOf('l', 3, 0)"), "-1");
+        assert_eq!(
+            deobfuscate("'hello'.IndexOf('l', 10)"),
+            "\"hello\".IndexOf(\"l\", 10)"
+        );
+    }
+
+    #[test]
+    fn test_substring() {
+        assert_eq!(deobfuscate("'hello'.Substring(1)"), "\"ello\"");
+        assert_eq!(deobfuscate("'hello'.Substring(1, 3)"), "\"ell\"");
+        assert_eq!(deobfuscate("'hello'.Substring(5)"), "\"\"");
+        assert_eq!(deobfuscate("'hello'.Substring(5, 0)"), "\"\"");
+        assert_eq!(
+            deobfuscate("'hello'.Substring(10)"),
+            "\"hello\".Substring(10)"
+        );
+        assert_eq!(
+            deobfuscate("'hello'.Substring(1, 100)"),
+            "\"hello\".Substring(1, 100)"
+        );
+    }
+
+    #[test]
+    fn test_trim() {
+        assert_eq!(deobfuscate("'  hello  '.Trim()"), "\"hello\"");
+        assert_eq!(deobfuscate("'xxhelloxx'.Trim('x')"), "\"hello\"");
+        assert_eq!(deobfuscate("'aaa'.Trim('a')"), "\"\"");
+        assert_eq!(deobfuscate("''.Trim()"), "\"\"");
+    }
+
+    #[test]
+    fn test_trim_char_array() {
+        let mut tree = build_powershell_tree("'xyhelloyx'.Trim(@('x', 'y'))").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
+            StringBuiltins::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "\"hello\"");
+    }
+
+    #[test]
+    fn test_to_char_array() {
+        let mut tree = build_powershell_tree("'hello'.ToCharArray() -join ','").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+            JoinComparison::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "\"h,e,l,l,o\"");
+
+        let mut tree = build_powershell_tree("'hello'.ToCharArray(1, 2) -join ','").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+            JoinComparison::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        assert_eq!(linter.output, "\"e,l\"");
     }
 
     #[test]
