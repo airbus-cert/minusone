@@ -403,9 +403,8 @@ impl<'a> RuleMut<'a> for AesType {
                 view.named_child("command_name"),
                 view.named_child("command_elements"),
             )
-            && command_name
-                .text()
-                .is_ok_and(|name| name.to_lowercase() == "new-object")
+            && crate::ps::cmdlets::resolved_command_name(&command_name)
+                .is_ok_and(|name| name == "new-object")
         {
             let shape_ok = match command_elements.child_count() {
                 2 => true,

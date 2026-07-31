@@ -2,6 +2,7 @@ use self::access::*;
 use self::array::*;
 use self::bool::*;
 use self::cast::*;
+use self::cmdlets::*;
 use self::compression::*;
 use self::crypto::*;
 use self::encoding::*;
@@ -29,6 +30,7 @@ pub mod array;
 pub mod backend;
 pub mod bool;
 pub mod cast;
+pub mod cmdlets;
 pub mod comparison;
 pub mod compression;
 pub mod crypto;
@@ -157,13 +159,14 @@ macro_rules! impl_powershell_ruleset {
 }
 
 impl_powershell_ruleset!(
-    Forward,      // Special rule that will forward inferred value in case the node is transparent
-    ParseInt,     // Parse integer
-    AddInt,       // +, - operations on integer
-    MultInt,      // *, / operations on integer
-    ParseString,  // Parse string token, including multiline strings
-    ConcatString, // String concatenation operation
-    Cast,         // cast operation, like [char]0x65
+    Forward, // Special rule that will forward inferred value in case the node is transparent
+    WildcardCmdlet, // Resolve wildcarded cmdlet/function/alias names (I*-Ex*) to their canonical form
+    ParseInt,       // Parse integer
+    AddInt,         // +, - operations on integer
+    MultInt,        // *, / operations on integer
+    ParseString,    // Parse string token, including multiline strings
+    ConcatString,   // String concatenation operation
+    Cast,           // cast operation, like [char]0x65
     ParseArrayLiteral, // It will parse array declared using separate value (integer or string) by a comma
     ParseRange,        // It will parse .. operator and generate an array
     AccessString,      // The access operator [] apply to a string : "foo"[0] => "f"

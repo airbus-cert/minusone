@@ -394,9 +394,8 @@ impl<'a> RuleMut<'a> for NewObjectArray {
             view.named_child("command_name"),
             view.named_child("command_elements"),
         )
-            && command_name
-                .text()
-                .is_ok_and(|name| name.to_lowercase() == "new-object")
+            && crate::ps::cmdlets::resolved_command_name(&command_name)
+                .is_ok_and(|name| name == "new-object")
                 && command_elements.child_count() == 4
                 && command_elements
                     .child(0)

@@ -462,7 +462,7 @@ impl<'a> RuleMut<'a> for Var {
             }
             "command" => {
                 if let Some(command_name) = view.child(0) {
-                    match command_name.text()?.to_lowercase().as_str() {
+                    match crate::ps::cmdlets::resolved_command_name(&command_name)?.as_str() {
                         "variable" => {
                             if let Some(command_elements) = view.child(1)
                                 && let Some(variable_name) = command_elements.child(1)

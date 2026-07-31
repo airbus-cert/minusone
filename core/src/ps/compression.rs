@@ -92,7 +92,7 @@ fn new_object_with_args<'a>(
     ) else {
         return Ok(None);
     };
-    if command_name.text()?.to_lowercase() != "new-object" {
+    if crate::ps::cmdlets::resolved_command_name(&command_name)? != "new-object" {
         return Ok(None);
     }
 
