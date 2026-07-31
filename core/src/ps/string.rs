@@ -148,26 +148,33 @@ impl<'a> RuleMut<'a> for ConcatString {
     }
 }
 
-/// Centralized dispatcher for string literal builtins (no-argument methods only).
+/// Centralized dispatcher for string literal builtins.
 ///
 /// This includes:
 /// - `str.ToLower()` / `str.ToLowerInvariant()`
 /// - `str.ToUpper()` / `str.ToUpperInvariant()`
+/// - `str.Replace(oldValue, newValue)`
 ///
 /// Mirrors the JS `StringBuiltins` dispatcher (see `crate::js::string::StringBuiltins`).
-type StringBuiltinHandler = fn(&str) -> Powershell;
+type StringBuiltinHandler = fn(&str, &[Powershell]) -> Option<Powershell>;
 
 const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
-    ("tolower", |input| Raw(Str(input.to_lowercase()))),
-    ("tolowerinvariant", |input| Raw(Str(input.to_lowercase()))),
-    ("toupper", |input| Raw(Str(input.to_uppercase()))),
-    ("toupperinvariant", |input| Raw(Str(input.to_uppercase()))),
+    ("tolower", |input, _| Some(Raw(Str(input.to_lowercase())))),
+    ("tolowerinvariant", |input, _| {
+        Some(Raw(Str(input.to_lowercase())))
+    }),
+    ("toupper", |input, _| Some(Raw(Str(input.to_uppercase())))),
+    ("toupperinvariant", |input, _| {
+        Some(Raw(Str(input.to_uppercase())))
+    }),
+    ("replace", string_builtin_replace),
 ];
 
-fn dispatch_string_builtin(method: &str, input: &str) -> Option<Powershell> {
+fn dispatch_string_builtin(method: &str, input: &str, args: &[Powershell]) -> Option<Powershell> {
     STRING_BUILTINS
         .iter()
-        .find_map(|(name, handler)| (*name == method).then(|| handler(input)))
+        .find_map(|(name, handler)| (*name == method).then(|| handler(input, args)))
+        .flatten()
 }
 
 /// # Example
@@ -271,17 +278,21 @@ impl<'a> RuleMut<'a> for StringBuiltins {
             return Ok(());
         };
 
-        // these builtins all take no argument
-        if args_node.named_child("argument_expression_list").is_some() {
-            return Ok(());
-        }
-
         let method = match member_name.data() {
             Some(Raw(Str(m))) => m.clone().normalize(),
             _ => member_name.text()?.to_string().normalize(),
         };
 
-        let Some(result) = dispatch_string_builtin(&method, input) else {
+        let positional_args = get_positional_arguments(&args_node);
+        let mut arg_values = Vec::with_capacity(positional_args.len());
+        for arg in positional_args {
+            let Some(value) = arg.data().cloned() else {
+                return Ok(());
+            };
+            arg_values.push(value);
+        }
+
+        let Some(result) = dispatch_string_builtin(&method, input, &arg_values) else {
             return Ok(());
         };
 
@@ -298,56 +309,20 @@ impl<'a> RuleMut<'a> for StringBuiltins {
     }
 }
 
-#[derive(Default)]
-pub struct StringReplaceMethod;
-
-impl<'a> RuleMut<'a> for StringReplaceMethod {
-    type Language = Powershell;
-
-    fn enter(
-        &mut self,
-        _node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        Ok(())
+fn get_positional_arguments<'a>(
+    args_node: &crate::tree::Node<'a, Powershell>,
+) -> Vec<crate::tree::Node<'a, Powershell>> {
+    match args_node.named_child("argument_expression_list") {
+        None => vec![],
+        Some(list) => list.iter().filter(|c| c.kind() != ",").collect(),
     }
+}
 
-    fn leave(
-        &mut self,
-        node: &mut NodeMut<'a, Self::Language>,
-        _flow: ControlFlow,
-    ) -> MinusOneResult<()> {
-        let view = node.view();
-        if view.kind() == "invokation_expression"
-            && let (Some(expression), Some(operator), Some(member_name), Some(arguments_list)) =
-                (view.child(0), view.child(1), view.child(2), view.child(3))
-        {
-            match (
-                expression.data(),
-                operator.text()?,
-                &member_name.text()?.to_string(),
-                member_name.data(),
-            ) {
-                (Some(Raw(Str(src))), ".", m, _)
-                | (Some(Raw(Str(src))), ".", _, Some(Raw(Str(m))))
-                    if m.clone().to_lowercase().remove_tilt().remove_quote() == "replace" =>
-                {
-                    if let Some(argument_expression_list) =
-                        arguments_list.named_child("argument_expression_list")
-                        && let (Some(arg_1), Some(arg_2)) = (
-                            argument_expression_list.child(0),
-                            argument_expression_list.child(2),
-                        )
-                        && let (Some(Raw(Str(from))), Some(Raw(to))) = (arg_1.data(), arg_2.data())
-                    {
-                        node.reduce(Raw(Str(src.replace(from, &to.to_string()))));
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
+fn string_builtin_replace(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let (Some(Raw(Str(from))), Some(Raw(to))) = (args.first(), args.get(1)) else {
+        return None;
+    };
+    Some(Raw(Str(input.replace(from, &to.to_string()))))
 }
 
 #[derive(Default)]
@@ -658,6 +633,21 @@ mod test {
     use crate::ps::linter::Linter;
     use crate::ps::string::*;
     use crate::ps::typing::ParseType;
+
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_powershell_tree(input).unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            ParseInt::default(),
+            Forward::default(),
+            StringBuiltins::default(),
+        ))
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
 
     #[test]
     fn test_concat_two_elements() {
@@ -984,87 +974,36 @@ mod test {
     }
 
     #[test]
-    fn test_tolower() {
-        let mut tree = build_powershell_tree("'HeLLo'.ToLower()").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            Forward::default(),
-            StringBuiltins::default(),
-        ))
-        .unwrap();
-        assert_eq!(
-            *tree
-                .root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .data()
-                .expect("Inferred type"),
-            Raw(Str("hello".to_string()))
-        );
+    fn test_to_lower() {
+        assert_eq!(deobfuscate("'HeLLo'.ToLower()"), "\"hello\"");
     }
 
     #[test]
-    fn test_toupper() {
-        let mut tree = build_powershell_tree("'HeLLo'.ToUpper()").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            Forward::default(),
-            StringBuiltins::default(),
-        ))
-        .unwrap();
-        assert_eq!(
-            *tree
-                .root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .data()
-                .expect("Inferred type"),
-            Raw(Str("HELLO".to_string()))
-        );
+    fn test_to_upper() {
+        assert_eq!(deobfuscate("'HeLLo'.ToUpper()"), "\"HELLO\"");
     }
 
     #[test]
-    fn test_toupper_dynamic_member_name() {
-        let mut tree = build_powershell_tree("'hi'.'ToUpper'()").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            Forward::default(),
-            StringBuiltins::default(),
-        ))
-        .unwrap();
-        assert_eq!(
-            *tree
-                .root()
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .child(0)
-                .unwrap()
-                .data()
-                .expect("Inferred type"),
-            Raw(Str("HI".to_string()))
-        );
+    fn test_to_upper_dynamic_member_name() {
+        assert_eq!(deobfuscate("'hi'.'ToUpper'()"), "\"HI\"");
+    }
+
+    #[test]
+    fn test_replace_method() {
+        assert_eq!(deobfuscate("'foo'.Replace('oo', 'aa')"), "\"faa\"");
+    }
+
+    #[test]
+    fn test_replace_method_non_string_replacement() {
+        assert_eq!(deobfuscate("'a1b1c'.Replace('1', 2)"), "\"a2b2c\"");
     }
 
     #[test]
     fn test_touppertolower_as_command_argument() {
-        let mut tree = build_powershell_tree("Write-Host \"aBcDe\".ToLower()").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            Forward::default(),
-            StringBuiltins::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "Write-Host \"abcde\"");
+        assert_eq!(
+            deobfuscate("Write-Host \"aBcDe\".ToLower()"),
+            "Write-Host \"abcde\""
+        );
     }
 
     #[test]

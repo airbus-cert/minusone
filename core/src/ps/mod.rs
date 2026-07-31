@@ -175,8 +175,7 @@ impl_powershell_ruleset!(
     JoinOperator, // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
     PSItemInferrator, // PsItem is used to inferred commandlet pattern like % { [char] $_ }
     ForEach,      // It will used PSItem rules to inferred foreach-object command
-    StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
-    StringBuiltins, // Centralized dispatcher for no-arg string builtins : ToLower, ToUpper, ...
+    StringBuiltins, // Centralized dispatcher for string builtins : ToLower, ToUpper, Replace, ...
     ComputeArrayExpr, // It will infer array that start with @
     NewObjectArray, // Infers arrays constructed via New-Object cmdlet
     StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
