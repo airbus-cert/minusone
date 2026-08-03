@@ -163,8 +163,11 @@ impl<'a> RuleMut<'a> for ConcatString {
 /// - `str.Equals(value)`
 /// - `str.Insert(startIndex, value)`
 /// - `str.LastIndexOf(value, [startIndex, [count]])`
+/// - `str.IndexOfAny(anyOf, [startIndex, [count]])` / `str.LastIndexOfAny(anyOf, [startIndex, [count]])`
 /// - `str.PadLeft(width, [char])` / `str.PadRight(width, [char])`
 /// - `str.Remove(startIndex, [count])`
+/// - `str.ReplaceLineEndings([replacement])`
+/// - `str.ToString()` ??
 ///
 /// Mirrors the JS `StringBuiltins` dispatcher (see `crate::js::string::StringBuiltins`).
 type StringBuiltinHandler = fn(&str, &[Powershell]) -> Option<Powershell>;
@@ -194,6 +197,10 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("padleft", string_builtin_pad_left),
     ("padright", string_builtin_pad_right),
     ("remove", string_builtin_remove),
+    ("indexofany", string_builtin_index_of_any),
+    ("lastindexofany", string_builtin_last_index_of_any),
+    ("replacelineendings", string_builtin_replace_line_endings),
+    ("tostring", |input, _| Some(Raw(Str(input.to_string())))),
 ];
 
 fn dispatch_string_builtin(method: &str, input: &str, args: &[Powershell]) -> Option<Powershell> {
@@ -497,15 +504,6 @@ fn string_builtin_insert(input: &str, args: &[Powershell]) -> Option<Powershell>
     Some(Raw(Str(result)))
 }
 
-fn rfind_char_index(haystack: &[char], needle: &[char]) -> Option<usize> {
-    if needle.is_empty() || needle.len() > haystack.len() {
-        return None;
-    }
-    (0..=haystack.len() - needle.len())
-        .rev()
-        .find(|&i| haystack[i..i + needle.len()] == *needle)
-}
-
 fn string_builtin_last_index_of(input: &str, args: &[Powershell]) -> Option<Powershell> {
     let Some(Raw(Str(needle))) = args.first() else {
         return None;
@@ -544,6 +542,96 @@ fn string_builtin_last_index_of(input: &str, args: &[Powershell]) -> Option<Powe
         .map(|i| (window_start + i) as i64)
         .unwrap_or(-1);
     Some(Raw(Num(result)))
+}
+
+fn string_builtin_index_of_any(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Array(values)) = args.first() else {
+        return None;
+    };
+    let any_of = to_chars(values)?;
+    let haystack: Vec<char> = input.chars().collect();
+    let len = haystack.len();
+
+    let start = match args.get(1) {
+        None => 0,
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+
+    let end = match args.get(2) {
+        None => len,
+        Some(Raw(Num(n))) if *n >= 0 && start + (*n as usize) <= len => start + (*n as usize),
+        _ => return None,
+    };
+
+    let result = haystack[start..end]
+        .iter()
+        .position(|c| any_of.contains(c))
+        .map(|i| (start + i) as i64)
+        .unwrap_or(-1);
+    Some(Raw(Num(result)))
+}
+
+fn string_builtin_last_index_of_any(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Array(values)) = args.first() else {
+        return None;
+    };
+    let any_of = to_chars(values)?;
+    let haystack: Vec<char> = input.chars().collect();
+    let len = haystack.len();
+
+    if args.len() == 1 {
+        let result = haystack
+            .iter()
+            .rposition(|c| any_of.contains(c))
+            .map(|i| i as i64)
+            .unwrap_or(-1);
+        return Some(Raw(Num(result)));
+    }
+
+    let start_index = match args.get(1) {
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+    let window_end = (start_index + 1).min(len);
+
+    let window_start = match args.get(2) {
+        None => 0,
+        Some(Raw(Num(n))) if *n >= 1 && (*n as usize) <= window_end => window_end - (*n as usize),
+        _ => return None,
+    };
+
+    let result = haystack[window_start..window_end]
+        .iter()
+        .rposition(|c| any_of.contains(c))
+        .map(|i| (window_start + i) as i64)
+        .unwrap_or(-1);
+    Some(Raw(Num(result)))
+}
+
+fn string_builtin_replace_line_endings(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let replacement = match args.first() {
+        None => "\r\n",
+        Some(Raw(Str(s))) => s.as_str(),
+        _ => return None,
+    };
+
+    let chars: Vec<char> = input.chars().collect();
+    let mut result = String::with_capacity(input.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\r' && chars.get(i + 1) == Some(&'\n') {
+            result.push_str(replacement);
+            i += 2;
+        } else if is_line_ending_char(chars[i]) {
+            result.push_str(replacement);
+            i += 1;
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    Some(Raw(Str(result)))
 }
 
 fn string_builtin_pad(input: &str, args: &[Powershell], pad_start: bool) -> Option<Powershell> {
@@ -1419,6 +1507,40 @@ mod test {
             deobfuscate("'hello'.LastIndexOf('l', 3, 10)"),
             "\"hello\".LastIndexOf(\"l\", 3, 10)"
         );
+    }
+
+    #[test]
+    fn test_index_of_any() {
+        assert_eq!(deobfuscate("'hello'.IndexOfAny(@('l', 'o'))"), "2");
+        assert_eq!(deobfuscate("'hello'.IndexOfAny(@('z'))"), "-1");
+        assert_eq!(deobfuscate("'hello'.IndexOfAny(@('l'), 3)"), "3");
+        assert_eq!(deobfuscate("'hello'.IndexOfAny(@('l'), 3, 1)"), "3");
+        assert_eq!(
+            deobfuscate("'hello'.IndexOfAny(@('l'), 10)"),
+            "\"hello\".IndexOfAny(@( \"l\"), 10)"
+        );
+    }
+
+    #[test]
+    fn test_last_index_of_any() {
+        assert_eq!(deobfuscate("'hello'.LastIndexOfAny(@('l', 'o'))"), "4");
+        assert_eq!(deobfuscate("'hello'.LastIndexOfAny(@('z'))"), "-1");
+        assert_eq!(deobfuscate("'hello'.LastIndexOfAny(@('l'), 1)"), "-1");
+        assert_eq!(deobfuscate("'hello'.LastIndexOfAny(@('l'), 2, 3)"), "2");
+        assert_eq!(
+            deobfuscate("'hello'.LastIndexOfAny(@('l'), 3, 10)"),
+            "\"hello\".LastIndexOfAny(@( \"l\"), 3, 10)"
+        );
+    }
+
+    #[test]
+    fn test_replace_line_endings() {
+        assert_eq!(
+            deobfuscate("\"a`r`nb`rc`nd\".ReplaceLineEndings('X')"),
+            "\"aXbXcXd\""
+        );
+        assert_eq!(deobfuscate("\"a`r`nb\".ReplaceLineEndings()"), "\"a`r`nb\"");
+        assert_eq!(deobfuscate("''.ReplaceLineEndings()"), "\"\"");
     }
 
     #[test]
