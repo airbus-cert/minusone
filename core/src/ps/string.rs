@@ -157,8 +157,14 @@ impl<'a> RuleMut<'a> for ConcatString {
 /// - `str.Contains(value)`
 /// - `str.IndexOf(value, [startIndex, [count]])`
 /// - `str.Substring(startIndex, [length])`
-/// - `str.Trim([char|char[]])`
+/// - `str.Trim([char|char[]])` / `str.TrimStart([char|char[]])` / `str.TrimEnd([char|char[]])`
 /// - `str.ToCharArray([startIndex, length])`
+/// - `str.EndsWith(value)` / `str.StartsWith(value)`
+/// - `str.Equals(value)`
+/// - `str.Insert(startIndex, value)`
+/// - `str.LastIndexOf(value, [startIndex, [count]])`
+/// - `str.PadLeft(width, [char])` / `str.PadRight(width, [char])`
+/// - `str.Remove(startIndex, [count])`
 ///
 /// Mirrors the JS `StringBuiltins` dispatcher (see `crate::js::string::StringBuiltins`).
 type StringBuiltinHandler = fn(&str, &[Powershell]) -> Option<Powershell>;
@@ -177,7 +183,17 @@ const STRING_BUILTINS: &[(&str, StringBuiltinHandler)] = &[
     ("indexof", string_builtin_index_of),
     ("substring", string_builtin_substring),
     ("trim", string_builtin_trim),
+    ("trimstart", string_builtin_trim_start),
+    ("trimend", string_builtin_trim_end),
     ("tochararray", string_builtin_to_char_array),
+    ("endswith", string_builtin_ends_with),
+    ("startswith", string_builtin_starts_with),
+    ("equals", string_builtin_equals),
+    ("insert", string_builtin_insert),
+    ("lastindexof", string_builtin_last_index_of),
+    ("padleft", string_builtin_pad_left),
+    ("padright", string_builtin_pad_right),
+    ("remove", string_builtin_remove),
 ];
 
 fn dispatch_string_builtin(method: &str, input: &str, args: &[Powershell]) -> Option<Powershell> {
@@ -396,21 +412,193 @@ fn string_builtin_substring(input: &str, args: &[Powershell]) -> Option<Powershe
     Some(Raw(Str(chars[start..end].iter().collect())))
 }
 
-fn string_builtin_trim(input: &str, args: &[Powershell]) -> Option<Powershell> {
+enum TrimChars {
+    Whitespace,
+    Set(Vec<char>),
+}
+
+fn parse_trim_chars(args: &[Powershell]) -> Option<TrimChars> {
     match args.first() {
-        None => Some(Raw(Str(input.trim().to_string()))),
+        None => Some(TrimChars::Whitespace),
         Some(Raw(Str(c))) if c.chars().count() == 1 => {
-            let ch = c.chars().next()?;
-            Some(Raw(Str(input.trim_matches(ch).to_string())))
+            Some(TrimChars::Set(vec![c.chars().next()?]))
         }
-        Some(Array(values)) => {
-            let chars = to_chars(values)?;
-            Some(Raw(Str(input
-                .trim_matches(|c: char| chars.contains(&c))
-                .to_string())))
-        }
+        Some(Array(values)) => Some(TrimChars::Set(to_chars(values)?)),
         _ => None,
     }
+}
+
+fn string_builtin_trim(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let result = match parse_trim_chars(args)? {
+        TrimChars::Whitespace => input.trim().to_string(),
+        TrimChars::Set(chars) => input.trim_matches(|c: char| chars.contains(&c)).to_string(),
+    };
+    Some(Raw(Str(result)))
+}
+
+fn string_builtin_trim_start(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let result = match parse_trim_chars(args)? {
+        TrimChars::Whitespace => input.trim_start().to_string(),
+        TrimChars::Set(chars) => input
+            .trim_start_matches(|c: char| chars.contains(&c))
+            .to_string(),
+    };
+    Some(Raw(Str(result)))
+}
+
+fn string_builtin_trim_end(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let result = match parse_trim_chars(args)? {
+        TrimChars::Whitespace => input.trim_end().to_string(),
+        TrimChars::Set(chars) => input
+            .trim_end_matches(|c: char| chars.contains(&c))
+            .to_string(),
+    };
+    Some(Raw(Str(result)))
+}
+
+fn string_builtin_ends_with(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Raw(Str(needle))) = args.first() else {
+        return None;
+    };
+    Some(Raw(Bool(input.ends_with(needle.as_str()))))
+}
+
+fn string_builtin_starts_with(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Raw(Str(needle))) = args.first() else {
+        return None;
+    };
+    Some(Raw(Bool(input.starts_with(needle.as_str()))))
+}
+
+fn string_builtin_equals(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    match args.first() {
+        Some(Raw(Str(other))) => Some(Raw(Bool(input == other.as_str()))),
+        Some(_) => Some(Raw(Bool(false))),
+        None => None,
+    }
+}
+
+fn string_builtin_insert(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+
+    let start = match args.first() {
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+
+    let Some(Raw(value)) = args.get(1) else {
+        return None;
+    };
+
+    let mut result: String = chars[..start].iter().collect();
+    result.push_str(&value.to_string());
+    result.extend(&chars[start..]);
+    Some(Raw(Str(result)))
+}
+
+fn rfind_char_index(haystack: &[char], needle: &[char]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len())
+        .rev()
+        .find(|&i| haystack[i..i + needle.len()] == *needle)
+}
+
+fn string_builtin_last_index_of(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let Some(Raw(Str(needle))) = args.first() else {
+        return None;
+    };
+    let haystack: Vec<char> = input.chars().collect();
+    let needle: Vec<char> = needle.chars().collect();
+    let len = haystack.len();
+
+    if args.len() == 1 {
+        if needle.is_empty() {
+            return Some(Raw(Num(len as i64)));
+        }
+        let result = rfind_char_index(&haystack, &needle)
+            .map(|i| i as i64)
+            .unwrap_or(-1);
+        return Some(Raw(Num(result)));
+    }
+
+    if needle.is_empty() {
+        return None;
+    }
+
+    let start_index = match args.get(1) {
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+    let window_end = (start_index + 1).min(len);
+
+    let window_start = match args.get(2) {
+        None => 0,
+        Some(Raw(Num(n))) if *n >= 1 && (*n as usize) <= window_end => window_end - (*n as usize),
+        _ => return None,
+    };
+
+    let result = rfind_char_index(&haystack[window_start..window_end], &needle)
+        .map(|i| (window_start + i) as i64)
+        .unwrap_or(-1);
+    Some(Raw(Num(result)))
+}
+
+fn string_builtin_pad(input: &str, args: &[Powershell], pad_start: bool) -> Option<Powershell> {
+    let len = input.chars().count();
+
+    let width = match args.first() {
+        Some(Raw(Num(n))) if *n >= 0 => *n as usize,
+        _ => return None,
+    };
+
+    let pad_char = match args.get(1) {
+        None => ' ',
+        Some(Raw(Str(s))) if s.chars().count() == 1 => s.chars().next()?,
+        _ => return None,
+    };
+
+    if len >= width {
+        return Some(Raw(Str(input.to_string())));
+    }
+
+    let padding: String = std::iter::repeat_n(pad_char, width - len).collect();
+    let result = if pad_start {
+        format!("{}{}", padding, input)
+    } else {
+        format!("{}{}", input, padding)
+    };
+    Some(Raw(Str(result)))
+}
+
+fn string_builtin_pad_left(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    string_builtin_pad(input, args, true)
+}
+
+fn string_builtin_pad_right(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    string_builtin_pad(input, args, false)
+}
+
+fn string_builtin_remove(input: &str, args: &[Powershell]) -> Option<Powershell> {
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+
+    let start = match args.first() {
+        Some(Raw(Num(n))) if *n >= 0 && (*n as usize) <= len => *n as usize,
+        _ => return None,
+    };
+
+    let end = match args.get(1) {
+        None => len,
+        Some(Raw(Num(n))) if *n >= 0 && start + (*n as usize) <= len => start + (*n as usize),
+        _ => return None,
+    };
+
+    let mut result: String = chars[..start].iter().collect();
+    result.extend(&chars[end..]);
+    Some(Raw(Str(result)))
 }
 
 fn string_builtin_to_char_array(input: &str, args: &[Powershell]) -> Option<Powershell> {
@@ -754,7 +942,10 @@ mod test {
             ParseString::default(),
             ParseInt::default(),
             Forward::default(),
+            ParseArrayLiteral::default(),
+            ComputeArrayExpr::default(),
             StringBuiltins::default(),
+            JoinComparison::default(),
         ))
         .unwrap();
 
@@ -1168,49 +1359,94 @@ mod test {
 
     #[test]
     fn test_trim_char_array() {
-        let mut tree = build_powershell_tree("'xyhelloyx'.Trim(@('x', 'y'))").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            Forward::default(),
-            ParseArrayLiteral::default(),
-            ComputeArrayExpr::default(),
-            StringBuiltins::default(),
-        ))
-        .unwrap();
-
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "\"hello\"");
+        assert_eq!(deobfuscate("'xyhelloyx'.Trim(@('x', 'y'))"), "\"hello\"");
     }
 
     #[test]
     fn test_to_char_array() {
-        let mut tree = build_powershell_tree("'hello'.ToCharArray() -join ','").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            Forward::default(),
-            StringBuiltins::default(),
-            JoinComparison::default(),
-        ))
-        .unwrap();
+        assert_eq!(
+            deobfuscate("'hello'.ToCharArray() -join ','"),
+            "\"h,e,l,l,o\""
+        );
+        assert_eq!(
+            deobfuscate("'hello'.ToCharArray(1, 2) -join ','"),
+            "\"e,l\""
+        );
+    }
 
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "\"h,e,l,l,o\"");
+    #[test]
+    fn test_ends_with() {
+        assert_eq!(deobfuscate("'hello'.EndsWith('lo')"), "$true");
+        assert_eq!(deobfuscate("'hello'.EndsWith('x')"), "$false");
+        assert_eq!(deobfuscate("'hello'.EndsWith('')"), "$true");
+    }
 
-        let mut tree = build_powershell_tree("'hello'.ToCharArray(1, 2) -join ','").unwrap();
-        tree.apply_mut(&mut (
-            ParseString::default(),
-            ParseInt::default(),
-            Forward::default(),
-            StringBuiltins::default(),
-            JoinComparison::default(),
-        ))
-        .unwrap();
+    #[test]
+    fn test_starts_with() {
+        assert_eq!(deobfuscate("'hello'.StartsWith('he')"), "$true");
+        assert_eq!(deobfuscate("'hello'.StartsWith('')"), "$true");
+    }
 
-        let mut linter = Linter::default();
-        tree.apply(&mut linter).unwrap();
-        assert_eq!(linter.output, "\"e,l\"");
+    #[test]
+    fn test_equals() {
+        assert_eq!(deobfuscate("'hello'.Equals('hello')"), "$true");
+        assert_eq!(deobfuscate("'hello'.Equals('Hello')"), "$false");
+        assert_eq!(deobfuscate("'hello'.Equals(5)"), "$false");
+    }
+
+    #[test]
+    fn test_insert() {
+        assert_eq!(deobfuscate("'hello'.Insert(0, 'X')"), "\"Xhello\"");
+        assert_eq!(deobfuscate("'hello'.Insert(5, 'X')"), "\"helloX\"");
+        assert_eq!(deobfuscate("'hello'.Insert(2, 'XY')"), "\"heXYllo\"");
+        assert_eq!(
+            deobfuscate("'hello'.Insert(6, 'X')"),
+            "\"hello\".Insert(6, \"X\")"
+        );
+    }
+
+    #[test]
+    fn test_last_index_of() {
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('l')"), "3");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('z')"), "-1");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('l', 1)"), "-1");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('l', 0)"), "-1");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('l', 5)"), "3");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('l', 4)"), "3");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('ll', 3, 3)"), "2");
+        assert_eq!(deobfuscate("'hello'.LastIndexOf('ll', 3, 2)"), "2");
+        assert_eq!(
+            deobfuscate("'hello'.LastIndexOf('l', 3, 10)"),
+            "\"hello\".LastIndexOf(\"l\", 3, 10)"
+        );
+    }
+
+    #[test]
+    fn test_pad_left_and_right() {
+        assert_eq!(deobfuscate("'hi'.PadLeft(5)"), "\"   hi\"");
+        assert_eq!(deobfuscate("'hi'.PadLeft(5, '*')"), "\"***hi\"");
+        assert_eq!(deobfuscate("'hi'.PadLeft(1)"), "\"hi\"");
+        assert_eq!(deobfuscate("'hi'.PadRight(5, '*')"), "\"hi***\"");
+    }
+
+    #[test]
+    fn test_remove() {
+        assert_eq!(deobfuscate("'hello'.Remove(2)"), "\"he\"");
+        assert_eq!(deobfuscate("'hello'.Remove(2, 2)"), "\"heo\"");
+        assert_eq!(deobfuscate("'hello'.Remove(5)"), "\"hello\"");
+        assert_eq!(
+            deobfuscate("'hello'.Remove(2, 10)"),
+            "\"hello\".Remove(2, 10)"
+        );
+    }
+
+    #[test]
+    fn test_trim_start_and_end() {
+        assert_eq!(deobfuscate("'  hi  '.TrimStart()"), "\"hi  \"");
+        assert_eq!(deobfuscate("'  hi  '.TrimEnd()"), "\"  hi\"");
+        assert_eq!(deobfuscate("'xxhixx'.TrimStart('x')"), "\"hixx\"");
+        assert_eq!(deobfuscate("'xxhixx'.TrimEnd('x')"), "\"xxhi\"");
+        assert_eq!(deobfuscate("'xyhixy'.TrimStart(@('x', 'y'))"), "\"hixy\"");
     }
 
     #[test]
