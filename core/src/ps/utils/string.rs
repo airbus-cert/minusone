@@ -143,3 +143,19 @@ pub fn encode(tag: &str, s: &str) -> Option<Vec<u8>> {
         _ => None,
     }
 }
+
+pub fn is_line_ending_char(c: char) -> bool {
+    matches!(
+        c,
+        '\r' | '\n' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
+pub fn rfind_char_index(haystack: &[char], needle: &[char]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len())
+        .rev()
+        .find(|&i| haystack[i..i + needle.len()] == *needle)
+}
