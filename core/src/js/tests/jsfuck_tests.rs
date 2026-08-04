@@ -345,4 +345,38 @@ pub mod jsfuck_tests {
         assert_eq!("'{'", deobfuscate("([][\"filter\"]+[])[18]"));
         assert_eq!("'}'", deobfuscate("([][\"filter\"]+[])[34]"));
     }
+
+    #[test]
+    fn decode_bmp_escape() {
+        assert_eq!(
+            JsFuckLevelNine::decode_return_string(r"return 'A'").as_deref(),
+            Some("A")
+        );
+    }
+
+    #[test]
+    fn decode_surrogate_pair() {
+        assert_eq!(
+            JsFuckLevelNine::decode_return_string(r"return '😀'").as_deref(),
+            Some("😀")
+        );
+    }
+
+    #[test]
+    fn decode_code_point_and_hex() {
+        assert_eq!(
+            JsFuckLevelNine::decode_return_string(r"return '\u{1F600}'").as_deref(),
+            Some("😀")
+        );
+        assert_eq!(
+            JsFuckLevelNine::decode_return_string(r#"return "\x41\x42""#).as_deref(),
+            Some("AB")
+        );
+    }
+
+    #[test]
+    fn rejects_non_string_return() {
+        assert_eq!(JsFuckLevelNine::decode_return_string("return 1+1"), None);
+        assert_eq!(JsFuckLevelNine::decode_return_string("alert(1)"), None);
+    }
 }

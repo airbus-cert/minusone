@@ -6,7 +6,7 @@ mod tests_js_string {
     use crate::js::linter::Linter;
     use crate::js::post_process::BracketToMember;
     use crate::js::regex::ParseRegex;
-    use crate::js::specials::AddSubSpecials;
+    use crate::js::specials::{AddSubSpecials, ParseSpecials};
     use crate::js::string::*;
     use crate::js::var::Var;
     use crate::js::{build_javascript_tree, build_javascript_tree_for_storage};
@@ -24,6 +24,7 @@ mod tests_js_string {
             ParseInt::default(),
             ParseArray::default(),
             ParseRegex::default(),
+            ParseSpecials::default(),
             StringBuiltins::default(),
             Forward::default(),
             PosNeg::default(),
@@ -492,6 +493,185 @@ mod tests_js_string {
         assert_eq!(
             deobfuscate("let a = 1; console.log(String.raw`${a + 1}`);"),
             "let a = 1; console.log('2');"
+        );
+    }
+
+    #[test]
+    fn test_concat_builtin() {
+        assert_eq!(deobfuscate("var x = 'abc'.concat();"), "var x = 'abc';");
+        assert_eq!(deobfuscate("var x = 'abc'.concat('d');"), "var x = 'abcd';");
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat(123);"),
+            "var x = 'abc123';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat(undefined);"),
+            "var x = 'abcundefined';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abc'.concat([1,2,3]);"),
+            "var x = 'abc1,2,3';"
+        );
+    }
+
+    #[test]
+    fn test_substr() {
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(1, 4);"),
+            "var x = 'bcde';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(2, 99);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(2);"),
+            "var x = 'cdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-3);"),
+            "var x = 'def';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-4, 2);"),
+            "var x = 'cd';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(1, -1);"),
+            "var x = '';"
+        );
+        assert_eq!(deobfuscate("var x = 'abcdef'.substr(1, 0);"), "var x = '';");
+        assert_eq!(deobfuscate("var x = 'abcdef'.substr(10);"), "var x = '';");
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(-99);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr();"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(0, 1);"),
+            "var x = 'a';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(0);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(NaN);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr(undefined);"),
+            "var x = 'abcdef';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 'abcdef'.substr('??');"),
+            "var x = 'abcdef';"
+        );
+    }
+
+    #[test]
+    fn test_replace_with_literal_escape() {
+        assert_eq!(
+            deobfuscate("console.log(('aZbZc').replace(/\\Z/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aZbZc').replace(/Z/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aXbXc').replace(/\\X/g, \"\"))"),
+            "console.log('abc')"
+        );
+        assert_eq!(
+            deobfuscate("console.log(('aXbXc').replace(/X/g, \"\"))"),
+            "console.log('abc')"
+        );
+    }
+
+    #[test]
+    fn test_match() {
+        assert_eq!(
+            deobfuscate("var x = 'hello world'.match(/o/g);"),
+            "var x = ['o', 'o'];"
+        );
+
+        assert_eq!(deobfuscate("var x = 'hello'.match(/o/);"), "var x = ['o'];");
+
+        assert_eq!(deobfuscate("var x = 'hello'.match(/x/g);"), "var x = null;");
+
+        assert_eq!(deobfuscate("var x = 'hello'.match(/x/);"), "var x = null;");
+
+        assert_eq!(
+            deobfuscate("var x = 'a1b2c3'.match(/\\d/g);"),
+            "var x = ['1', '2', '3'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123'.match(/(\\w)(\\d)/);"),
+            "var x = ['c1', 'c', '1'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123'.match(/(\\w)(\\d)/g);"),
+            "var x = ['c1', '23'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'a1a2a3'.match(/[^a]*/g);"),
+            "var x = ['', '1', '', '2', '', '3', ''];"
+        );
+
+        assert_eq!(deobfuscate("var x = ''.match(/a/g);"), "var x = null;");
+
+        assert_eq!(deobfuscate("var x = ''.match(/.*/g);"), "var x = [''];");
+
+        assert_eq!(
+            deobfuscate("var x = 'hello world'.match('ell');"),
+            "var x = ['ell'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123def'.match(/([a-z]+)(\\d+)([a-z]+)/);"),
+            "var x = ['abc123def', 'abc', '123', 'def'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'Hello'.match(/h/i);"),
+            "var x = ['H'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'Helloh'.match(/h/gi);"),
+            "var x = ['H', 'h'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = '123abc'.match(/\\d+/g);"),
+            "var x = ['123'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc123'.match(/\\d+/g);"),
+            "var x = ['123'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'abc'.match(/a*b/g);"),
+            "var x = ['ab'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'hello world'.match(/\\w+/g);"),
+            "var x = ['hello', 'world'];"
+        );
+
+        assert_eq!(
+            deobfuscate("var x = 'a b c'.match(/ /g);"),
+            "var x = [' ', ' '];"
         );
     }
 }
