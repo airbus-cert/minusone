@@ -76,7 +76,7 @@ mod test_fncall {
 
     #[test]
     fn test_fncall_resolves_param_dependent_return() {
-        // issue #152 explicitly asks for parametric calls to resolve
+        // issue #152
         assert_eq!(
             deobfuscate("function test(x) { return x; } console.log(test('hello'));"),
             "function test(x) { return x; } console.log('hello');"
@@ -101,7 +101,6 @@ mod test_fncall {
 
     #[test]
     fn test_fncall_constant_conditional_resolves() {
-        // a constant `if (true)` now picks the then-branch
         assert_eq!(
             deobfuscate(
                 "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
@@ -112,9 +111,6 @@ mod test_fncall {
 
     #[test]
     fn test_fncall_opaque_conditional_does_not_resolve() {
-        // The if-condition refers to an undefined free identifier, so neither
-        // branch can be picked statically. The call must be left intact - we
-        // must NOT silently pick the trailing `return 'B'`.
         let output = deobfuscate(
             "function test(x) { if (someUnknownGlobal) { return 'A'; } return 'B'; } console.log(test(1));",
         );
@@ -161,9 +157,6 @@ mod test_fncall {
 
     #[test]
     fn test_fncall_object_stored_function_constant_return() {
-        // The `;` after the function expression is required: without it this is
-        // not valid JS (tree-sitter produces an ERROR node around `a`) and the
-        // assignment target cannot be recovered structurally.
         assert_eq!(
             deobfuscate(
                 "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(a.t());"
@@ -193,8 +186,6 @@ mod test_fncall {
 
     #[test]
     fn test_fncall_nested_call_through_prelude() {
-        // `b`'s body reaches `a`, so the sub-program must still carry `a`'s
-        // declaration even though the prelude is filtered.
         assert_eq!(
             deobfuscate(
                 "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(b(2));"
@@ -220,7 +211,10 @@ mod test_fncall {
     #[test]
     fn test_prelude_for_is_transitive() {
         let decls = vec![
-            ("a".to_string(), "function a(x) { return x * 2; }".to_string()),
+            (
+                "a".to_string(),
+                "function a(x) { return x * 2; }".to_string(),
+            ),
             (
                 "b".to_string(),
                 "function b(y) { return a(y) + 3; }".to_string(),
@@ -237,8 +231,7 @@ mod test_fncall {
 
     #[test]
     fn test_fncall_ignores_extra_arguments() {
-        // issue #193: JS binds the first `params.len()` arguments and drops the
-        // rest, it does not refuse the call.
+        // issue #193
         assert_eq!(
             deobfuscate("function test(a) { return a; } console.log(test('minusone', 0));"),
             "function test(a) { return a; } console.log('minusone');"

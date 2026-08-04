@@ -5,7 +5,7 @@ use crate::js::Value::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::js::r#loop::*;
-use crate::js::subprogram::{capture_seed_result, enter_for_loop, inject_seed, is_seed_active};
+use crate::js::subprogram::*;
 use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
@@ -510,8 +510,6 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 };
 
-                // Skip update expressions on non-locals inside a function body
-                // - reducing them would rewrite the function source.
                 if matches!(
                     self.scope_manager.current().is_local(&var_name),
                     Some(false)
@@ -564,7 +562,7 @@ impl<'a> RuleMut<'a> for Var {
                         .forget(&var_name, node.is_ongoing_transaction());
                 }
             }
-            // `eval(...)` can mutate any local; forget them all to stay sound.
+            // `eval(...)` can mutate any local
             "call_expression" => {
                 if let Some(func) = view.named_child("function").or_else(|| view.child(0))
                     && func.kind() == "identifier"

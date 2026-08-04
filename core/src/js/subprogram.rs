@@ -1,16 +1,3 @@
-//! Shared plumbing for the rules that run minusone inside minusone.
-//!
-//! `ArrayMapFilter` / `ForLoop` (`js::r#loop`) and `FnCall`
-//! (`js::functions::fncall`) all resolve a construct by synthesising a small
-//! sub-program and running the regular pipeline on it. Rather than each one
-//! carrying its own copy, the three pieces they share live here:
-//!
-//! - [`DepthCounter`], one RAII bracket type behind every recursion cap;
-//! - [`build_and_reduce`], the parse + apply-ruleset step;
-//! - the seed channel ([`with_seed`], [`inject_seed`], [`capture_seed_result`]),
-//!   which hands values to `Var` directly instead of rendering them back to
-//!   source and re-parsing them.
-
 use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{JavaScript, JavaScriptRuleSet, build_javascript_tree};
 use crate::rule::RuleSetBuilderType;
@@ -19,11 +6,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::thread::LocalKey;
 
-/// A recursion cap over a thread-local counter.
-///
-/// Thread-local rather than per-rule-instance because a sub-pipeline builds its
-/// own rule set: a per-instance counter would restart at zero on every level
-/// and cap nothing.
 pub struct DepthCounter {
     key: &'static LocalKey<Cell<usize>>,
     max: usize,
@@ -35,9 +17,7 @@ impl DepthCounter {
         Self { key, max, label }
     }
 
-    /// Returns `None` once the cap is reached, so a caller can write
-    /// `let _guard = counter.enter()?;` and have the bracket close itself on
-    /// every exit path, including the early `?` returns.
+    // returns `None` once the cap is reached
     pub fn enter(&self) -> Option<DepthGuard> {
         let depth = self.key.with(|c| c.get());
         if depth >= self.max {
@@ -72,9 +52,6 @@ impl Drop for DepthGuard {
 }
 
 /// Nested sub-pipelines allowed for a single `FnCall` resolution.
-///
-/// Each level re-runs the whole ruleset, so the cost is exponential in this
-/// number. Two is enough for the call chains found in real samples.
 pub const MAX_FNCALL_DEPTH: usize = 2;
 /// Nested `.map()` / `.filter()` callbacks allowed.
 pub const MAX_MAP_FILTER_DEPTH: usize = 4;
@@ -111,7 +88,6 @@ pub fn enter_for_loop() -> Option<DepthGuard> {
     for_counter().enter()
 }
 
-/// Parses `src` and applies the full JavaScript ruleset to it.
 pub fn build_and_reduce(src: &str) -> Option<Tree<'_, HashMapStorage<JavaScript>>> {
     let mut tree = build_javascript_tree(src).ok()?;
     tree.apply_mut_with_strategy(
@@ -127,13 +103,7 @@ thread_local! {
     static RESULT: RefCell<Option<HashMap<String, JavaScript>>> = const { RefCell::new(None) };
 }
 
-/// Runs `f` with `seed` visible to `Var` at the top of every sub-program it
-/// parses.
-///
-/// The previous channel is restored on the way out instead of being cleared, so
-/// a seeded run may itself seed another one: a loop inside a resolved function
-/// body, or a call inside a simulated loop body, no longer erases the outer
-/// seed on its way back up.
+/// Runs `f` with `seed` visible to `Var` at the top of every sub-program it parses.
 pub fn with_seed<R>(seed: HashMap<String, JavaScript>, f: impl FnOnce() -> Option<R>) -> Option<R> {
     let previous_seed = SEED.with(|c| c.replace(Some(seed)));
     let previous_result = RESULT.with(|c| c.replace(None));
@@ -143,8 +113,7 @@ pub fn with_seed<R>(seed: HashMap<String, JavaScript>, f: impl FnOnce() -> Optio
     out
 }
 
-/// Values captured by the innermost finished sub-program, one entry per seeded
-/// name. Call from inside the [`with_seed`] closure.
+/// Values captured by the innermost finished sub-program
 pub fn take_seed_result() -> Option<HashMap<String, JavaScript>> {
     RESULT.with(|c| c.borrow_mut().take())
 }
@@ -153,8 +122,7 @@ pub fn is_seed_active() -> bool {
     SEED.with(|c| c.borrow().is_some())
 }
 
-/// Hands every seeded name to `assign`. Called by `Var` when it enters a
-/// `program` node.
+/// Hands every seeded name to `assign`. Called by `Var` when it enters a `program` node.
 pub fn inject_seed<F: FnMut(&str, &JavaScript)>(mut assign: F) {
     SEED.with(|c| {
         if let Some(seed) = c.borrow().as_ref() {
@@ -165,8 +133,7 @@ pub fn inject_seed<F: FnMut(&str, &JavaScript)>(mut assign: F) {
     });
 }
 
-/// Reads every seeded name back out of the scope. Called by `Var` when it
-/// leaves a `program` node.
+/// Reads every seeded name back out of the scope. Called by `Var` when it leaves a `program` node.
 pub fn capture_seed_result<F: Fn(&str) -> Option<JavaScript>>(read: F) {
     SEED.with(|seed| {
         let seed = seed.borrow();

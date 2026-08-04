@@ -45,7 +45,6 @@ pub struct FnCall {
     object_field_shapes: HashMap<(String, String), FunctionShape>,
     shapes_by_source: HashMap<String, FunctionShape>,
     // Top-level function declarations as (name, raw source), can hoist + resolve nested calls.
-    // Only the ones a body can actually reach are re-emitted into its sub-program.
     fn_decls: Vec<(String, String)>,
 }
 
@@ -297,13 +296,7 @@ impl FnCall {
         false
     }
 
-    /// Maximal identifier-like tokens of a JS source.
-    ///
-    /// This over-approximates: a name that only appears inside a string literal
-    /// is reported as referenced. It never under-approximates, because a real
-    /// reference is always a maximal identifier token in the source. Using it to
-    /// decide which declarations a body needs can therefore only keep too many,
-    /// never drop one that was needed.
+    // Maximal identifier-like tokens of a JS source.
     fn identifier_tokens(src: &str) -> HashSet<String> {
         let mut out = HashSet::new();
         let mut current = String::new();
@@ -320,14 +313,7 @@ impl FnCall {
         out
     }
 
-    /// Prelude restricted to the declarations `body` can reach, transitively.
-    ///
-    /// Re-emitting every top-level declaration into every sub-program made the
-    /// synthesised source grow with the whole file instead of with the function
-    /// being resolved, which is quadratic over a file's call sites. A body
-    /// typically reaches none or a couple of other functions.
-    // pub(crate) so `js::tests::fncall_tests` can assert on the filtering,
-    // which is invisible from the deobfuscated output.
+    // Prelude restricted to the declarations `body` can reach, transitively.
     pub(crate) fn prelude_for(decls: &[(String, String)], body: &str) -> String {
         if decls.is_empty() {
             return String::new();
@@ -371,14 +357,8 @@ impl FnCall {
         program.push_str(&shape.body_inner);
         program.push('\n');
 
-        // Arguments are handed over through the seed channel rather than
-        // rendered back to source. A value that has no literal syntax (a Buffer,
-        // an iterator, an object with a custom toString) used to abort the whole
-        // resolution; now it just travels as-is.
-        //
-        // Extra arguments are dropped instead of aborting: JS only binds the
-        // first `params.len()` of them (issue #193). `arguments` is not modelled,
-        // so nothing else can observe the ones we drop.
+        // Arguments are handed over through the seed channel rather than rendered back to source.
+        // A value that has no literal syntax used to abort the whole
         let seed = shape
             .params
             .iter()
@@ -528,8 +508,6 @@ impl FnCall {
             return Some(shape.clone());
         }
 
-        // `var f = g; var g = h;` chains: bound so a cyclic alias table cannot
-        // spin here. Unrelated to the sub-pipeline depth cap.
         const MAX_ALIAS_HOPS: usize = 2;
 
         let mut current = name;
@@ -640,7 +618,9 @@ impl FnCall {
         let mut last_stmt: Option<Node<JavaScript>> = None;
         for child in program.iter() {
             match child.kind() {
-                "expression_statement" | "variable_declaration" | "lexical_declaration"
+                "expression_statement"
+                | "variable_declaration"
+                | "lexical_declaration"
                 | "return_statement" => {
                     last_stmt = Some(child);
                 }
@@ -774,11 +754,10 @@ impl<'a> RuleMut<'a> for FnCall {
             self.fn_decls.clear();
 
             for child in view.iter() {
-                // Hoist top-level function_declarations so forward calls resolve.
+                // hoist top-level function_declarations so forward calls resolve.
                 Self::hoist_function_declaration(&child, &mut self.var_shapes);
             }
-            // Keep the declaration sources so a sub-program can re-emit the
-            // subset its body actually reaches.
+            // Keep the declaration sources so a sub-program can re-emit the subset its body actually reaches.
             self.fn_decls = Self::collect_fn_decls(&view);
         }
         Ok(())
@@ -1034,8 +1013,10 @@ impl<'a> RuleMut<'a> for FnCall {
                         );
                         node.reduce(value);
                     } else if let Some((base, key)) = Self::extract_member_access(&func_node)
-                        && let Some(value) =
-                            self.object_fields.get(&(base.clone(), key.clone())).cloned()
+                        && let Some(value) = self
+                            .object_fields
+                            .get(&(base.clone(), key.clone()))
+                            .cloned()
                         && let Some(return_value) = Self::function_return_from_value(&value)
                     {
                         trace!(
