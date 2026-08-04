@@ -22,6 +22,7 @@ pub mod specials;
 pub mod step;
 pub mod strategy;
 pub mod string;
+pub mod subprogram;
 pub mod r#switch;
 pub mod ternary;
 mod tests;

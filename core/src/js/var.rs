@@ -5,6 +5,7 @@ use crate::js::Value::*;
 use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::js::r#loop::*;
+use crate::js::subprogram::*;
 use crate::js::utils::is_write_target;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
@@ -152,7 +153,7 @@ impl<'a> RuleMut<'a> for Var {
 
                 let ongoing = node.is_ongoing_transaction();
                 let scope = self.scope_manager.current_mut();
-                inject_loop_seed(|name, value| {
+                inject_seed(|name, value| {
                     scope.assign(name, value.clone(), ongoing);
                     scope.set_non_local(name);
                 });
@@ -204,9 +205,6 @@ impl<'a> RuleMut<'a> for Var {
                 if !is_for_loop_enabled() {
                     return Ok(());
                 }
-                if for_depth_get() >= MAX_FOR_DEPTH {
-                    return Ok(());
-                }
                 if let Some(body) = view.named_child("body") {
                     if body_has_bail_node(&body) {
                         return Ok(());
@@ -217,7 +215,9 @@ impl<'a> RuleMut<'a> for Var {
                     return Ok(());
                 };
                 let scope_snapshot = self.snapshot_scope();
-                for_depth_inc();
+                let Some(_depth) = enter_for_loop() else {
+                    return Ok(());
+                };
                 let result = simulate_for_loop(
                     &scope_snapshot,
                     &init_src,
@@ -225,7 +225,7 @@ impl<'a> RuleMut<'a> for Var {
                     &update_src,
                     &body_src,
                 );
-                for_depth_dec();
+                drop(_depth);
                 if let Some(final_vars) = result {
                     trace!(
                         "ForLoop: simulated for_statement id={}, {} vars",
@@ -240,7 +240,7 @@ impl<'a> RuleMut<'a> for Var {
                 if let Some(left) = view.named_child("left") {
                     self.forget_assigned_var(&left)?;
                 }
-                if !is_for_loop_enabled() || for_depth_get() >= MAX_FOR_DEPTH {
+                if !is_for_loop_enabled() {
                     return Ok(());
                 }
                 let (Some(left), Some(op), Some(right), Some(body)) = (
@@ -272,9 +272,11 @@ impl<'a> RuleMut<'a> for Var {
                 };
                 let body_src = body.text()?.to_string();
                 let state = self.collect_scope_state();
-                for_depth_inc();
+                let Some(_depth) = enter_for_loop() else {
+                    return Ok(());
+                };
                 let result = simulate_for_in_loop(&loop_var, &iter_values, &body_src, state);
-                for_depth_dec();
+                drop(_depth);
                 if let Some(final_vars) = result {
                     trace!(
                         "ForLoop: simulated for_in_statement id={}, {} vars",
@@ -320,9 +322,9 @@ impl<'a> RuleMut<'a> for Var {
     ) -> MinusOneResult<()> {
         let view = node.view();
         match view.kind() {
-            "program" if is_loop_seed_active() => {
+            "program" if is_seed_active() => {
                 let scope = self.scope_manager.current();
-                capture_loop_result(|name| scope.get_var(name).cloned());
+                capture_seed_result(|name| scope.get_var(name).cloned());
             }
             "for_statement" | "for_in_statement" => {
                 if let Some(final_vars) = take_for_loop_result(node.id()) {
@@ -508,6 +510,23 @@ impl<'a> RuleMut<'a> for Var {
                     }
                 };
 
+                if matches!(
+                    self.scope_manager.current().is_local(&var_name),
+                    Some(false)
+                ) && view
+                    .get_parent_of_types(vec![
+                        "function_declaration",
+                        "function",
+                        "arrow_function",
+                        "method_definition",
+                        "generator_function_declaration",
+                        "generator_function",
+                    ])
+                    .is_some()
+                {
+                    return Ok(());
+                }
+
                 if let Some(current_value) =
                     self.scope_manager.current().get_var(&var_name).cloned()
                 {
@@ -541,6 +560,20 @@ impl<'a> RuleMut<'a> for Var {
                     self.scope_manager
                         .current_mut()
                         .forget(&var_name, node.is_ongoing_transaction());
+                }
+            }
+            // `eval(...)` can mutate any local
+            "call_expression" => {
+                if let Some(func) = view.named_child("function").or_else(|| view.child(0))
+                    && func.kind() == "identifier"
+                    && let Ok(name) = func.text()
+                    && name == "eval"
+                {
+                    let names = self.scope_manager.current().get_var_names();
+                    let ongoing = node.is_ongoing_transaction();
+                    for var in names {
+                        self.scope_manager.current_mut().forget(&var, ongoing);
+                    }
                 }
             }
             // read

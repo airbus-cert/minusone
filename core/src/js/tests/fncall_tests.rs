@@ -75,10 +75,11 @@ mod test_fncall {
     }
 
     #[test]
-    fn test_fncall_does_not_resolve_param_dependent_return() {
+    fn test_fncall_resolves_param_dependent_return() {
+        // issue #152
         assert_eq!(
             deobfuscate("function test(x) { return x; } console.log(test('hello'));"),
-            "function test(x) { return x; } console.log(test('hello'));"
+            "function test(x) { return x; } console.log('hello');"
         );
     }
 
@@ -99,12 +100,24 @@ mod test_fncall {
     }
 
     #[test]
-    fn test_fncall_multiple_returns_not_resolved() {
+    fn test_fncall_constant_conditional_resolves() {
         assert_eq!(
             deobfuscate(
                 "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
             ),
-            "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
+            "function test() { if (true) { return 'a'; } return 'b'; } console.log('a');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_opaque_conditional_does_not_resolve() {
+        let output = deobfuscate(
+            "function test(x) { if (someUnknownGlobal) { return 'A'; } return 'B'; } console.log(test(1));",
+        );
+        assert!(
+            output.ends_with("console.log(test(1));"),
+            "expected unresolved call, got: {}",
+            output
         );
     }
 
@@ -146,9 +159,9 @@ mod test_fncall {
     fn test_fncall_object_stored_function_constant_return() {
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(a.t());"
+                "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(a.t());"
             ),
-            "let a = {}; let x = function (params) { return 0; } a.t = x; console.log(0);"
+            "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(0);"
         );
     }
 
@@ -156,9 +169,9 @@ mod test_fncall {
     fn test_fncall_object_stored_function_param_dependent_return() {
         assert_eq!(
             deobfuscate(
-                "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(a.t(1)); console.log(a.t(2));"
+                "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(a.t(1)); console.log(a.t(2));"
             ),
-            "let a = {}; let x = function (n) { return n+1; } a.t = x; console.log(2); console.log(3);"
+            "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(2); console.log(3);"
         );
     }
 
@@ -169,5 +182,67 @@ mod test_fncall {
         );
 
         assert!(output.ends_with("console.log('minusone');"));
+    }
+
+    #[test]
+    fn test_fncall_nested_call_through_prelude() {
+        assert_eq!(
+            deobfuscate(
+                "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(b(2));"
+            ),
+            "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(7);"
+        );
+    }
+
+    #[test]
+    fn test_prelude_for_keeps_only_reachable_declarations() {
+        let decls = vec![
+            ("a".to_string(), "function a(x) { return x; }".to_string()),
+            ("b".to_string(), "function b(y) { return y; }".to_string()),
+        ];
+
+        let prelude = FnCall::prelude_for(&decls, "return a(1);");
+        assert!(prelude.contains("function a"));
+        assert!(!prelude.contains("function b"));
+
+        assert_eq!(FnCall::prelude_for(&decls, "return 1;"), "");
+    }
+
+    #[test]
+    fn test_prelude_for_is_transitive() {
+        let decls = vec![
+            (
+                "a".to_string(),
+                "function a(x) { return x * 2; }".to_string(),
+            ),
+            (
+                "b".to_string(),
+                "function b(y) { return a(y) + 3; }".to_string(),
+            ),
+            ("c".to_string(), "function c(z) { return z; }".to_string()),
+        ];
+
+        // The body only names `b`, but `b` reaches `a`.
+        let prelude = FnCall::prelude_for(&decls, "return b(1);");
+        assert!(prelude.contains("function a"));
+        assert!(prelude.contains("function b"));
+        assert!(!prelude.contains("function c"));
+    }
+
+    #[test]
+    fn test_fncall_ignores_extra_arguments() {
+        // issue #193
+        assert_eq!(
+            deobfuscate("function test(a) { return a; } console.log(test('minusone', 0));"),
+            "function test(a) { return a; } console.log('minusone');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_missing_arguments_are_undefined() {
+        assert_eq!(
+            deobfuscate("function test(a, b) { return b; } console.log(test(1));"),
+            "function test(a, b) { return b; } console.log(undefined);"
+        );
     }
 }
