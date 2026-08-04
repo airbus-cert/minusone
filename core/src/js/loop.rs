@@ -4,19 +4,14 @@ use crate::js::Value::{Bool, Str};
 use crate::js::array::flatten_array;
 use crate::js::build_javascript_tree;
 use crate::js::strategy::JavaScriptStrategy;
+use crate::js::subprogram::{build_and_reduce, enter_map_filter, take_seed_result, with_seed};
 use crate::js::utils::{get_positional_arguments, is_write_target, method_name};
 use crate::js::{JavaScript, JavaScriptRuleSet};
 use crate::rule::{RuleMut, RuleSetBuilderType};
-use crate::tree::{ControlFlow, HashMapStorage, Node, NodeMut, Tree};
+use crate::tree::{ControlFlow, Node, NodeMut};
 use log::{trace, warn};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
-
-const MAX_MAP_FILTER_DEPTH: usize = 4;
-
-thread_local! {
-    static MAP_FILTER_DEPTH: Cell<usize> = const { Cell::new(0) };
-}
 
 #[derive(Clone, Copy, PartialEq)]
 enum MapFilterKind {
@@ -417,14 +412,12 @@ impl<'a> RuleMut<'a> for ArrayMapFilter {
             return Ok(());
         }
 
-        if MAP_FILTER_DEPTH.get() >= MAX_MAP_FILTER_DEPTH {
+        let Some(_depth) = enter_map_filter() else {
             warn!("ArrayMapFilter: max recursion depth reached, leaving call unresolved");
             return Ok(());
-        }
+        };
 
-        MAP_FILTER_DEPTH.with(|d| d.set(d.get() + 1));
         let result = Self::apply_callback(kind, input, &cb);
-        MAP_FILTER_DEPTH.with(|d| d.set(d.get() - 1));
 
         if let Some(values) = result {
             trace!(
@@ -441,10 +434,8 @@ impl<'a> RuleMut<'a> for ArrayMapFilter {
 }
 
 const MAX_FOR_ITERATIONS: usize = 20_000;
-pub const MAX_FOR_DEPTH: usize = 3;
 
 thread_local! {
-    static FOR_DEPTH: Cell<usize> = const { Cell::new(0) };
     static FOR_LOOP_ENABLED: Cell<bool> = const { Cell::new(false) };
     static INSIDE_SIMULATED_FOR: Cell<bool> = const { Cell::new(false) };
     static FOR_LOOP_RESULTS: RefCell<HashMap<usize, Vec<(String, JavaScript)>>> =
@@ -452,55 +443,10 @@ thread_local! {
     // arrays hoisted out of the current loop simulation, read in O(1) by name/index, I had to use
     // this trick because most of the time, loops iterate over arrays
     static LOOP_INVARIANTS: RefCell<HashMap<String, JavaScript>> = RefCell::new(HashMap::new());
-    // avoid the old technic of writing vars and the re-parse them on each iterations
-    static LOOP_SEED: RefCell<Option<HashMap<String, JavaScript>>> = RefCell::new(None);
-    static LOOP_RESULT: RefCell<Option<HashMap<String, JavaScript>>> = RefCell::new(None);
 }
 
 fn swap_loop_invariants(next: HashMap<String, JavaScript>) -> HashMap<String, JavaScript> {
     LOOP_INVARIANTS.with(|c| c.replace(next))
-}
-
-fn set_loop_seed(seed: HashMap<String, JavaScript>) {
-    LOOP_SEED.with(|c| *c.borrow_mut() = Some(seed));
-    LOOP_RESULT.with(|c| *c.borrow_mut() = None);
-}
-
-fn clear_loop_seed() {
-    LOOP_SEED.with(|c| *c.borrow_mut() = None);
-    LOOP_RESULT.with(|c| *c.borrow_mut() = None);
-}
-
-fn take_loop_result() -> Option<HashMap<String, JavaScript>> {
-    LOOP_RESULT.with(|c| c.borrow_mut().take())
-}
-
-pub fn is_loop_seed_active() -> bool {
-    LOOP_SEED.with(|c| c.borrow().is_some())
-}
-
-pub fn inject_loop_seed<F: FnMut(&str, &JavaScript)>(mut assign: F) {
-    LOOP_SEED.with(|c| {
-        if let Some(seed) = c.borrow().as_ref() {
-            for (name, value) in seed {
-                assign(name, value);
-            }
-        }
-    });
-}
-
-pub fn capture_loop_result<F: Fn(&str) -> Option<JavaScript>>(read: F) {
-    LOOP_SEED.with(|seed| {
-        let seed = seed.borrow();
-        let Some(seed) = seed.as_ref() else {
-            return;
-        };
-        let captured = seed
-            .keys()
-            .filter_map(|name| read(name).map(|v| (name.clone(), v)))
-            .collect();
-        LOOP_RESULT.with(|r| *r.borrow_mut() = Some(captured));
-    });
 }
 
 pub fn loop_invariant_array_len(name: &str) -> Option<usize> {
@@ -531,18 +477,6 @@ pub fn is_inside_simulated_for() -> bool {
 
 pub fn set_inside_simulated_for(v: bool) {
     INSIDE_SIMULATED_FOR.set(v);
-}
-
-pub fn for_depth_get() -> usize {
-    FOR_DEPTH.get()
-}
-
-pub fn for_depth_inc() {
-    FOR_DEPTH.with(|d| d.set(d.get() + 1));
-}
-
-pub fn for_depth_dec() {
-    FOR_DEPTH.with(|d| d.set(d.get() - 1));
 }
 
 pub fn clear_for_loop_results() {
@@ -743,16 +677,6 @@ fn is_readonly_index_use(occ: &Node<JavaScript>) -> bool {
     }
 }
 
-fn build_and_reduce(src: &str) -> Option<Tree<'_, HashMapStorage<JavaScript>>> {
-    let mut tree = build_javascript_tree(src).ok()?;
-    tree.apply_mut_with_strategy(
-        &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-        JavaScriptStrategy,
-    )
-    .ok()?;
-    Some(tree)
-}
-
 fn last_expression_data(root: &Node<JavaScript>) -> Option<JavaScript> {
     let mut data = None;
     for stmt in root.iter() {
@@ -766,24 +690,14 @@ fn last_expression_data(root: &Node<JavaScript>) -> Option<JavaScript> {
     data
 }
 
-fn with_loop_seed<R>(
-    seed: HashMap<String, JavaScript>,
-    f: impl FnOnce() -> Option<R>,
-) -> Option<R> {
-    set_loop_seed(seed);
-    let result = f();
-    clear_loop_seed();
-    result
-}
-
 fn run_seeded_program(
     program_src: &str,
     seed: HashMap<String, JavaScript>,
 ) -> Option<(HashMap<String, JavaScript>, JavaScript)> {
-    with_loop_seed(seed, || {
+    with_seed(seed, || {
         let tree = build_and_reduce(program_src)?;
         let condition = last_expression_data(&tree.root().ok()?)?;
-        Some((take_loop_result()?, condition))
+        Some((take_seed_result()?, condition))
     })
 }
 
@@ -866,9 +780,9 @@ fn run_seeded_body(
     program_src: &str,
     seed: HashMap<String, JavaScript>,
 ) -> Option<HashMap<String, JavaScript>> {
-    with_loop_seed(seed, || {
+    with_seed(seed, || {
         build_and_reduce(program_src)?;
-        take_loop_result()
+        take_seed_result()
     })
 }
 

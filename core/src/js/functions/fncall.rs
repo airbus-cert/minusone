@@ -2,15 +2,12 @@ use crate::engine::{CleanEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
 use crate::js::JavaScript::Undefined;
-use crate::js::JavaScriptRuleSet;
-use crate::js::Value::{BigInt, Bool, Num, Str};
+use crate::js::Value::{Num, Str};
 use crate::js::backend::JavaScriptBackend;
-use crate::js::build_javascript_tree;
 use crate::js::functions::function::function_value_from_node;
-use crate::js::recursion::GlobalRecursionGuard;
-use crate::js::strategy::JavaScriptStrategy;
+use crate::js::subprogram::{build_and_reduce, enter_fncall, with_seed};
 use crate::js::utils::{get_positional_arguments, js_to_string_value, method_name};
-use crate::rule::{RuleMut, RuleSetBuilderType};
+use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, Node, NodeMut};
 use log::trace;
 use std::collections::{HashMap, HashSet};
@@ -240,116 +237,6 @@ impl FnCall {
         Some(FunctionShape { params, body_inner })
     }
 
-    fn js_value_to_source(value: &JavaScript) -> Option<String> {
-        match value {
-            JavaScript::Raw(Num(n)) => {
-                if n.is_nan() {
-                    Some("NaN".to_string())
-                } else if n.is_infinite() {
-                    Some(if *n > 0.0 { "Infinity" } else { "-Infinity" }.to_string())
-                } else if *n == n.trunc() && n.abs() < 1e16 {
-                    Some(format!("{}", *n as i64))
-                } else {
-                    Some(format!("{}", n))
-                }
-            }
-            JavaScript::Raw(Str(s)) => Some(format!("'{}'", Self::escape_js_string(s))),
-            JavaScript::Raw(Bool(b)) => Some(b.to_string()),
-            JavaScript::Raw(BigInt(b)) => Some(format!("{}n", b)),
-            JavaScript::Undefined => Some("undefined".to_string()),
-            JavaScript::Null => Some("null".to_string()),
-            JavaScript::NaN => Some("NaN".to_string()),
-            JavaScript::Array(items) => {
-                let parts: Option<Vec<String>> =
-                    items.iter().map(Self::js_value_to_source).collect();
-                Some(format!("[{}]", parts?.join(",")))
-            }
-            JavaScript::Object {
-                map,
-                to_string_override,
-            } => {
-                // A custom toString has no object-literal syntax; rendering only
-                // the map would silently drop it.
-                if to_string_override.is_some() {
-                    return None;
-                }
-                // HashMap iteration order is not stable, and the sub-program is
-                // keyed by its source, so sort to keep it reproducible.
-                let mut keys: Vec<&String> = map.keys().collect();
-                keys.sort();
-                let mut parts = Vec::with_capacity(keys.len());
-                for key in keys {
-                    parts.push(format!(
-                        "'{}':{}",
-                        Self::escape_js_string(key),
-                        Self::js_value_to_source(map.get(key)?)?
-                    ));
-                }
-                Some(format!("{{{}}}", parts.join(",")))
-            }
-            JavaScript::Regex { pattern, flags } => {
-                if Self::regex_literal_is_safe(pattern) {
-                    Some(format!("/{}/{}", pattern, flags))
-                } else {
-                    None
-                }
-            }
-            JavaScript::Function { source, .. } => Some(format!("({})", source)),
-            // Bytes / Buffer / Iterator have no literal syntax to round-trip through.
-            _ => None,
-        }
-    }
-
-    /// Whether `pattern` can be re-emitted verbatim between two slashes.
-    ///
-    /// An unescaped `/` would close the literal early and a raw line terminator
-    /// is not allowed inside one at all.
-    fn regex_literal_is_safe(pattern: &str) -> bool {
-        if pattern.is_empty() {
-            return false;
-        }
-        let mut escaped = false;
-        for c in pattern.chars() {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            match c {
-                '\\' => escaped = true,
-                '/' => return false,
-                '\n' | '\r' | '\u{2028}' | '\u{2029}' => return false,
-                _ => {}
-            }
-        }
-        // A trailing backslash would escape the closing slash.
-        !escaped
-    }
-
-    fn escape_js_string(s: &str) -> String {
-        let mut out = String::with_capacity(s.len() + 2);
-        for c in s.chars() {
-            match c {
-                '\\' => out.push_str("\\\\"),
-                '\'' => out.push_str("\\'"),
-                '\n' => out.push_str("\\n"),
-                '\r' => out.push_str("\\r"),
-                '\t' => out.push_str("\\t"),
-                // `\0` followed by a digit would be read back as a legacy octal
-                // escape, so always use the two-digit hex form.
-                '\0' => out.push_str("\\x00"),
-                // U+2028 / U+2029 are line terminators in JS: raw, they break
-                // out of the string literal.
-                '\u{2028}' => out.push_str("\\u2028"),
-                '\u{2029}' => out.push_str("\\u2029"),
-                c if (c as u32) < 0x20 => {
-                    out.push_str(&format!("\\x{:02x}", c as u32));
-                }
-                c => out.push(c),
-            }
-        }
-        out
-    }
-
     fn extract_positional_call_args(call_node: &Node<JavaScript>) -> Option<Vec<JavaScript>> {
         let arguments_node = call_node.named_child("arguments")?;
         let mut args = Vec::new();
@@ -475,27 +362,34 @@ impl FnCall {
         args: &[JavaScript],
         decls: &[(String, String)],
     ) -> Option<JavaScript> {
-        if args.len() > shape.params.len() {
-            return None;
-        }
-
         let mut program = Self::prelude_for(decls, &shape.body_inner);
         if !program.is_empty() {
             program.push('\n');
         }
-
-        for (i, param) in shape.params.iter().enumerate() {
-            let value_src = match args.get(i) {
-                Some(value) => Self::js_value_to_source(value)?,
-                None => "undefined".to_string(),
-            };
-            program.push_str(&format!("var {} = {};\n", param, value_src));
-        }
-
         program.push_str(&shape.body_inner);
         program.push('\n');
 
-        Self::run_subtree_pipeline(&program)
+        // Arguments are handed over through the seed channel rather than
+        // rendered back to source. A value that has no literal syntax (a Buffer,
+        // an iterator, an object with a custom toString) used to abort the whole
+        // resolution; now it just travels as-is.
+        //
+        // Extra arguments are dropped instead of aborting: JS only binds the
+        // first `params.len()` of them (issue #193). `arguments` is not modelled,
+        // so nothing else can observe the ones we drop.
+        let seed = shape
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, param)| {
+                (
+                    param.clone(),
+                    args.get(i).cloned().unwrap_or(JavaScript::Undefined),
+                )
+            })
+            .collect();
+
+        with_seed(seed, || Self::run_subtree_pipeline(&program))
     }
 
     fn stabilise_via_minusone(program: &str) -> Option<String> {
@@ -503,12 +397,7 @@ impl FnCall {
         const SUBTREE_FIXPOINT_ITER_CAP: usize = 8;
         let mut current = cleaned;
         for _ in 0..SUBTREE_FIXPOINT_ITER_CAP {
-            let mut tree = build_javascript_tree(&current).ok()?;
-            tree.apply_mut_with_strategy(
-                &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-                JavaScriptStrategy,
-            )
-            .ok()?;
+            let tree = build_and_reduce(&current)?;
 
             let mut linter = crate::js::linter::Linter::default();
             tree.apply(&mut linter).ok()?;
@@ -531,12 +420,7 @@ impl FnCall {
     fn run_subtree_pipeline(program: &str) -> Option<JavaScript> {
         let stable = Self::stabilise_via_minusone(program)?;
         // Final pass to attach data on the stabilised tree.
-        let mut tree = build_javascript_tree(&stable).ok()?;
-        tree.apply_mut_with_strategy(
-            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-            JavaScriptStrategy,
-        )
-        .ok()?;
+        let tree = build_and_reduce(&stable)?;
         let root = tree.root().ok()?;
         Self::extract_top_level_return_value(&root)
     }
@@ -642,8 +526,12 @@ impl FnCall {
             return Some(shape.clone());
         }
 
+        // `var f = g; var g = h;` chains: bound so a cyclic alias table cannot
+        // spin here. Unrelated to the sub-pipeline depth cap.
+        const MAX_ALIAS_HOPS: usize = 2;
+
         let mut current = name;
-        for _ in 0..crate::js::recursion::DEFAULT_MAX_RECURSION_DEPTH {
+        for _ in 0..MAX_ALIAS_HOPS {
             let next = aliases.get(current)?;
             if let Some(shape) = var_shapes.get(next) {
                 return Some(shape.clone());
@@ -787,12 +675,7 @@ impl FnCall {
     }
 
     fn evaluate_eval_source(source: &str) -> Option<JavaScript> {
-        let mut tree = build_javascript_tree(source).ok()?;
-        tree.apply_mut_with_strategy(
-            &mut JavaScriptRuleSet::new(RuleSetBuilderType::WithoutRules(vec![])),
-            JavaScriptStrategy,
-        )
-        .ok()?;
+        let tree = build_and_reduce(source)?;
         let root = tree.root().ok()?;
         Self::last_statement_value(&root)
     }
@@ -812,7 +695,7 @@ impl FnCall {
 
         let source = Self::eval_source_from_argument(&positional[0])?;
 
-        let _guard = GlobalRecursionGuard::enter()?;
+        let _guard = enter_fncall()?;
         Self::evaluate_eval_source(&source)
     }
 
@@ -845,7 +728,7 @@ impl FnCall {
         shape: &FunctionShape,
         view: &Node<JavaScript>,
     ) -> Option<JavaScript> {
-        let _guard = GlobalRecursionGuard::enter()?;
+        let _guard = enter_fncall()?;
         let args = Self::extract_positional_call_args(view)?;
         Self::evaluate_shape_via_subtree(shape, &args, &self.fn_decls)
     }
@@ -855,7 +738,7 @@ impl FnCall {
         view: &Node<JavaScript>,
         fn_name: &str,
     ) -> Option<JavaScript> {
-        let _guard = GlobalRecursionGuard::enter()?;
+        let _guard = enter_fncall()?;
         Self::resolve_identifier_call_semantic_fallback(view, fn_name)
     }
 
@@ -865,7 +748,7 @@ impl FnCall {
         base: &str,
         key: &str,
     ) -> Option<JavaScript> {
-        let _guard = GlobalRecursionGuard::enter()?;
+        let _guard = enter_fncall()?;
         Self::resolve_member_call_semantic_fallback(view, base, key)
     }
 }
@@ -1396,44 +1279,20 @@ mod tests {
     }
 
     #[test]
-    fn test_escape_js_string_escapes_line_separators() {
-        // U+2028 / U+2029 are line terminators: raw, they break the literal.
-        assert_eq!(FnCall::escape_js_string("a\u{2028}b"), "a\\u2028b");
-        assert_eq!(FnCall::escape_js_string("a\u{2029}b"), "a\\u2029b");
-        // `\0` before a digit must not become a legacy octal escape.
-        assert_eq!(FnCall::escape_js_string("\u{0}1"), "\\x001");
+    fn test_fncall_ignores_extra_arguments() {
+        // issue #193: JS binds the first `params.len()` arguments and drops the
+        // rest, it does not refuse the call.
+        assert_eq!(
+            deobfuscate("function test(a) { return a; } console.log(test('minusone', 0));"),
+            "function test(a) { return a; } console.log('minusone');"
+        );
     }
 
     #[test]
-    fn test_regex_literal_is_safe() {
-        assert!(FnCall::regex_literal_is_safe("ab+c"));
-        assert!(FnCall::regex_literal_is_safe("a\\/b"));
-        assert!(!FnCall::regex_literal_is_safe("a/b"));
-        assert!(!FnCall::regex_literal_is_safe("a\nb"));
-        assert!(!FnCall::regex_literal_is_safe("a\\"));
-        assert!(!FnCall::regex_literal_is_safe(""));
-    }
-
-    #[test]
-    fn test_js_value_to_source_covers_special_values() {
-        use crate::js::JavaScript;
-
+    fn test_fncall_missing_arguments_are_undefined() {
         assert_eq!(
-            FnCall::js_value_to_source(&JavaScript::Undefined).as_deref(),
-            Some("undefined")
-        );
-        assert_eq!(
-            FnCall::js_value_to_source(&JavaScript::Null).as_deref(),
-            Some("null")
-        );
-        assert_eq!(
-            FnCall::js_value_to_source(&JavaScript::NaN).as_deref(),
-            Some("NaN")
-        );
-        // No literal syntax to round-trip through.
-        assert_eq!(
-            FnCall::js_value_to_source(&JavaScript::Buffer(vec![1, 2])),
-            None
+            deobfuscate("function test(a, b) { return b; } console.log(test(1));"),
+            "function test(a, b) { return b; } console.log(undefined);"
         );
     }
 
