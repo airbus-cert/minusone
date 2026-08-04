@@ -1,0 +1,15 @@
+mod access_tests;
+mod array_tests;
+mod bool_tests;
+mod cast_tests;
+mod cmdlets_tests;
+mod crypto_tests;
+mod encoding_tests;
+mod foreach_tests;
+mod integer_tests;
+mod linter_tests;
+mod loops_tests;
+mod method_tests;
+mod string_tests;
+mod switch_tests;
+mod var_tests;
