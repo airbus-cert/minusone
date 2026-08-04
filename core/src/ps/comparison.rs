@@ -121,22 +121,22 @@ pub fn infer_comparison(
 
         // number to string comparison
         (Some(Raw(Num(left_value))), "-eq", Some(Raw(Str(right_value)))) => {
-            Some(left_value.to_string() == *right_value)
+            Some(*left_value == Str(right_value.clone()).to_i64()?)
         }
         (Some(Raw(Num(left_value))), "-ne", Some(Raw(Str(right_value)))) => {
-            Some(left_value.to_string() != *right_value)
+            Some(*left_value != Str(right_value.clone()).to_i64()?)
         }
         (Some(Raw(Num(left_value))), "-ge", Some(Raw(Str(right_value)))) => {
-            Some(left_value.to_string() >= *right_value)
+            Some(*left_value >= Str(right_value.clone()).to_i64()?)
         }
         (Some(Raw(Num(left_value))), "-gt", Some(Raw(Str(right_value)))) => {
-            Some(left_value.to_string() > *right_value)
+            Some(*left_value > Str(right_value.clone()).to_i64()?)
         }
         (Some(Raw(Num(left_value))), "-le", Some(Raw(Str(right_value)))) => {
-            Some(left_value.to_string() <= *right_value)
+            Some(*left_value <= Str(right_value.clone()).to_i64()?)
         }
         (Some(Raw(Num(left_value))), "-lt", Some(Raw(Str(right_value)))) => {
-            Some(left_value.to_string() < *right_value)
+            Some(*left_value < Str(right_value.clone()).to_i64()?)
         }
 
         _ => None,
