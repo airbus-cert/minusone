@@ -5,6 +5,7 @@ use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
 use crate::ps::utils::conversion::*;
 use crate::ps::utils::string::*;
+use crate::regex::RegexBuilder;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
 use log::trace;
@@ -743,11 +744,13 @@ impl<'a> RuleMut<'a> for StringReplaceOp {
                 operator.text()?.to_lowercase().as_str(),
                 right_expression.data(),
             ) {
-                (Some(Raw(Str(src))), "-replace", Some(Array(params)))
-                | (Some(Raw(Str(src))), "-creplace", Some(Array(params))) => {
-                    // -replace operator need two params
-                    if let (Some(Str(old)), Some(Str(new))) = (params.first(), params.get(1)) {
-                        node.reduce(Raw(Str(src.replace(old, new))));
+                (Some(Raw(Str(src))), op @ ("-replace" | "-creplace"), Some(Array(params))) => {
+                    if let (Some(Str(pattern)), Some(Str(new))) = (params.first(), params.get(1))
+                        && let Ok(re) = RegexBuilder::new(pattern)
+                            .case_insensitive(op == "-replace")
+                            .build()
+                    {
+                        node.reduce(Raw(Str(re.replace_all(src, new.as_str()).into_owned())));
                     }
                 }
                 _ => (),
@@ -1225,6 +1228,56 @@ mod test {
                 .data()
                 .expect("Inferred type"),
             Raw(Str("hello toto".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_replace_operator_regex() {
+        let mut tree =
+            build_powershell_tree("'ACLAX1300ServerNonUnicode' -replace '([A-Z])(\\d)', '$1 $2'")
+                .unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringReplaceOp::default(),
+            ParseArrayLiteral::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("ACLAX 1300ServerNonUnicode".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_creplace_operator_case_sensitive() {
+        let mut tree = build_powershell_tree("'abcABC' -creplace 'abc', 'x'").unwrap();
+        tree.apply_mut(&mut (
+            ParseString::default(),
+            Forward::default(),
+            StringReplaceOp::default(),
+            ParseArrayLiteral::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            *tree
+                .root()
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .child(0)
+                .unwrap()
+                .data()
+                .expect("Inferred type"),
+            Raw(Str("xABC".to_string()))
         );
     }
 
