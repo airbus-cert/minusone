@@ -2,6 +2,7 @@
 mod tests_js_integer {
     use crate::js::array::ParseArray;
     use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
     use crate::js::integer::*;
     use crate::js::linter::Linter;
     use crate::js::string::ParseString;
@@ -12,7 +13,9 @@ mod tests_js_integer {
             ParseInt::default(),
             ParseString::default(),
             ParseArray::default(),
+            NumberBuiltins::default(),
             PosNeg::default(),
+            Forward::default(),
             AddInt::default(),
             Substract::default(),
             IncrDecr::default(),
@@ -195,6 +198,231 @@ mod tests_js_integer {
         assert_eq!(
             deobfuscate("for (var i = 0; i < 10; --i) {}"),
             "for (var i = 0; i < 10; --i) {}"
+        );
+    }
+
+    #[test]
+    fn test_builtin_value_of() {
+        assert_eq!(deobfuscate("var x = 12.34.valueOf();"), "var x = 12.34;");
+        assert_eq!(deobfuscate("var x = 12.34['valueOf']();"), "var x = 12.34;");
+    }
+
+    #[test]
+    fn test_builtin_to_precision() {
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision();"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(1);"),
+            "var x = '1e+1';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(2);"),
+            "var x = '12';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(4);"),
+            "var x = '12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(6);"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toPrecision(8);"),
+            "var x = '12.345600';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toPrecision(1);"), "var x = '0';");
+        assert_eq!(
+            deobfuscate("var x = (0).toPrecision(4);"),
+            "var x = '0.000';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toPrecision(4);"),
+            "var x = '-12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toPrecision(1);"),
+            "var x = '-1e+1';"
+        );
+        assert_eq!(
+            // output '0.0000000' instead of '0.0000012'
+            deobfuscate("var x = (0.000001234).toPrecision(2);"),
+            "var x = '0.0000012';"
+        );
+        assert_eq!(
+            // output '0e-7' instead of '1e-7'
+            deobfuscate("var x = (0.0000001).toPrecision(1);"),
+            "var x = '1e-7';"
+        );
+        assert_eq!(
+            // output '0.000000' instead of '0.000001'
+            deobfuscate("var x = (0.000001).toPrecision(1);"),
+            "var x = '0.000001';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (123456789).toPrecision(4);"),
+            "var x = '1.235e+8';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (9.9999).toPrecision(1);"),
+            "var x = '1e+1';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toPrecision(3);"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toPrecision(3);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toPrecision(0);"),
+            "var x = 1.5.toPrecision(0);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toPrecision(101);"),
+            "var x = 1.5.toPrecision(101);"
+        );
+    }
+
+    #[test]
+    fn test_builtin_to_fixed() {
+        assert_eq!(deobfuscate("var x = 12.3456.toFixed();"), "var x = '12';");
+        assert_eq!(deobfuscate("var x = (1.005).toFixed();"), "var x = '1';");
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toFixed(2);"),
+            "var x = '12.35';"
+        );
+        assert_eq!(
+            deobfuscate("var x = 12.3456.toFixed(4);"),
+            "var x = '12.3456';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(4);"),
+            "var x = '1.5000';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toFixed(3);"), "var x = '0.000';");
+        assert_eq!(deobfuscate("var x = (1.9).toFixed(0);"), "var x = '2';");
+        assert_eq!(deobfuscate("var x = (1.1).toFixed(0);"), "var x = '1';");
+        assert_eq!(deobfuscate("var x = (-1.5).toFixed(0);"), "var x = '-2';");
+        assert_eq!(
+            deobfuscate("var x = (-12.3456).toFixed(2);"),
+            "var x = '-12.35';"
+        );
+        assert_eq!(deobfuscate("var x = (0).toFixed(0);"), "var x = '0';");
+        assert_eq!(
+            deobfuscate("var x = (-0).toFixed(2);"),
+            "var x = '0.00';" // -0 has no sign in output per spec step 9
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.000001).toFixed(8);"),
+            "var x = '0.00000100';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1e15).toFixed(0);"),
+            "var x = '1000000000000000';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1e21).toFixed(2);"),
+            "var x = '1e+21';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5e21).toFixed(0);"),
+            "var x = '1.5e+21';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toFixed(2);"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toFixed(2);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(-1);"),
+            "var x = 1.5.toFixed(-1);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toFixed(101);"),
+            "var x = 1.5.toFixed(101);"
+        );
+    }
+
+    #[test]
+    fn test_builtin_to_exponential() {
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential();"),
+            "var x = '1.23456789e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (100).toExponential();"),
+            "var x = '1e+2';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential();"),
+            "var x = '1.5e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(2);"),
+            "var x = '1.23e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(6);"),
+            "var x = '1.234568e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (12345.6789).toExponential(0);"),
+            "var x = '1e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(4);"),
+            "var x = '1.5000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0).toExponential();"),
+            "var x = '0e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0).toExponential(3);"),
+            "var x = '0.000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-12345.6789).toExponential(2);"),
+            "var x = '-1.23e+4';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-0.00123).toExponential(2);"),
+            "var x = '-1.23e-3';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.00123).toExponential(2);"),
+            "var x = '1.23e-3';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (0.0000001).toExponential(1);"),
+            "var x = '1.0e-7';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (5).toExponential(3);"),
+            "var x = '5.000e+0';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (Infinity).toExponential();"),
+            "var x = 'Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (-Infinity).toExponential(2);"),
+            "var x = '-Infinity';"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(-1);"),
+            "var x = 1.5.toExponential(-1);"
+        );
+        assert_eq!(
+            deobfuscate("var x = (1.5).toExponential(101);"),
+            "var x = 1.5.toExponential(101);"
         );
     }
 }

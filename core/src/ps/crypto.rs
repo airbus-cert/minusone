@@ -132,7 +132,7 @@ fn aes_cfb8_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-fn aes_cfb8_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn aes_cfb8_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Option<Vec<u8>> {
     let mut buf = data.to_vec();
     match key.len() {
         16 => cfb8::Encryptor::<Aes128>::new_from_slices(key, iv)
@@ -149,7 +149,7 @@ fn aes_cfb8_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-fn aes_transform(state: &AesState, is_decrypt: bool, data: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn aes_transform(state: &AesState, is_decrypt: bool, data: &[u8]) -> Option<Vec<u8>> {
     let key = state.key.as_ref()?;
     let mode = state.mode.unwrap_or(AesMode::Cbc);
     let padding = state.padding.unwrap_or(AesPadding::Pkcs7);
@@ -519,177 +519,5 @@ impl<'a> RuleMut<'a> for AesTransformFinalBlock {
             node.set(Bytes(result));
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::ps::Powershell::Bytes;
-    use crate::ps::build_powershell_tree;
-    use crate::ps::crypto::{AesState, AesTransformFinalBlock, AesType};
-    use crate::ps::encoding::{EncodingGetBytes, EncodingType};
-    use crate::ps::forward::Forward;
-    use crate::ps::integer::ParseInt;
-    use crate::ps::method::DecodeBase64;
-    use crate::ps::string::ParseString;
-    use crate::ps::typing::ParseType;
-    use crate::ps::var::Var;
-    use base64::{Engine as _, engine::general_purpose};
-
-    fn root_data(
-        tree: &crate::tree::Tree<crate::tree::HashMapStorage<crate::ps::Powershell>>,
-    ) -> crate::ps::Powershell {
-        tree.root()
-            .unwrap()
-            .child(0)
-            .unwrap()
-            .child(0)
-            .unwrap()
-            .data()
-            .expect("Inferred type")
-            .clone()
-    }
-
-    #[test]
-    fn test_aes_decrypt_new_object() {
-        let mut tree = build_powershell_tree(
-            r#"(New-Object System.Security.Cryptography.AesManaged).CreateDecryptor([System.text.encoding]::UTF8.GetBytes("0123456789abcdef"), [System.text.encoding]::UTF8.GetBytes("abcdef0123456789")).TransformFinalBlock([Convert]::FromBase64String("H6eyhfvPHCP9VlON0Wfk9cx+9TT3kIu2PZ4DdCcvAaY="), 0, 32)"#,
-        )
-        .unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            ParseType::default(),
-            ParseString::default(),
-            ParseInt::default(),
-            EncodingType::default(),
-            EncodingGetBytes::default(),
-            DecodeBase64::default(),
-            AesType::default(),
-            AesTransformFinalBlock::default(),
-        ))
-        .unwrap();
-
-        // ASCII codes of "Hello, minusone!"
-        assert_eq!(
-            root_data(&tree),
-            Bytes(vec![
-                72, 101, 108, 108, 111, 44, 32, 109, 105, 110, 117, 115, 111, 110, 101, 33
-            ])
-        );
-    }
-
-    #[test]
-    fn test_aes_decrypt_new_syntax() {
-        let mut tree = build_powershell_tree(
-            r#"[System.Security.Cryptography.AesManaged]::new().CreateDecryptor([System.text.encoding]::UTF8.GetBytes("0123456789abcdef"), [System.text.encoding]::UTF8.GetBytes("abcdef0123456789")).TransformFinalBlock([Convert]::FromBase64String("H6eyhfvPHCP9VlON0Wfk9cx+9TT3kIu2PZ4DdCcvAaY="), 0, 32)"#,
-        )
-        .unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            ParseType::default(),
-            ParseString::default(),
-            ParseInt::default(),
-            EncodingType::default(),
-            EncodingGetBytes::default(),
-            DecodeBase64::default(),
-            AesType::default(),
-            AesTransformFinalBlock::default(),
-        ))
-        .unwrap();
-
-        assert_eq!(
-            root_data(&tree),
-            Bytes(vec![
-                72, 101, 108, 108, 111, 44, 32, 109, 105, 110, 117, 115, 111, 110, 101, 33
-            ])
-        );
-    }
-
-    #[test]
-    fn test_aes_encrypt_round_trip_via_create() {
-        let mut tree = build_powershell_tree(
-            r#"[System.Security.Cryptography.Aes]::Create().CreateEncryptor([System.text.encoding]::UTF8.GetBytes("0123456789abcdef"), [System.text.encoding]::UTF8.GetBytes("abcdef0123456789")).TransformFinalBlock([System.text.encoding]::UTF8.GetBytes("secretmsg"), 0, 9)"#,
-        )
-        .unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            ParseType::default(),
-            ParseString::default(),
-            ParseInt::default(),
-            EncodingType::default(),
-            EncodingGetBytes::default(),
-            AesType::default(),
-            AesTransformFinalBlock::default(),
-        ))
-        .unwrap();
-
-        let Bytes(ciphertext) = root_data(&tree) else {
-            panic!("Expected Bytes")
-        };
-
-        let plaintext = super::aes_transform(
-            &AesState {
-                key: Some(b"0123456789abcdef".to_vec()),
-                iv: Some(b"abcdef0123456789".to_vec()),
-                mode: None,
-                padding: None,
-                is_decrypt: Some(true),
-            },
-            true,
-            &ciphertext,
-        )
-        .unwrap();
-        assert_eq!(plaintext, b"secretmsg");
-    }
-
-    #[test]
-    fn test_aes_decrypt_via_property_assignment_cfb() {
-        let key = b"0123456789abcdef";
-        let iv = b"abcdef0123456789";
-        let plaintext = b"synthetic-msg!!!"; // 16 bytes, block-aligned so CFB8 needs no padding talk
-        let ciphertext = super::aes_cfb8_encrypt(key, iv, plaintext).unwrap();
-        let ciphertext_b64 = general_purpose::STANDARD.encode(&ciphertext);
-
-        let source = format!(
-            r#"
-$aes = New-Object System.Security.Cryptography.AesCryptoServiceProvider
-$aes.Mode = [System.Security.Cryptography.CipherMode]::CFB
-$aes.Padding = [System.Security.Cryptography.PaddingMode]::None
-$aes.Key = [System.text.encoding]::UTF8.GetBytes("0123456789abcdef")
-$aes.IV = [System.text.encoding]::UTF8.GetBytes("abcdef0123456789")
-$decryptor = $aes.CreateDecryptor()
-$decryptor.TransformFinalBlock([Convert]::FromBase64String("{}"), 0, {})
-"#,
-            ciphertext_b64,
-            ciphertext.len()
-        );
-
-        let mut tree = build_powershell_tree(&source).unwrap();
-        tree.apply_mut(&mut (
-            Forward::default(),
-            ParseType::default(),
-            ParseString::default(),
-            ParseInt::default(),
-            EncodingType::default(),
-            EncodingGetBytes::default(),
-            DecodeBase64::default(),
-            AesType::default(),
-            AesTransformFinalBlock::default(),
-            Var::default(),
-        ))
-        .unwrap();
-
-        let last_statement = tree
-            .root()
-            .unwrap()
-            .child(0)
-            .unwrap()
-            .child(6)
-            .unwrap()
-            .data()
-            .expect("Inferred type")
-            .clone();
-
-        assert_eq!(last_statement, Bytes(plaintext.to_vec()));
     }
 }

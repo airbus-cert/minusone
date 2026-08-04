@@ -1,0 +1,255 @@
+#[cfg(test)]
+mod test_fncall {
+    use crate::js::build_javascript_tree;
+    use crate::js::forward::Forward;
+    use crate::js::functions::fncall::FnCall;
+    use crate::js::functions::function::ParseFunction;
+    use crate::js::integer::{AddInt, ParseInt};
+    use crate::js::linter::Linter;
+    use crate::js::objects::object::{ObjectField, ParseObject};
+    use crate::js::strategy::JavaScriptStrategy;
+    use crate::js::string::ParseString;
+    use crate::js::var::Var;
+
+    fn deobfuscate(input: &str) -> String {
+        let mut tree = build_javascript_tree(input).unwrap();
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                AddInt::default(),
+                ParseString::default(),
+                ParseFunction::default(),
+                ParseObject::default(),
+                Forward::default(),
+                ObjectField::default(),
+                Var::default(),
+                FnCall::default(),
+            ),
+            JavaScriptStrategy::default(),
+        )
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+        linter.output
+    }
+
+    #[test]
+    fn test_fncall_simple_string_return() {
+        assert_eq!(
+            deobfuscate("function test() { return 'hello'; } console.log(test());"),
+            "function test() { return 'hello'; } console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_fontcolor_with_arg() {
+        assert_eq!(
+            deobfuscate("console.log('minusone'.fontcolor('red'));"),
+            "console.log('<font color=\"red\">minusone</font>');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_fontcolor_escapes_quote_in_arg() {
+        assert_eq!(
+            deobfuscate("console.log(''.fontcolor('0false\"'));"),
+            "console.log('<font color=\"0false&quot;\"></font>');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_simple_int_return() {
+        assert_eq!(
+            deobfuscate("function getValue() { return 42; } var x = getValue();"),
+            "function getValue() { return 42; } var x = 42;"
+        );
+    }
+
+    #[test]
+    fn test_fncall_with_var_inside() {
+        assert_eq!(
+            deobfuscate("function test() { var a = 'hello'; return a; } console.log(test());"),
+            "function test() { var a = 'hello'; return 'hello'; } console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_resolves_param_dependent_return() {
+        // issue #152 explicitly asks for parametric calls to resolve
+        assert_eq!(
+            deobfuscate("function test(x) { return x; } console.log(test('hello'));"),
+            "function test(x) { return x; } console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_resolve_param_independent_return() {
+        assert_eq!(
+            deobfuscate("function test(x) { console.log(x); return 1; } var a = test(7);"),
+            "function test(x) { console.log(x); return 1; } var a = 1;"
+        );
+    }
+
+    #[test]
+    fn test_fncall_resolve_with_args_when_return_is_constant() {
+        assert_eq!(
+            deobfuscate("function test() { return 'hello'; } console.log(test('unused'));"),
+            "function test() { return 'hello'; } console.log('hello');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_constant_conditional_resolves() {
+        // a constant `if (true)` now picks the then-branch
+        assert_eq!(
+            deobfuscate(
+                "function test() { if (true) { return 'a'; } return 'b'; } console.log(test());"
+            ),
+            "function test() { if (true) { return 'a'; } return 'b'; } console.log('a');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_opaque_conditional_does_not_resolve() {
+        // The if-condition refers to an undefined free identifier, so neither
+        // branch can be picked statically. The call must be left intact - we
+        // must NOT silently pick the trailing `return 'B'`.
+        let output = deobfuscate(
+            "function test(x) { if (someUnknownGlobal) { return 'A'; } return 'B'; } console.log(test(1));",
+        );
+        assert!(
+            output.ends_with("console.log(test(1));"),
+            "expected unresolved call, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_fncall_no_return_not_resolved() {
+        assert_eq!(
+            deobfuscate("function test() { var a = 1; } console.log(test());"),
+            "function test() { var a = 1; } console.log(test());"
+        );
+    }
+
+    #[test]
+    fn test_fncall_nested_function_scope() {
+        assert_eq!(
+            deobfuscate(
+                "function outer() { function inner() { return 'inner'; } return 'outer'; } console.log(outer());"
+            ),
+            "function outer() { function inner() { return 'inner'; } return 'outer'; } console.log('outer');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_expression_return() {
+        assert_eq!(
+            deobfuscate("function test() { return 1 + 2; } console.log(test());"),
+            "function test() { return 3; } console.log(3);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_unknown_return_not_resolved() {
+        assert_eq!(
+            deobfuscate("function test() { return foo(); } console.log(test());"),
+            "function test() { return foo(); } console.log(test());"
+        );
+    }
+
+    #[test]
+    fn test_fncall_object_stored_function_constant_return() {
+        // The `;` after the function expression is required: without it this is
+        // not valid JS (tree-sitter produces an ERROR node around `a`) and the
+        // assignment target cannot be recovered structurally.
+        assert_eq!(
+            deobfuscate(
+                "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(a.t());"
+            ),
+            "let a = {}; let x = function (params) { return 0; }; a.t = x; console.log(0);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_object_stored_function_param_dependent_return() {
+        assert_eq!(
+            deobfuscate(
+                "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(a.t(1)); console.log(a.t(2));"
+            ),
+            "let a = {}; let x = function (n) { return n+1; }; a.t = x; console.log(2); console.log(3);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_self_redefining_function() {
+        let output = deobfuscate(
+            "function _0x45a5(){return(_0x45a5=function(){return'minusone'})()}console.log(_0x45a5());",
+        );
+
+        assert!(output.ends_with("console.log('minusone');"));
+    }
+
+    #[test]
+    fn test_fncall_nested_call_through_prelude() {
+        // `b`'s body reaches `a`, so the sub-program must still carry `a`'s
+        // declaration even though the prelude is filtered.
+        assert_eq!(
+            deobfuscate(
+                "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(b(2));"
+            ),
+            "function a(x) { return x * 2; } function b(y) { return a(y) + 3; } console.log(7);"
+        );
+    }
+
+    #[test]
+    fn test_prelude_for_keeps_only_reachable_declarations() {
+        let decls = vec![
+            ("a".to_string(), "function a(x) { return x; }".to_string()),
+            ("b".to_string(), "function b(y) { return y; }".to_string()),
+        ];
+
+        let prelude = FnCall::prelude_for(&decls, "return a(1);");
+        assert!(prelude.contains("function a"));
+        assert!(!prelude.contains("function b"));
+
+        assert_eq!(FnCall::prelude_for(&decls, "return 1;"), "");
+    }
+
+    #[test]
+    fn test_prelude_for_is_transitive() {
+        let decls = vec![
+            ("a".to_string(), "function a(x) { return x * 2; }".to_string()),
+            (
+                "b".to_string(),
+                "function b(y) { return a(y) + 3; }".to_string(),
+            ),
+            ("c".to_string(), "function c(z) { return z; }".to_string()),
+        ];
+
+        // The body only names `b`, but `b` reaches `a`.
+        let prelude = FnCall::prelude_for(&decls, "return b(1);");
+        assert!(prelude.contains("function a"));
+        assert!(prelude.contains("function b"));
+        assert!(!prelude.contains("function c"));
+    }
+
+    #[test]
+    fn test_fncall_ignores_extra_arguments() {
+        // issue #193: JS binds the first `params.len()` arguments and drops the
+        // rest, it does not refuse the call.
+        assert_eq!(
+            deobfuscate("function test(a) { return a; } console.log(test('minusone', 0));"),
+            "function test(a) { return a; } console.log('minusone');"
+        );
+    }
+
+    #[test]
+    fn test_fncall_missing_arguments_are_undefined() {
+        assert_eq!(
+            deobfuscate("function test(a, b) { return b; } console.log(test(1));"),
+            "function test(a, b) { return b; } console.log(undefined);"
+        );
+    }
+}
