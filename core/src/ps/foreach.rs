@@ -29,7 +29,9 @@ fn is_foreach_command<'a>(command: &Node<'a, Powershell>) -> bool {
     command.kind() == "command"
         && match command.named_child("command_name") {
             Some(n) => matches!(
-                n.text().unwrap().to_lowercase().as_str(),
+                crate::ps::cmdlets::resolved_command_name(&n)
+                    .unwrap_or_default()
+                    .as_str(),
                 "foreach-object" | "foreach" | "%"
             ),
             _ => false,

@@ -573,7 +573,7 @@ fn array_item_to_u8(value: &JavaScript) -> u8 {
         }
         Array(_) | Regex { .. } | Function { .. } | Object { .. } => f64::NAN,
         Raw(_) => f64::NAN,
-        Iterator { .. } => f64::NAN,
+        Iterator { .. } | ForLoopResult(_) => f64::NAN,
     };
 
     to_uint8(number)

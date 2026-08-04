@@ -1,23 +1,24 @@
+use self::access::*;
+use self::array::*;
+use self::bool::*;
+use self::cast::*;
+use self::cmdlets::*;
+use self::compression::*;
+use self::crypto::*;
+use self::encoding::*;
+use self::foreach::*;
+use self::forward::*;
+use self::hash::*;
+use self::integer::*;
+use self::join::*;
+use self::linter::*;
+use self::loops::*;
+use self::method::*;
+use self::string::*;
+use self::switch::*;
+use self::typing::*;
+use self::var::*;
 use crate::error::{Error, MinusOneResult};
-use crate::ps::access::{AccessArray, AccessHashMap, AccessString};
-use crate::ps::array::{AddArray, ComputeArrayExpr, NewObjectArray, ParseArrayLiteral, ParseRange};
-use crate::ps::bool::{BoolAlgebra, Comparison, Not, ParseBool};
-use crate::ps::cast::{Cast, CastNull};
-use crate::ps::foreach::{ForEach, PSItemInferrator};
-use crate::ps::forward::Forward;
-use crate::ps::hash::ParseHash;
-use crate::ps::integer::{AddInt, MultInt, ParseInt};
-use crate::ps::join::{JoinComparison, JoinOperator, JoinStringMethod};
-use crate::ps::linter::RemoveComment;
-use crate::ps::loops::{ForStatementCondition, ForStatementFlowControl};
-use crate::ps::method::{DecodeBase64, FromUTF, Length};
-use crate::ps::string::{
-    ConcatString, FormatString, ParseString, StringReplaceMethod, StringReplaceOp,
-    StringSplitMethod,
-};
-use crate::ps::switch::Switch;
-use crate::ps::typing::ParseType;
-use crate::ps::var::{StaticVar, Var};
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
 use std::collections::BTreeMap;
@@ -29,7 +30,11 @@ pub mod array;
 pub mod backend;
 pub mod bool;
 pub mod cast;
+pub mod cmdlets;
 pub mod comparison;
+pub mod compression;
+pub mod crypto;
+pub mod encoding;
 pub mod foreach;
 pub mod forward;
 pub mod hash;
@@ -45,6 +50,7 @@ pub mod switch;
 mod tool;
 pub mod trace;
 pub mod typing;
+pub mod utils;
 pub mod var;
 //todo: add : mod r#static;
 
@@ -116,6 +122,9 @@ pub enum Powershell {
     HashMap(BTreeMap<Value, Value>),
     HashEntry(Value, Value),
     Type(String), // Will infer type
+    Bytes(Vec<u8>),
+    Crypto(AesState), // Tracks a partially/fully configured AES algorithm or transform object
+    Stream(Vec<u8>),  // Tracks a Stream/StreamReader object backed by a known byte buffer
     Unknown,
 }
 
@@ -150,13 +159,14 @@ macro_rules! impl_powershell_ruleset {
 }
 
 impl_powershell_ruleset!(
-    Forward,      // Special rule that will forward inferred value in case the node is transparent
-    ParseInt,     // Parse integer
-    AddInt,       // +, - operations on integer
-    MultInt,      // *, / operations on integer
-    ParseString,  // Parse string token, including multiline strings
-    ConcatString, // String concatenation operation
-    Cast,         // cast operation, like [char]0x65
+    Forward, // Special rule that will forward inferred value in case the node is transparent
+    WildcardCmdlet, // Resolve wildcarded cmdlet/function/alias names (I*-Ex*) to their canonical form
+    ParseInt,       // Parse integer
+    AddInt,         // +, - operations on integer
+    MultInt,        // *, / operations on integer
+    ParseString,    // Parse string token, including multiline strings
+    ConcatString,   // String concatenation operation
+    Cast,           // cast operation, like [char]0x65
     ParseArrayLiteral, // It will parse array declared using separate value (integer or string) by a comma
     ParseRange,        // It will parse .. operator and generate an array
     AccessString,      // The access operator [] apply to a string : "foo"[0] => "f"
@@ -165,9 +175,9 @@ impl_powershell_ruleset!(
     JoinOperator, // It will infer join string operation using the -join unary operator -join @('a', 'b', 'c')
     PSItemInferrator, // PsItem is used to inferred commandlet pattern like % { [char] $_ }
     ForEach,      // It will used PSItem rules to inferred foreach-object command
-    StringReplaceMethod, // It will infer replace method apply to a string : "foo".replace("oo", "aa") => "faa"
-    ComputeArrayExpr,    // It will infer array that start with @
-    NewObjectArray,      // Infers arrays constructed via New-Object cmdlet
+    StringBuiltins, // Centralized dispatcher for string builtins : ToLower, ToUpper, Replace, ...
+    ComputeArrayExpr, // It will infer array that start with @
+    NewObjectArray, // Infers arrays constructed via New-Object cmdlet
     StringReplaceOp, // It will infer replace method apply to a string by using the -replace operator
     StaticVar,       // It will infer value of known variable : $pshome, $shellid
     CastNull,        // It will infer value of +$() or -$() which will produce 0
@@ -178,7 +188,14 @@ impl_powershell_ruleset!(
     Not,          // It will infer the ! operator
     ParseType,    // Parse type
     DecodeBase64, // Decode calls to FromBase64
-    FromUTF,      // Decode calls to FromUTF{8,16}.GetText
+    AesType,      // Resolve AES algorithm objects and CreateDecryptor/CreateEncryptor(key, iv)
+    AesTransformFinalBlock, // Decode/encode calls to TransformFinalBlock(bytes, offset, count)
+    StreamType,   // Resolve MemoryStream/GzipStream/DeflateStream/ZLibStream/StreamReader objects
+    StreamReadToEnd, // Decode calls to StreamReader.ReadToEnd()
+    EncodingType, // Resolve [System.Text.Encoding] statics, constructors and GetEncoding(...)
+    EncodingGetString, // Decode calls to Encoding.GetString(byte[])
+    EncodingGetBytes, // Encode calls to Encoding.GetBytes(string)
+    NewStringMethod, // Infer [System.String]::new(@(char codes)) constructor
     Length,       // Decode attribute length of string and array
     BoolAlgebra,  // Add support to boolean algebra (or and)
     Var,          // Variable replacement in case of predictable flow

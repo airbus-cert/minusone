@@ -1179,15 +1179,6 @@ impl<'a> RuleMut<'a> for ShiftInt {
         if let (Some(left), Some(op), Some(right)) = (view.child(0), view.child(1), view.child(2)) {
             match (left.data(), op.text()?, right.data()) {
                 // JS always truncate to 32 bits to do shifts
-                (Some(Raw(Num(l))), ">>", Some(Raw(Num(r)))) => {
-                    let shift = (*r as i32 as u32) % 32;
-                    let result = (*l as i32).wrapping_shr(shift);
-                    trace!(
-                        "ShiftInt (L): 0X{:x} >> 0x{:x} = 0X{:x}",
-                        *l as i32, *r as i64, result
-                    );
-                    node.reduce(Raw(Num(result as f64)));
-                }
                 (Some(Raw(BigInt(l))), ">>", Some(r)) => {
                     if let Raw(BigInt(r)) = r {
                         if let Some(shift) = r.to_u32() {
@@ -1219,15 +1210,6 @@ impl<'a> RuleMut<'a> for ShiftInt {
                             l, r
                         );
                     }
-                }
-                (Some(Raw(Num(l))), "<<", Some(Raw(Num(r)))) => {
-                    let shift = (*r as i32 as u32) % 32;
-                    let result = (*l as i32).wrapping_shl(shift);
-                    trace!(
-                        "ShiftInt (L): 0X{:x} << 0X{:x} = 0X{:x}",
-                        *l as i32, *r as i64, result
-                    );
-                    node.reduce(Raw(Num(result as f64)));
                 }
                 (Some(Raw(BigInt(l))), "<<", Some(r)) => {
                     if let Raw(BigInt(r)) = r {
@@ -1261,14 +1243,22 @@ impl<'a> RuleMut<'a> for ShiftInt {
                         );
                     }
                 }
-                (Some(Raw(Num(l))), ">>>", Some(Raw(Num(r)))) => {
-                    // f64 -> u32 then u32 -> i32 is required to avoid saturating the cast
-                    let shift = (*r as i32 as u32) % 32;
-                    let result = (*l as i32 as u32).wrapping_shr(shift);
-                    trace!(
-                        "ShiftInt (L): 0X{:x} >>> 0X{:x} = 0X{:x}",
-                        *l as i32, *r as i64, result
-                    );
+                (Some(l), ">>", Some(r)) => {
+                    let shift = (to_int32(r) as u32) % 32;
+                    let result = to_int32(l).wrapping_shr(shift);
+                    trace!("ShiftInt (L): {} >> {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result as f64)));
+                }
+                (Some(l), "<<", Some(r)) => {
+                    let shift = (to_int32(r) as u32) % 32;
+                    let result = to_int32(l).wrapping_shl(shift);
+                    trace!("ShiftInt (L): {} << {} = {}", l, r, result);
+                    node.reduce(Raw(Num(result as f64)));
+                }
+                (Some(l), ">>>", Some(r)) => {
+                    let shift = (to_int32(r) as u32) % 32;
+                    let result = (to_int32(l) as u32).wrapping_shr(shift);
+                    trace!("ShiftInt (L): {} >>> {} = {}", l, r, result);
                     node.reduce(Raw(Num(result as f64)));
                 }
 
@@ -1321,12 +1311,6 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                     (view.child(0), view.child(1), view.child(2))
                 {
                     match (left.data(), op.text()?, right.data()) {
-                        (Some(Raw(Num(l))), "&", Some(Raw(Num(r)))) => {
-                            let l = *l as i64;
-                            let r = *r as i64;
-                            trace!("BitwiseInt (L): {} & {} = {}", l, r, l & r);
-                            node.reduce(Raw(Num((l & r) as f64)));
-                        }
                         (Some(Raw(BigInt(l))), "&", Some(r)) => {
                             if let Raw(BigInt(r)) = r {
                                 let result = l & r;
@@ -1350,12 +1334,6 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                                     l, r
                                 );
                             }
-                        }
-                        (Some(Raw(Num(l))), "|", Some(Raw(Num(r)))) => {
-                            let l = *l as i64;
-                            let r = *r as i64;
-                            trace!("BitwiseInt (L): {} | {} = {}", l, r, l | r);
-                            node.reduce(Raw(Num((l | r) as f64)));
                         }
                         (Some(Raw(BigInt(l))), "|", Some(r)) => {
                             if let Raw(BigInt(r)) = r {
@@ -1381,12 +1359,6 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                                 );
                             }
                         }
-                        (Some(Raw(Num(l))), "^", Some(Raw(Num(r)))) => {
-                            let l = *l as i64;
-                            let r = *r as i64;
-                            trace!("BitwiseInt (L): {} ^ {} = {}", l, r, l ^ r);
-                            node.reduce(Raw(Num((l ^ r) as f64)));
-                        }
                         (Some(Raw(BigInt(l))), "^", Some(r)) => {
                             if let Raw(BigInt(r)) = r {
                                 let result = l ^ r;
@@ -1411,6 +1383,21 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                                 );
                             }
                         }
+                        (Some(l), "&", Some(r)) => {
+                            let (li, ri) = (to_int32(l), to_int32(r));
+                            trace!("BitwiseInt (L): {} & {} = {}", li, ri, li & ri);
+                            node.reduce(Raw(Num((li & ri) as f64)));
+                        }
+                        (Some(l), "|", Some(r)) => {
+                            let (li, ri) = (to_int32(l), to_int32(r));
+                            trace!("BitwiseInt (L): {} | {} = {}", li, ri, li | ri);
+                            node.reduce(Raw(Num((li | ri) as f64)));
+                        }
+                        (Some(l), "^", Some(r)) => {
+                            let (li, ri) = (to_int32(l), to_int32(r));
+                            trace!("BitwiseInt (L): {} ^ {} = {}", li, ri, li ^ ri);
+                            node.reduce(Raw(Num((li ^ ri) as f64)));
+                        }
                         _ => {}
                     }
                 }
@@ -1424,13 +1411,9 @@ impl<'a> RuleMut<'a> for BitwiseInt {
                         trace!("BitwiseInt (L): ~{}n = {}n", n, result);
                         node.reduce(Raw(BigInt(result)));
                     } else if let Some(js) = operand.data() {
-                        let result = match js.as_js_num() {
-                            Raw(Num(n)) => Raw(Num((!(n as i64)) as f64)),
-                            NaN => NaN,
-                            _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
-                        };
+                        let result = !to_int32(js);
                         trace!("BitwiseInt (L): ~{} = {}", js, result);
-                        node.reduce(result);
+                        node.reduce(Raw(Num(result as f64)));
                     }
                 }
             }
