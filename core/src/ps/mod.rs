@@ -47,6 +47,8 @@ pub mod step;
 pub mod strategy;
 pub mod string;
 pub mod switch;
+#[cfg(test)]
+mod tests;
 mod tool;
 pub mod trace;
 pub mod typing;

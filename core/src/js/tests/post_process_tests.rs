@@ -31,11 +31,23 @@ mod test_js_post_process {
         let rewritten = bracket_to_member.clear().unwrap();
 
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
+        let mut global_this_simplifier = GlobalThisSimplifier::default();
+        tree.apply(&mut global_this_simplifier).unwrap();
+        let rewritten = global_this_simplifier.clear().unwrap();
+
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&rewritten).unwrap();
         let mut unused = UnusedVar::default();
         tree.apply(&mut unused).unwrap();
         let mut remover = RemoveUnused::new(unused);
         tree.apply(&mut remover).unwrap();
         remover.clear().unwrap()
+    }
+
+    fn sanitize(input: &str) -> String {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut sanitize = SanitizeVarNames::default();
+        tree.apply(&mut sanitize).unwrap();
+        sanitize.clear().unwrap()
     }
 
     #[test]
@@ -482,5 +494,57 @@ mod test_js_post_process {
     #[test]
     fn test_unwrap_finally_only_try() {
         assert_eq!(clean("try { } finally { a(); }"), "a();");
+    }
+
+    #[test]
+    fn test_global_this_simplifier() {
+        assert_eq!(clean("globalThis.eval('alert(1)');"), "eval('alert(1)');");
+        assert_eq!(
+            clean("globalThis['eval']('alert(1)');"),
+            "eval('alert(1)');"
+        );
+    }
+
+    #[test]
+    fn test_keep_call_when_var_is_unused() {
+        assert_eq!(
+            clean("var a = foo(); console.log('ok');"),
+            "foo(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_keep_call_when_assignment_is_unused() {
+        assert_eq!(
+            clean("var a = 1; a = foo(); console.log('ok');"),
+            "foo(); console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_remove_var_with_pure_initializer() {
+        assert_eq!(
+            clean("var a = 1 + 2; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
+    fn test_sanitize() {
+        assert_eq!(sanitize("let \\u0061 = 0;"), "let a = 0;");
+        assert_eq!(
+            sanitize("console.\\u006c\\u006f\\u0067();"),
+            "console.log();"
+        );
+        assert_eq!(
+            sanitize("function \\u006d\\u0069\\u006e\\u0075\\u0073\\u006f\\u006e\\u0065(){}"),
+            "function minusone(){}"
+        );
+        assert_eq!(
+            sanitize(
+                "function minusone(\\u006d\\u0069\\u006e\\u0075, \\u0073\\u006f\\u006e\\u0065){}"
+            ),
+            "function minusone(minu, sone){}"
+        );
     }
 }
