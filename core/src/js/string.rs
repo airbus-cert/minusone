@@ -1258,30 +1258,14 @@ impl<'a> RuleMut<'a> for Concat {
                     );
                     node.reduce(Raw(Str(b.to_string() + s.to_string().as_str())));
                 }
-                (
-                    Some(Raw(Str(s))),
-                    Some(Object {
-                        to_string_override: Some(obj_str),
-                        ..
-                    }),
-                ) => {
-                    trace!(
-                        "Concat: reducing '{}' + object override to '{}{}'",
-                        s, s, obj_str
-                    );
+                (Some(Raw(Str(s))), Some(right @ Object { .. })) => {
+                    let obj_str = js_to_string_value(&right);
+                    trace!("Concat: reducing '{}' + object to '{}{}'", s, s, obj_str);
                     node.reduce(Raw(Str(format!("{}{}", s, obj_str))));
                 }
-                (
-                    Some(Object {
-                        to_string_override: Some(obj_str),
-                        ..
-                    }),
-                    Some(Raw(Str(s))),
-                ) => {
-                    trace!(
-                        "Concat: reducing object override + '{}' to '{}{}'",
-                        s, obj_str, s
-                    );
+                (Some(left @ Object { .. }), Some(Raw(Str(s)))) => {
+                    let obj_str = js_to_string_value(&left);
+                    trace!("Concat: reducing object + '{}' to '{}{}'", s, obj_str, s);
                     node.reduce(Raw(Str(format!("{}{}", obj_str, s))));
                 }
                 (Some(Iterator { .. }), Some(Raw(Str(s)))) => {

@@ -1,5 +1,5 @@
 use crate::js::JavaScript;
-use crate::js::JavaScript::{Array, Function, NaN, Raw};
+use crate::js::JavaScript::{Array, Function, NaN, Object, Raw};
 use crate::js::Value::{Num, Str};
 use crate::js::array::flatten_array;
 use crate::tree::Node;
@@ -163,6 +163,14 @@ pub fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
 pub fn as_known_string(value: &JavaScript) -> String {
     match value {
         Raw(Str(s)) => s.clone(),
+        Object {
+            to_string_override: Some(s),
+            ..
+        } => s.clone(),
+        Object {
+            to_string_override: None,
+            ..
+        } => "[object Object]".to_string(),
         any => any.to_string(),
     }
 }
@@ -178,6 +186,14 @@ pub fn js_to_string_value(value: &JavaScript) -> String {
     match value {
         Raw(Str(s)) => s.clone(),
         Array(a) => flatten_array(a, None),
+        Object {
+            to_string_override: Some(s),
+            ..
+        } => s.clone(),
+        Object {
+            to_string_override: None,
+            ..
+        } => "[object Object]".to_string(),
         any => any.to_string(),
     }
 }
