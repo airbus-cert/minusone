@@ -128,6 +128,15 @@ impl Linter {
                 return Ok(true);
             }
 
+            // same as above: Forward may clone a stale Function value onto these wrapper kinds
+            if matches!(
+                node.kind(),
+                "parenthesized_expression" | "sequence_expression"
+            ) && matches!(data, JavaScript::Function { .. })
+            {
+                return Ok(true);
+            }
+
             self.copy_until(node.start_abs());
             // Preserve parentheses for conditions in control-flow statements to keep the output as valid JavaScript
             if node.kind() == "parenthesized_expression"

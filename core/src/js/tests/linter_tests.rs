@@ -57,4 +57,29 @@ mod test_linter {
 
         assert!(linter.output.contains("a.t = x;"));
     }
+
+    #[test]
+    fn test_linter_reduces_body_of_uninlinable_iife() {
+        let mut tree = build_javascript_tree(
+            "var x = (function () { var y = 1 + 2; return window.thing(y); })();",
+        )
+        .unwrap();
+
+        tree.apply_mut_with_strategy(
+            &mut (
+                ParseInt::default(),
+                AddInt::default(),
+                ParseFunction::default(),
+                Forward::default(),
+                Var::default(),
+            ),
+            JavaScriptStrategy::default(),
+        )
+        .unwrap();
+
+        let mut linter = Linter::default();
+        tree.apply(&mut linter).unwrap();
+
+        assert!(linter.output.contains("window.thing(3)"));
+    }
 }

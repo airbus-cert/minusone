@@ -272,7 +272,10 @@ impl ObjectField {
                     .enumerate()
                     .map(|(i, v)| (i.to_string(), v.clone()))
                     .collect();
-                map.insert("length".to_string(), Raw(crate::js::Value::Num(arr.len() as f64)));
+                map.insert(
+                    "length".to_string(),
+                    Raw(crate::js::Value::Num(arr.len() as f64)),
+                );
 
                 if Self::set_in_map(&mut map, keys, value) {
                     *root = Object {
