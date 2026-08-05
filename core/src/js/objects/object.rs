@@ -263,7 +263,27 @@ impl ObjectField {
         }
 
         match root {
-            Array(arr) => set_array_index(arr, keys, value),
+            Array(arr) if parse_array_index(&keys[0]).is_some() => {
+                set_array_index(arr, keys, value)
+            }
+            Array(arr) => {
+                let mut map: HashMap<String, JavaScript> = arr
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (i.to_string(), v.clone()))
+                    .collect();
+                map.insert("length".to_string(), Raw(crate::js::Value::Num(arr.len() as f64)));
+
+                if Self::set_in_map(&mut map, keys, value) {
+                    *root = Object {
+                        map,
+                        to_string_override: None,
+                    };
+                    true
+                } else {
+                    false
+                }
+            }
             Object { map, .. } => Self::set_in_map(map, keys, value),
             _ => false,
         }

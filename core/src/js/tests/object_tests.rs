@@ -70,6 +70,14 @@ mod test_object {
     }
 
     #[test]
+    fn test_array_string_key_write_then_read() {
+        assert_eq!(
+            deobfuscate("var jt = new Array(); jt['a'] = 'hello'; console.log(jt['a']);"),
+            "var jt = []; jt['a'] = 'hello'; console.log('hello');"
+        );
+    }
+
+    #[test]
     fn test_object_full_value_after_property_write() {
         assert_eq!(
             deobfuscate("var my_obj = {}; my_obj.a = 'a'; console.log(my_obj);"),
