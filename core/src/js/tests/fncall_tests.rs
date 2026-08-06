@@ -245,4 +245,66 @@ mod test_fncall {
             "function test(a, b) { return b; } console.log(undefined);"
         );
     }
+
+    #[test]
+    fn test_fncall_return_inside_try_with_empty_catch() {
+        assert_eq!(
+            deobfuscate(
+                "function test(x) { try { return x + 1; } catch {} } console.log(test(1));"
+            ),
+            "function test(x) { try { return x + 1; } catch {} } console.log(2);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_return_inside_try_bails_when_catch_also_returns() {
+        let out = deobfuscate(
+            "function test(x) { try { return x + 1; } catch { return -1; } } console.log(test(1));",
+        );
+        assert!(out.contains("console.log(test(1));"));
+    }
+
+    #[test]
+    fn test_fncall_resolves_call_to_const_function_expression() {
+        assert_eq!(
+            deobfuscate("const test = function (x) { return x + 1; }; console.log(test(1));"),
+            "const test = function (x) { return x + 1; }; console.log(2);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_resolves_nested_call_between_const_functions() {
+        assert_eq!(
+            deobfuscate(
+                "const inner = function (x) { return x + 1; }, outer = function (x) { return inner(x) + 1; }; console.log(outer(1));"
+            ),
+            "const inner = function (x) { return x + 1; }, outer = function (x) { return inner(x) + 1; }; console.log(3);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_param_shadows_outer_var_of_same_name() {
+        assert_eq!(
+            deobfuscate("var a = 5; function f(a) { return a + 1; } console.log(f(10));"),
+            "var a = 5; function f(a) { return a + 1; } console.log(11);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_nested_calls_shadow_same_param_name() {
+        assert_eq!(
+            deobfuscate(
+                "const inner = function (x, r) { return x + r; }, outer = function (x, r) { return inner(x + 1, r); }; console.log(outer(1, 10));"
+            ),
+            "const inner = function (x, r) { return x + r; }, outer = function (x, r) { return inner(x + 1, r); }; console.log(12);"
+        );
+    }
+
+    #[test]
+    fn test_fncall_reassignment_in_try_keeps_call_args_known() {
+        let out = deobfuscate(
+            "function inner(x, r) { return x + r; } function getStr(x, r) { return inner(x, r); } const yo = 'yo'; function entry(x) { try { let n = ''; n = getStr('hi', yo); return n; } catch {} } console.log(entry('a'));",
+        );
+        assert!(out.contains("getStr('hi', 'yo')"), "got: {out}");
+    }
 }
