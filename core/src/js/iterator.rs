@@ -5,8 +5,8 @@ use crate::js::utils::{get_positional_arguments, method_name};
 use crate::js::{IteratorKind, JavaScript};
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
+use indexmap::IndexMap;
 use log::trace;
-use std::collections::HashMap;
 
 type IteratorBuiltinHandler = fn(&mut JavaScript, &[JavaScript]) -> Option<JavaScript>;
 
@@ -105,7 +105,7 @@ fn iterator_builtin_next(iter: &mut JavaScript, _args: &[JavaScript]) -> Option<
 
             *index += 1;
 
-            let mut map = HashMap::new();
+            let mut map = IndexMap::new();
             map.insert("value".to_string(), value);
             map.insert("done".to_string(), Raw(Bool(false)));
 
@@ -114,7 +114,7 @@ fn iterator_builtin_next(iter: &mut JavaScript, _args: &[JavaScript]) -> Option<
                 to_string_override: None,
             })
         } else {
-            let mut map = HashMap::new();
+            let mut map = IndexMap::new();
             map.insert("value".to_string(), Undefined);
             map.insert("done".to_string(), Raw(Bool(true)));
 

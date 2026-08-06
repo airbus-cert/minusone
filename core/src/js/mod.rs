@@ -60,7 +60,7 @@ use self::var::*;
 use crate::error::{Error, MinusOneResult};
 use crate::rule::{RuleMut, RuleSet, RuleSetBuilderType};
 use crate::tree::{HashMapStorage, Storage, Tree};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use tree_sitter_javascript::LANGUAGE as javascript_language;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
@@ -98,7 +98,7 @@ pub enum JavaScript {
     Bytes(Vec<u8>),
     Buffer(Vec<u8>),
     Object {
-        map: HashMap<String, JavaScript>,
+        map: IndexMap<String, JavaScript>,
         to_string_override: Option<String>,
     },
     Iterator {

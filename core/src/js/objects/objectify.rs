@@ -2,8 +2,8 @@ use crate::js::JavaScript;
 use crate::js::JavaScript::*;
 use crate::js::Value::*;
 use crate::js::utils::{js_to_string_value, native_function};
+use indexmap::IndexMap;
 use log::trace;
-use std::collections::HashMap;
 
 fn function_name_from_source(source: &str) -> String {
     let trimmed = source.trim();
@@ -42,8 +42,8 @@ pub fn constructor_name(value: &JavaScript) -> &'static str {
     }
 }
 
-fn string_builtins(s: &str) -> HashMap<String, JavaScript> {
-    let mut map = HashMap::new();
+fn string_builtins(s: &str) -> IndexMap<String, JavaScript> {
+    let mut map = IndexMap::new();
 
     map.insert("length".to_string(), Raw(Num(s.chars().count() as f64)));
     map.insert(
@@ -89,8 +89,8 @@ fn string_builtins(s: &str) -> HashMap<String, JavaScript> {
     map
 }
 
-fn array_builtins(array: Vec<JavaScript>) -> HashMap<String, JavaScript> {
-    let mut map = HashMap::new();
+fn array_builtins(array: Vec<JavaScript>) -> IndexMap<String, JavaScript> {
+    let mut map = IndexMap::new();
     map.insert("length".to_string(), Raw(Num(array.len() as f64)));
 
     // jsfuck native code harvesters
@@ -118,7 +118,7 @@ pub fn as_object(value: &JavaScript) -> Option<JavaScript> {
 
     let mut to_string_override = None;
 
-    let mut map = HashMap::new();
+    let mut map = IndexMap::new();
     map.insert(
         "constructor".to_string(),
         native_function(constructor_name(value)),
