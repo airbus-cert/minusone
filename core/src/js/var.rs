@@ -299,12 +299,14 @@ impl<'a> RuleMut<'a> for Var {
                         .flatten()
                         .and_then(|name| self.scope_manager.current().get_var(name).cloned())
                 });
-                let Some(Array(elems)) = iterable else {
-                    return Ok(());
-                };
-                let iter_values: Vec<JavaScript> = match op.as_str() {
-                    "in" => (0..elems.len()).map(|i| Raw(Str(i.to_string()))).collect(),
-                    "of" => elems,
+                let iter_values: Vec<JavaScript> = match (iterable, op.as_str()) {
+                    (Some(Array(elems)), "in") => {
+                        (0..elems.len()).map(|i| Raw(Str(i.to_string()))).collect()
+                    }
+                    (Some(Array(elems)), "of") => elems,
+                    (Some(Object { map, .. }), "in") => {
+                        map.keys().map(|k| Raw(Str(k.clone()))).collect()
+                    }
                     _ => return Ok(()),
                 };
                 let body_src = body.text()?.to_string();

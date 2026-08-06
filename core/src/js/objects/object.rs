@@ -9,8 +9,8 @@ use crate::js::utils::{get_positional_arguments, is_write_target};
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
+use indexmap::IndexMap;
 use log::{trace, warn};
-use std::collections::HashMap;
 
 /// Parses JavaScript objects into `Object(_)`.
 #[derive(Default)]
@@ -58,7 +58,7 @@ impl<'a> RuleMut<'a> for ParseObject {
     ) -> MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "object" {
-            let mut map = HashMap::new();
+            let mut map = IndexMap::new();
             for child in view.iter() {
                 if child.kind() == "pair"
                     && let (Some(key), Some(value)) = (child.child(0), child.child(2))
@@ -233,7 +233,7 @@ impl ObjectField {
     }
 
     fn set_in_map(
-        map: &mut HashMap<String, JavaScript>,
+        map: &mut IndexMap<String, JavaScript>,
         keys: &[String],
         value: JavaScript,
     ) -> bool {
@@ -248,7 +248,7 @@ impl ObjectField {
 
         let head = keys[0].clone();
         let entry = map.entry(head).or_insert_with(|| Object {
-            map: HashMap::new(),
+            map: IndexMap::new(),
             to_string_override: None,
         });
         match entry {
@@ -267,7 +267,7 @@ impl ObjectField {
                 set_array_index(arr, keys, value)
             }
             Array(arr) => {
-                let mut map: HashMap<String, JavaScript> = arr
+                let mut map: IndexMap<String, JavaScript> = arr
                     .iter()
                     .enumerate()
                     .map(|(i, v)| (i.to_string(), v.clone()))
