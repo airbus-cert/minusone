@@ -70,7 +70,8 @@ impl<'a> RuleMut<'a> for B64 {
                             }
                         };
 
-                        let decoded_string = String::from_utf8_lossy(&decoded_bytes).to_string();
+                        let decoded_string: String =
+                            decoded_bytes.iter().map(|&b| b as char).collect();
 
                         trace!(
                             "ParseB64: decoded base64 string '{}' to '{}'",

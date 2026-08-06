@@ -123,6 +123,9 @@ pub fn unescaped_js_string(s: &str) -> String {
                     'n' => result.push('\n'),
                     't' => result.push('\t'),
                     'r' => result.push('\r'),
+                    'b' => result.push('\u{08}'),
+                    'v' => result.push('\u{0b}'),
+                    'f' => result.push('\u{0c}'),
                     '\\' => result.push('\\'),
                     '"' => result.push('"'),
                     '\'' => result.push('\''),
@@ -912,6 +915,12 @@ pub fn escape_js_string(s: &str) -> String {
             '\t' => escaped.push_str("\\t"),
             '\r' => escaped.push_str("\\r"),
             '\\' => escaped.push_str("\\\\"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{0b}' => escaped.push_str("\\v"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            c if (c as u32) < 0x20 || (0x7f..=0x9f).contains(&(c as u32)) => {
+                escaped.push_str(&format!("\\x{:02X}", c as u32))
+            }
             _ => escaped.push(c),
         }
     }
