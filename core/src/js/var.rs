@@ -50,19 +50,46 @@ pub struct Var {
 }
 
 impl Var {
+    fn forget_parameter_names(
+        &mut self,
+        node: &Node<JavaScript>,
+        ongoing_transaction: bool,
+    ) -> MinusOneResult<()> {
+        for child in node.iter() {
+            if child.kind() == "identifier" && is_write_target(&child) {
+                let name = child.text()?.to_string();
+                self.scope_manager
+                    .current_mut()
+                    .forget(&name, ongoing_transaction);
+            } else {
+                self.forget_parameter_names(&child, ongoing_transaction)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn is_assignment_write_target<T>(node: &Node<T>) -> bool {
+        let Some(parent) = node.get_parent_of_types(vec![
+            "assignment_expression",
+            "augmented_assignment_expression",
+            "update_expression",
+        ]) else {
+            return false;
+        };
+        if parent.kind() == "update_expression" {
+            return true;
+        }
+        let Some(left) = parent.child(0) else {
+            return false;
+        };
+        node.start_abs() >= left.start_abs() && node.end_abs() <= left.end_abs()
+    }
+
     fn forget_assigned_var<T>(&mut self, node: &Node<T>) -> MinusOneResult<()> {
         for child in node.iter() {
             match child.kind() {
                 "identifier" => {
-                    // if identifier is on the left side of an assignment
-                    if child
-                        .get_parent_of_types(vec![
-                            "assignment_expression",
-                            "augmented_assignment_expression",
-                            "update_expression",
-                        ])
-                        .is_some()
-                    {
+                    if Self::is_assignment_write_target(&child) {
                         let var_name = child.text()?.to_string();
                         self.scope_manager
                             .current_mut()
@@ -166,6 +193,16 @@ impl<'a> RuleMut<'a> for Var {
             | "generator_function_declaration"
             | "generator_function" => {
                 self.scope_manager.enter();
+                let ongoing = view.is_ongoing_transaction();
+                if let Some(params) = view.named_child("parameters") {
+                    self.forget_parameter_names(&params, ongoing)?;
+                } else if view.kind() == "arrow_function"
+                    && let Some(param) = view.named_child("parameter")
+                    && param.kind() == "identifier"
+                {
+                    let name = param.text()?.to_string();
+                    self.scope_manager.current_mut().forget(&name, ongoing);
+                }
                 if let Some(body) = view.named_child("body") {
                     self.forget_assigned_var(&body)?;
                 }
@@ -562,7 +599,7 @@ impl<'a> RuleMut<'a> for Var {
                         .forget(&var_name, node.is_ongoing_transaction());
                 }
             }
-            // `eval(...)` can mutate any local
+            // `eval(...)` can mutate any local variable
             "call_expression" => {
                 if let Some(func) = view.named_child("function").or_else(|| view.child(0))
                     && func.kind() == "identifier"

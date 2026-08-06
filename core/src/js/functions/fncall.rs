@@ -248,6 +248,28 @@ impl FnCall {
         Some(args)
     }
 
+    fn catch_or_finally_has_return(try_node: &Node<JavaScript>) -> bool {
+        for child in try_node.iter() {
+            if matches!(child.kind(), "catch_clause" | "finally_clause") {
+                let mut count = 0;
+                Self::count_returns_in_subtree(&child, &mut count);
+                if count > 0 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // `try { ...; return X; } catch {}` (no finally, catch doesn't itself return)
+    fn try_statement_return_value(try_node: &Node<JavaScript>) -> Option<JavaScript> {
+        if Self::catch_or_finally_has_return(try_node) {
+            return None;
+        }
+        let body = try_node.named_child("body")?;
+        Self::extract_top_level_return_value(&body)
+    }
+
     fn extract_top_level_return_value(root: &Node<JavaScript>) -> Option<JavaScript> {
         if Self::has_nested_return_in_control_flow(root) {
             return None;
@@ -263,6 +285,11 @@ impl FnCall {
                 }
                 return None;
             }
+            if child.kind() == "try_statement"
+                && let Some(value) = Self::try_statement_return_value(&child)
+            {
+                return Some(value);
+            }
         }
         None
     }
@@ -271,10 +298,20 @@ impl FnCall {
         for child in node.iter() {
             match child.kind() {
                 "if_statement" | "while_statement" | "do_statement" | "for_statement"
-                | "for_in_statement" | "switch_statement" | "try_statement" => {
+                | "for_in_statement" | "switch_statement" => {
                     let mut count = 0;
                     Self::count_returns_in_subtree(&child, &mut count);
                     if count > 0 {
+                        return true;
+                    }
+                }
+                "try_statement" => {
+                    if Self::catch_or_finally_has_return(&child) {
+                        return true;
+                    }
+                    if let Some(body) = child.named_child("body")
+                        && Self::has_nested_return_in_control_flow(&body)
+                    {
                         return true;
                     }
                 }
@@ -522,6 +559,23 @@ impl FnCall {
         None
     }
 
+    fn declaration_keyword(node: &Node<JavaScript>) -> Option<&'static str> {
+        match node.kind() {
+            "variable_declaration" => Some("var"),
+            "lexical_declaration" => {
+                for child in node.iter() {
+                    match child.kind() {
+                        "let" => return Some("let"),
+                        "const" => return Some("const"),
+                        _ => {}
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     fn collect_fn_decls(program: &Node<JavaScript>) -> Vec<(String, String)> {
         let mut decls = Vec::new();
         for child in program.iter() {
@@ -534,6 +588,29 @@ impl FnCall {
                 && let Ok(src) = child.text()
             {
                 decls.push((name.to_string(), src.to_string()));
+                continue;
+            }
+
+            if let Some(keyword) = Self::declaration_keyword(&child) {
+                for declarator in child.iter().filter(|c| c.kind() == "variable_declarator") {
+                    if let Some(name_node) = declarator.named_child("name")
+                        && name_node.kind() == "identifier"
+                        && let Ok(name) = name_node.text()
+                        && let Some(value_node) = declarator
+                            .named_child("value")
+                            .or_else(|| declarator.child(2))
+                        && matches!(
+                            value_node.kind(),
+                            "function"
+                                | "function_expression"
+                                | "arrow_function"
+                                | "generator_function"
+                        )
+                        && let Ok(value_src) = value_node.text()
+                    {
+                        decls.push((name.to_string(), format!("{keyword} {name} = {value_src};")));
+                    }
+                }
             }
         }
         decls

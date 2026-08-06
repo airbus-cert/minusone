@@ -99,6 +99,14 @@ mod test_js_post_process {
     }
 
     #[test]
+    fn test_remove_unused_const_function_with_calls_in_body() {
+        assert_eq!(
+            clean("const helper = function (x) { return String(x).trim(); }; console.log('ok');"),
+            "console.log('ok');"
+        );
+    }
+
+    #[test]
     fn test_keep_mixed() {
         assert_eq!(
             clean("var a = 1; var b = 2; console.log(a);"),

@@ -99,6 +99,13 @@ pub fn is_write_target(node: &Node<JavaScript>) -> bool {
 
     while let Some(parent) = current {
         match parent.kind() {
+            "formal_parameters" | "catch_clause" => return true,
+            "assignment_pattern" => {
+                if let Some(left) = parent.child(0) {
+                    return child_start >= left.start_abs() && child_end <= left.end_abs();
+                }
+                return false;
+            }
             "variable_declarator" => {
                 if let Some(name_child) = parent.child(0) {
                     return child_start >= name_child.start_abs()

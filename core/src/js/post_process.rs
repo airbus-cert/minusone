@@ -717,6 +717,14 @@ impl RemoveUnused {
             | "assignment_expression"
             | "augmented_assignment_expression"
             | "update_expression" => true,
+            // defining a function has no side effect itself, only calling it does
+            "function"
+            | "function_expression"
+            | "function_declaration"
+            | "arrow_function"
+            | "generator_function"
+            | "generator_function_declaration"
+            | "method_definition" => false,
             _ => node.iter().any(|child| Self::has_side_effects(&child)),
         }
     }
