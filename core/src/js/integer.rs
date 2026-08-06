@@ -107,6 +107,19 @@ impl<'a> RuleMut<'a> for ParseInt {
                             result
                         );
                         node.reduce(result);
+                    } else if func.text()? == "parseFloat"
+                        && let Some(args) = view.child(1)
+                        && let Some(value) = args.child(1)
+                    {
+                        let result =
+                            Self::js_parse_float(value.data().cloned().unwrap_or(Undefined));
+
+                        trace!(
+                            "ParseInt (L): parseFloat({:?}) = {:?}",
+                            value.data(),
+                            result
+                        );
+                        node.reduce(result);
                     }
                 }
             }
@@ -276,6 +289,100 @@ impl ParseInt {
 
         Raw(Num(sign * math_int))
     }
+
+    fn js_parse_float(value: JavaScript) -> JavaScript {
+        let input_string = value.to_string();
+
+        let s = match value {
+            Raw(Str(s)) => s
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| s.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                .unwrap_or(&s)
+                .to_string(),
+            _ => input_string,
+        };
+
+        let s = s.trim_start_matches(|c: char| c.is_whitespace());
+        let bytes = s.as_bytes();
+        let len = bytes.len();
+
+        let mut i = 0;
+        let negative = match bytes.first() {
+            Some(b'-') => {
+                i += 1;
+                true
+            }
+            Some(b'+') => {
+                i += 1;
+                false
+            }
+            _ => false,
+        };
+
+        if s[i..].starts_with("Infinity") {
+            trace!("ParseInt (L): parseFloat found Infinity literal");
+            return Raw(Num(if negative {
+                f64::NEG_INFINITY
+            } else {
+                f64::INFINITY
+            }));
+        }
+
+        let int_start = i;
+        while i < len && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        let has_int_digits = i > int_start;
+
+        let mut has_frac_digits = false;
+        if i < len && bytes[i] == b'.' {
+            i += 1;
+            let frac_start = i;
+            while i < len && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            has_frac_digits = i > frac_start;
+        }
+
+        if !has_int_digits && !has_frac_digits {
+            warn!(
+                "ParseInt (L): parseFloat unable to find a numeric prefix in {:?}, falling back to NaN",
+                s
+            );
+            return NaN;
+        }
+
+        let mut exp_end = i;
+        if i < len && (bytes[i] == b'e' || bytes[i] == b'E') {
+            let mut j = i + 1;
+            if j < len && (bytes[j] == b'+' || bytes[j] == b'-') {
+                j += 1;
+            }
+            let exp_digit_start = j;
+            while j < len && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > exp_digit_start {
+                exp_end = j;
+            }
+        }
+
+        let numeric_prefix = &s[..exp_end];
+        match numeric_prefix.parse::<f64>() {
+            Ok(n) => {
+                trace!("ParseInt (L): parseFloat {:?} => {}", s, n);
+                Raw(Num(n))
+            }
+            Err(_) => {
+                warn!(
+                    "ParseInt (L): parseFloat unable to parse {:?}, falling back to NaN",
+                    numeric_prefix
+                );
+                NaN
+            }
+        }
+    }
 }
 
 fn to_int32(value: &JavaScript) -> i32 {
@@ -293,6 +400,90 @@ fn to_int32(value: &JavaScript) -> i32 {
 fn digit_value(c: char, radix: u32) -> Option<u32> {
     let d = c.to_digit(36)?;
     if d < radix { Some(d) } else { None }
+}
+
+fn global_call_arg(view: &crate::tree::Node<JavaScript>, name: &str) -> Option<JavaScript> {
+    if view.kind() != "call_expression" {
+        return None;
+    }
+    let callee = view.named_child("function").or_else(|| view.child(0))?;
+    if callee.text().ok()? != name {
+        return None;
+    }
+    let args = view.named_child("arguments");
+    let positional_args = get_positional_arguments(args);
+    Some(
+        positional_args
+            .first()
+            .and_then(|arg| arg.data().cloned())
+            .unwrap_or(Undefined),
+    )
+}
+
+/// See [ECMA262 19.2.2](https://tc39.es/ecma262/multipage/global-object.html#sec-isnan-number)
+#[derive(Default)]
+pub struct IsNaN;
+
+impl<'a> RuleMut<'a> for IsNaN {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let Some(arg) = global_call_arg(&node.view(), "isNaN") else {
+            return Ok(());
+        };
+
+        let is_nan = matches!(arg.as_js_num(), NaN);
+        trace!("IsNaN (L): isNaN({}) = {}", arg, is_nan);
+        node.reduce(Raw(Bool(is_nan)));
+        Ok(())
+    }
+}
+
+/// See [ECMA262 19.2.3](https://tc39.es/ecma262/multipage/global-object.html#sec-isfinite-number)
+#[derive(Default)]
+pub struct IsFinite;
+
+impl<'a> RuleMut<'a> for IsFinite {
+    type Language = JavaScript;
+
+    fn enter(
+        &mut self,
+        _node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        Ok(())
+    }
+
+    fn leave(
+        &mut self,
+        node: &mut NodeMut<'a, Self::Language>,
+        _flow: ControlFlow,
+    ) -> MinusOneResult<()> {
+        let Some(arg) = global_call_arg(&node.view(), "isFinite") else {
+            return Ok(());
+        };
+
+        let is_finite = match arg.as_js_num() {
+            Raw(Num(n)) => n.is_finite(),
+            NaN => false,
+            _ => unreachable!("as_js_num should only return Raw(Num) or NaN"),
+        };
+        trace!("IsFinite (L): isFinite({}) = {}", arg, is_finite);
+        node.reduce(Raw(Bool(is_finite)));
+        Ok(())
+    }
 }
 
 /// Centralized dispatcher for number literal builtins.
