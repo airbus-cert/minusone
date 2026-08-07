@@ -13,6 +13,7 @@ mod join_tests;
 mod linter_tests;
 mod loops_tests;
 mod method_tests;
+mod printer_tests;
 mod string_tests;
 mod switch_tests;
 mod var_tests;

@@ -1,4 +1,5 @@
 use crate::error::MinusOneResult;
+use crate::printer::{Printer, PrinterMode};
 use crate::ps::Powershell::{Bytes, Raw};
 use crate::ps::Value::{Bool, Num, Str};
 use crate::ps::tool::StringTool;
@@ -7,7 +8,7 @@ use crate::ps::var::{UnusedVar, Var, find_variable_node};
 use crate::ps::{LoopStatus, Powershell};
 use crate::regex::Regex;
 use crate::rule::Rule;
-use crate::tree::Node;
+use crate::tree::{Node, Storage, Tree};
 
 fn remove_useless_token(src: &str) -> String {
     src.replace("`", "")
@@ -79,7 +80,7 @@ impl<'a> Rule<'a> for Linter {
             "param_block" => self.is_param_block = true,
             "attribute" | "variable" => {
                 if self.is_param_block {
-                    self.enter();
+                    self.layout_break();
                 }
             }
             "statement_block" => self.statement_block_tab.push(true),
@@ -183,7 +184,7 @@ impl<'a> Rule<'a> for Linter {
                         self.tab();
                     } else if node.text()? == ")" {
                         self.untab();
-                        self.enter();
+                        self.layout_break();
                     }
                 }
 
@@ -283,13 +284,20 @@ impl<'a> Rule<'a> for Linter {
                 "-and" | "-or" | "-xor" | "-band" | "-bor" | "-bxor" |
                 "until" |
                 "-file" => self.write(" "),
-                "catch" | "finally" | "else" | "elseif" |
-                //  begin process end are not statements
-                "begin" | "process" | "end" | "param" | "}" => {
+                "}" => {
                     if is_inline(node) {
                         self.write(" ");
                     } else {
                         self.enter();
+                    }
+                },
+                "catch" | "finally" | "else" | "elseif" |
+                //  begin process end are not statements
+                "begin" | "process" | "end" | "param" => {
+                    if is_inline(node) {
+                        self.write(" ");
+                    } else {
+                        self.layout_break();
                     }
                 },
                 _ => ()
@@ -436,8 +444,34 @@ impl Linter {
 
     pub fn enter(&mut self) {
         if !self.is_multiline {
-            self.output += &self.new_line_chr;
-            self.output += &self.current_tab().clone();
+            if self.new_line_chr == " " {
+                if !self.output.is_empty() {
+                    let last = self.output.chars().rev().find(|c| !c.is_whitespace());
+                    if !matches!(last, Some('{') | Some('(') | Some(',') | Some(';')) {
+                        self.output.push(';');
+                    }
+                    if !self.output.ends_with(' ') {
+                        self.output.push(' ');
+                    }
+                }
+            } else {
+                self.output += &self.new_line_chr;
+                self.output += &self.current_tab().clone();
+            }
+            self.is_multiline = true;
+        }
+    }
+
+    pub fn layout_break(&mut self) {
+        if !self.is_multiline {
+            if self.new_line_chr == " " {
+                if !self.output.is_empty() && !self.output.ends_with(' ') {
+                    self.output.push(' ');
+                }
+            } else {
+                self.output += &self.new_line_chr;
+                self.output += &self.current_tab().clone();
+            }
             self.is_multiline = true;
         }
     }
@@ -455,6 +489,28 @@ impl Linter {
     pub fn set_comment(mut self, comment: bool) -> Self {
         self.comment = comment;
         self
+    }
+}
+
+impl Printer for Linter {
+    type Language = Powershell;
+
+    fn print<S>(&mut self, tree: &Tree<'_, S>, mode: PrinterMode) -> MinusOneResult<String>
+    where
+        S: Storage<Component = Self::Language> + Default,
+    {
+        self.output.clear();
+        self.tab = vec![String::new()];
+        self.is_param_block = false;
+        self.statement_block_tab.clear();
+        self.is_multiline = true;
+        self.new_line_chr = match mode {
+            PrinterMode::Pretty | PrinterMode::Unchanged => "\n".to_string(),
+            PrinterMode::Compact => " ".to_string(),
+        };
+
+        tree.apply(self)?;
+        Ok(self.output.trim().to_string())
     }
 }
 

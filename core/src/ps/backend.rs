@@ -1,6 +1,7 @@
 use crate::engine::{CleanBackend, CleanEngine, DeobfuscateEngine, DeobfuscationBackend};
 use crate::error::MinusOneResult;
 use crate::init::Init;
+use crate::printer::PrinterMode;
 use crate::ps;
 use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
@@ -24,22 +25,16 @@ impl PowershellBackend {
         root: &Tree<HashMapStorage<ps::Powershell>>,
         tab_chr: &str,
         keep_dead_code: bool,
+        mode: PrinterMode,
         record_all: bool,
     ) -> MinusOneResult<(String, Vec<crate::trace::Step>)> {
         let mut steps = Vec::new();
 
         let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
-        root.apply(&mut ps_linter_view)?;
-        crate::trace::push_text_step(
-            &mut steps,
-            "post",
-            "Linter",
-            &ps_linter_view.output,
-            record_all,
-        );
+        let linted = crate::printer::code_string_with_mode(&mut ps_linter_view, root, mode)?;
+        crate::trace::push_text_step(&mut steps, "post", "Linter", &linted, record_all);
 
-        let out = CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?
-            .clean(keep_dead_code)?;
+        let out = CleanEngine::<PowershellBackend>::from_source(&linted)?.clean(keep_dead_code)?;
         crate::trace::push_text_step(&mut steps, "post", "RemoveUnusedVar", &out, record_all);
 
         Ok((out, steps))
@@ -108,11 +103,12 @@ impl DeobfuscationBackend for PowershellBackend {
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         tab_chr: &str,
         keep_dead_code: bool,
+        mode: PrinterMode,
     ) -> MinusOneResult<String> {
         let mut ps_linter_view = ps::linter::Linter::default().set_tab(tab_chr);
-        root.apply(&mut ps_linter_view)?;
+        let linted = crate::printer::code_string_with_mode(&mut ps_linter_view, root, mode)?;
 
-        CleanEngine::<PowershellBackend>::from_source(&ps_linter_view.output)?.clean(keep_dead_code)
+        CleanEngine::<PowershellBackend>::from_source(&linted)?.clean(keep_dead_code)
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {

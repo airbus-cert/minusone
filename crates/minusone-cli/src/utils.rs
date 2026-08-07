@@ -1,4 +1,4 @@
-use crate::cli::{Cli, DebugLevel, Language, StepFormat};
+use crate::cli::{Cli, DebugLevel, Language, PrinterMode, StepFormat};
 use crate::trace_view;
 use log::{info, warn};
 use minusone::debug::DebugView;
@@ -8,6 +8,14 @@ use minusone::js::backend::JavaScriptBackend;
 use minusone::ps::backend::PowershellBackend;
 use minusone::trace::Step;
 use std::fmt::Debug;
+
+fn printer_mode(mode: PrinterMode) -> minusone::printer::PrinterMode {
+    match mode {
+        PrinterMode::Pretty => minusone::printer::PrinterMode::Pretty,
+        PrinterMode::Compact => minusone::printer::PrinterMode::Compact,
+        PrinterMode::Unchanged => minusone::printer::PrinterMode::Unchanged,
+    }
+}
 
 fn write_steps_output(source: &str, steps: &[Step], format: StepFormat, output: Option<&str>) {
     let (default_path, content) = match format {
@@ -61,7 +69,10 @@ where
         println!("\n\n");
     }
 
-    println!("{}", engine.lint(keep_dead_code)?);
+    println!(
+        "{}",
+        engine.lint_with_mode(keep_dead_code, printer_mode(cli.printer))?
+    );
     Ok(())
 }
 
@@ -94,8 +105,12 @@ pub(crate) fn run_deobf_js_traced(
         println!("\n\n");
     }
 
-    let (final_output, post_steps) =
-        JavaScriptBackend::lint_traced(engine.root_mut(), keep_dead_code, cli.step_all)?;
+    let (final_output, post_steps) = JavaScriptBackend::lint_traced(
+        engine.root_mut(),
+        keep_dead_code,
+        printer_mode(cli.printer),
+        cli.step_all,
+    )?;
     steps.extend(post_steps);
 
     println!("{}", final_output);
@@ -133,8 +148,13 @@ pub(crate) fn run_deobf_ps_traced(
         println!("\n\n");
     }
 
-    let (final_output, post_steps) =
-        PowershellBackend::lint_traced(engine.root_mut(), "    ", keep_dead_code, cli.step_all)?;
+    let (final_output, post_steps) = PowershellBackend::lint_traced(
+        engine.root_mut(),
+        "    ",
+        keep_dead_code,
+        printer_mode(cli.printer),
+        cli.step_all,
+    )?;
     steps.extend(post_steps);
 
     println!("{}", final_output);

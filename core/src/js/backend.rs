@@ -5,6 +5,7 @@ use crate::js::strategy::JavaScriptStrategy;
 use crate::js::{
     JavaScript, JavaScriptRuleSet, build_javascript_tree_for_storage, remove_javascript_extra,
 };
+use crate::printer::PrinterMode;
 use crate::rule::RuleSetBuilderType;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
 use log::{error, trace};
@@ -32,10 +33,11 @@ impl JavaScriptBackend {
     pub fn lint_traced(
         root: &Tree<HashMapStorage<JavaScript>>,
         keep_dead_code: bool,
+        mode: PrinterMode,
         record_all: bool,
     ) -> MinusOneResult<(String, Vec<crate::js::trace::Step>)> {
         let mut steps = Vec::new();
-        let out = lint_impl(root, keep_dead_code, &mut |rule, current| {
+        let out = lint_impl(root, keep_dead_code, mode, &mut |rule, current| {
             crate::js::trace::push_text_step(&mut steps, "post", rule, current, record_all);
         })?;
         Ok((out, steps))
@@ -234,21 +236,32 @@ pub fn clean_impl(
 fn lint_impl(
     root: &Tree<HashMapStorage<JavaScript>>,
     keep_dead_code: bool,
+    mode: PrinterMode,
     on_step: &mut dyn FnMut(&str, &str),
 ) -> MinusOneResult<String> {
     let mut linter = crate::js::linter::Linter::default();
-    root.apply(&mut linter)?;
-    on_step("Linter", &linter.output);
+    let reconstructed = crate::printer::code_string_with_mode(&mut linter, root, mode)?;
 
-    // fallback to returning the linted output without cleaning if the clean pass fails
-    match clean_impl(linter.output.clone(), keep_dead_code, on_step) {
+    let printed = match mode {
+        PrinterMode::Unchanged => reconstructed,
+        PrinterMode::Pretty | PrinterMode::Compact => {
+            let source_tree =
+                build_javascript_tree_for_storage::<HashMapStorage<JavaScript>>(&reconstructed)?;
+            let mut printer = crate::js::printer::JavaScriptPrinter::default();
+            crate::printer::code_string_with_mode(&mut printer, &source_tree, mode)?
+        }
+    };
+    on_step("Printer", &printed);
+
+    // fallback to returning the printed output without cleaning if the clean pass fails
+    match clean_impl(printed.clone(), keep_dead_code, on_step) {
         Ok(cleaned) => Ok(cleaned),
         Err(e) => {
             error!(
                 "Clean pass failed during linting: {:?}. Returning linted output without cleaning.",
                 e
             );
-            Ok(linter.output)
+            Ok(printed)
         }
     }
 }
@@ -300,8 +313,9 @@ impl DeobfuscationBackend for JavaScriptBackend {
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         _tab_chr: &str,
         keep_dead_code: bool,
+        mode: PrinterMode,
     ) -> MinusOneResult<String> {
-        lint_impl(root, keep_dead_code, &mut |_, _| {})
+        lint_impl(root, keep_dead_code, mode, &mut |_, _| {})
     }
 
     fn language_rules<'a>() -> Vec<&'a str> {

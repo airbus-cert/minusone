@@ -16,6 +16,7 @@ mod maths_tests;
 mod object_tests;
 mod objectify_tests;
 mod post_process_tests;
+mod printer_tests;
 mod regex_tests;
 mod specials_tests;
 mod string_tests;
