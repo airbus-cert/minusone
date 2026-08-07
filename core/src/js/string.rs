@@ -928,8 +928,6 @@ pub fn escape_js_string(s: &str) -> String {
         format!("'{}'", escaped)
     } else if !escaped.contains('"') {
         format!("\"{}\"", escaped)
-    } else if !escaped.contains('`') {
-        format!("`{}`", escaped)
     } else {
         escaped = escaped.replace("'", "\\'");
         format!("'{}'", escaped)
