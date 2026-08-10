@@ -1,7 +1,8 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript;
+use crate::printer::{Printer, PrinterMode};
 use crate::rule::Rule;
-use crate::tree::Node;
+use crate::tree::{Node, Storage, Tree};
 
 #[derive(Default)]
 struct RemoveCode {
@@ -185,5 +186,18 @@ impl<'a> Rule<'a> for Linter {
             self.copy_until(node.end_abs());
         }
         Ok(())
+    }
+}
+
+impl Printer for Linter {
+    type Language = JavaScript;
+
+    fn print<S>(&mut self, tree: &Tree<'_, S>, _mode: PrinterMode) -> MinusOneResult<String>
+    where
+        S: Storage<Component = Self::Language> + Default,
+    {
+        *self = Linter::default();
+        tree.apply(self)?;
+        Ok(self.output.clone())
     }
 }

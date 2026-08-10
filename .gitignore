@@ -38,3 +38,4 @@ devenv.local.nix
 /scripts/
 steps.html
 
+/steps.json

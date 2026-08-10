@@ -1,5 +1,6 @@
 use crate::debug::DebugView;
 use crate::error::MinusOneResult;
+use crate::printer::PrinterMode;
 use crate::tree::{EmptyStorage, HashMapStorage, Tree};
 use log::debug;
 use std::fmt::Debug;
@@ -27,6 +28,7 @@ pub trait DeobfuscationBackend {
         root: &Tree<'a, HashMapStorage<Self::Language>>,
         tab_chr: &str,
         keep_dead_code: bool,
+        mode: PrinterMode,
     ) -> MinusOneResult<String>;
 
     fn language_rules<'a>() -> Vec<&'a str>;
@@ -66,11 +68,28 @@ impl<'a, B: DeobfuscationBackend> DeobfuscateEngine<'a, B> {
     }
 
     pub fn lint(&mut self, keep_dead_code: bool) -> MinusOneResult<String> {
-        B::lint_tree(&self.root, "    ", keep_dead_code)
+        B::lint_tree(&self.root, "    ", keep_dead_code, PrinterMode::Unchanged)
+    }
+
+    pub fn lint_with_mode(
+        &mut self,
+        keep_dead_code: bool,
+        mode: PrinterMode,
+    ) -> MinusOneResult<String> {
+        B::lint_tree(&self.root, "    ", keep_dead_code, mode)
     }
 
     pub fn lint_format(&mut self, tab_chr: &str, keep_dead_code: bool) -> MinusOneResult<String> {
-        B::lint_tree(&self.root, tab_chr, keep_dead_code)
+        B::lint_tree(&self.root, tab_chr, keep_dead_code, PrinterMode::Unchanged)
+    }
+
+    pub fn lint_format_with_mode(
+        &mut self,
+        tab_chr: &str,
+        keep_dead_code: bool,
+        mode: PrinterMode,
+    ) -> MinusOneResult<String> {
+        B::lint_tree(&self.root, tab_chr, keep_dead_code, mode)
     }
 
     pub fn deobfuscate_with_custom_ruleset(&mut self, ruleset: Vec<&str>) -> MinusOneResult<()> {
