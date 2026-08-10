@@ -6,7 +6,7 @@ use crate::ps::tool::StringTool;
 use crate::ps::utils::string::escape_string;
 use crate::ps::var::{UnusedVar, Var, find_variable_node};
 use crate::ps::{LoopStatus, Powershell};
-use crate::regex::Regex;
+use crate::regex::{Regex, regex};
 use crate::rule::Rule;
 use crate::tree::{Node, Storage, Tree};
 
@@ -108,7 +108,11 @@ impl<'a> Rule<'a> for Linter {
             // If a member_name is infered as a string
             "member_name" => {
                 if let Some(Raw(Str(m))) = node.data() {
-                    self.write(&m.clone().remove_tilt().uppercase_first());
+                    if regex!(r"^[a-zA-Z0-9]+$").is_match(m) {
+                        self.write(&m.clone().remove_tilt().uppercase_first());
+                    } else {
+                        self.write(&format!("'{}'", m));
+                    }
                     return Ok(false);
                 }
             }
