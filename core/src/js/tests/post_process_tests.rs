@@ -50,6 +50,13 @@ mod test_js_post_process {
         sanitize.clear().unwrap()
     }
 
+    fn inline_single_call(input: &str) -> String {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(input).unwrap();
+        let mut inline = InlineSingleCallFunction::default();
+        tree.apply(&mut inline).unwrap();
+        inline.clear().unwrap()
+    }
+
     #[test]
     fn test_remove_unused_var() {
         assert_eq!(
@@ -324,6 +331,66 @@ mod test_js_post_process {
             ),
             "(function foo() { var a = 123; var b = 'Hello, world! '; console.log(b + a); })();"
         );
+    }
+
+    #[test]
+    fn test_inline_single_call_function_with_literal_argument() {
+        assert_eq!(
+            inline_single_call("function greet(name) { return 'hello ' + name; } greet('world');"),
+            "function greet(name) { return 'hello ' + name; }  'hello ' + 'world';"
+        );
+    }
+
+    #[test]
+    fn test_inline_single_call_function_multi_statement_body() {
+        assert_eq!(
+            inline_single_call(
+                "function wnsvo(ebub) { const a = ebub + '!'; return a; } wnsvo('hi');"
+            ),
+            "function wnsvo(ebub) { const a = ebub + '!'; return a; }  const a = 'hi' + '!'; a;"
+        );
+    }
+
+    #[test]
+    fn test_do_not_inline_when_called_more_than_once() {
+        let input = "function f(x) { return x; } f('a'); f('b');";
+        assert_eq!(inline_single_call(input), input);
+    }
+
+    #[test]
+    fn test_do_not_inline_when_return_value_is_used() {
+        let input = "function f(x) { return x; } console.log(f('a'));";
+        assert_eq!(inline_single_call(input), input);
+    }
+
+    #[test]
+    fn test_do_not_inline_when_argument_is_not_a_literal() {
+        let input = "function f(x) { return x; } f(someValue());";
+        assert_eq!(inline_single_call(input), input);
+    }
+
+    #[test]
+    fn test_do_not_inline_recursive_function() {
+        let input = "function f(x) { return f(x); } f('a');";
+        assert_eq!(inline_single_call(input), input);
+    }
+
+    #[test]
+    fn test_do_not_inline_when_param_is_shadowed() {
+        let input = "function f(x) { let x = 1; return x; } f('a');";
+        assert_eq!(inline_single_call(input), input);
+    }
+
+    #[test]
+    fn test_do_not_inline_when_multiple_returns() {
+        let input = "function f(x) { if (x) { return 1; } return 2; } f('a');";
+        assert_eq!(inline_single_call(input), input);
+    }
+
+    #[test]
+    fn test_do_not_inline_when_never_called() {
+        let input = "function f(x) { return x; }";
+        assert_eq!(inline_single_call(input), input);
     }
 
     #[test]

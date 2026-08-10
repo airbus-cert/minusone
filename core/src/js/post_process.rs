@@ -1200,6 +1200,270 @@ impl<'a> Rule<'a> for InlineIife {
     }
 }
 
+/// Inlines top-level named functions that take a single parameter that are called exactly once
+///
+/// # Example
+/// ```
+/// use minusone::js::post_process::InlineSingleCallFunction;
+/// use minusone::js::build_javascript_tree_for_storage;
+/// use minusone::tree::EmptyStorage;
+///
+/// let source = "function greet(name) { return 'hello ' + name; } greet('world');";
+/// let tree = build_javascript_tree_for_storage::<EmptyStorage>(source).unwrap();
+///
+/// let mut inliner = InlineSingleCallFunction::default();
+/// tree.apply(&mut inliner).unwrap();
+///
+/// assert_eq!(
+///     inliner.clear().unwrap(),
+///     "function greet(name) { return 'hello ' + name; }  'hello ' + 'world';"
+/// );
+/// ```
+#[derive(Default)]
+pub struct InlineSingleCallFunction {
+    source: String,
+    output: String,
+    last_index: usize,
+    replacements: HashMap<usize, String>,
+}
+
+impl InlineSingleCallFunction {
+    pub fn clear(mut self) -> MinusOneResult<String> {
+        if self.last_index < self.source.len() {
+            self.output += &self.source[self.last_index..];
+        }
+        Ok(self.output)
+    }
+
+    fn copy_until(&mut self, end: usize) {
+        let safe_end = end.min(self.source.len());
+        if safe_end > self.last_index {
+            self.output += &self.source[self.last_index..safe_end];
+            self.last_index = safe_end;
+        }
+    }
+
+    fn replace_node_with_text(&mut self, node: &Node<()>, replacement: &str) {
+        let start = node.start_abs().min(self.source.len());
+        let end = node.end_abs().min(self.source.len());
+
+        if start < self.last_index || end <= self.last_index || end <= start {
+            return;
+        }
+
+        while self.last_index < start && self.source.as_bytes().get(self.last_index) == Some(&b'\n')
+        {
+            self.last_index += 1;
+        }
+
+        self.copy_until(start);
+        self.output += replacement;
+        if self.source.as_bytes().get(end) == Some(&b'\n') {
+            self.output += "\n";
+        }
+        self.last_index = end;
+    }
+
+    fn collect_identifier_occurrences<'a>(
+        node: &Node<'a, ()>,
+        name: &str,
+        out: &mut Vec<Node<'a, ()>>,
+    ) {
+        for child in node.iter() {
+            if child.kind() == "identifier" && child.text().ok() == Some(name) {
+                out.push(child);
+                continue;
+            }
+            Self::collect_identifier_occurrences(&child, name, out);
+        }
+    }
+
+    fn count_return_statements(node: &Node<()>) -> usize {
+        let mut count = 0;
+        for child in node.iter() {
+            if child.kind() == "return_statement" {
+                count += 1;
+            }
+            count += Self::count_return_statements(&child);
+        }
+        count
+    }
+
+    fn redeclares(node: &Node<()>, name: &str) -> bool {
+        for child in node.iter() {
+            match child.kind() {
+                "variable_declarator" => {
+                    if let Some(name_node) = child.named_child("name")
+                        && name_node.kind() == "identifier"
+                        && name_node.text().ok() == Some(name)
+                    {
+                        return true;
+                    }
+                }
+                "formal_parameters" | "catch_clause" => {
+                    let mut ids = vec![];
+                    Self::collect_identifier_occurrences(&child, name, &mut ids);
+                    if !ids.is_empty() {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+            if Self::redeclares(&child, name) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_inlinable_argument(node: &Node<()>) -> bool {
+        matches!(node.kind(), "string" | "number" | "template_string")
+    }
+
+    fn plan_inline(program: &Node<()>, func: &Node<()>) -> Option<(usize, String)> {
+        if let Some(kw) = func.child(0)
+            && kw.text().ok() == Some("async")
+        {
+            return None;
+        }
+
+        let name_node = func.named_child("name")?;
+        if name_node.kind() != "identifier" {
+            return None;
+        }
+        let fn_name = name_node.text().ok()?;
+
+        let params_node = func.named_child("parameters")?;
+        let mut param_ids = vec![];
+        for child in params_node.iter() {
+            if child.kind() == "identifier" {
+                param_ids.push(child);
+            } else if !matches!(child.kind(), "(" | ")" | ",") {
+                // rest/default/destructured params: bail, too risky to substitute blindly
+                // also, they can be called in a nested eval
+                return None;
+            }
+        }
+        if param_ids.len() != 1 {
+            return None;
+        }
+        let param_name = param_ids[0].text().ok()?;
+
+        let body = func.named_child("body")?;
+        if body.kind() != "statement_block" {
+            return None;
+        }
+
+        if Self::count_return_statements(&body) != 1 {
+            return None;
+        }
+        if Self::redeclares(&body, param_name) {
+            return None;
+        }
+
+        // last direct statement of the body must be the (only) return
+        let mut last_stmt: Option<Node<()>> = None;
+        for child in body.iter() {
+            if !matches!(child.kind(), "{" | "}") {
+                last_stmt = Some(child);
+            }
+        }
+        let return_stmt = last_stmt?;
+        if return_stmt.kind() != "return_statement" {
+            return None;
+        }
+        let return_expr = return_stmt
+            .iter()
+            .find(|c| !matches!(c.kind(), "return" | ";"))?;
+
+        let mut occurrences = vec![];
+        Self::collect_identifier_occurrences(program, fn_name, &mut occurrences);
+        occurrences.retain(|o| o.start_abs() != name_node.start_abs());
+        if occurrences.len() != 1 {
+            return None;
+        }
+        let callee = &occurrences[0];
+
+        let call = callee.parent()?;
+        if call.kind() != "call_expression" {
+            return None;
+        }
+        let stmt = call.parent()?;
+        if stmt.kind() != "expression_statement" || stmt.child(0)?.start_abs() != call.start_abs() {
+            // return value is used somewhere (assigned, passed as an argument, etc.)
+            return None;
+        }
+
+        let args_node = call.named_child("arguments")?;
+        let positional: Vec<_> = args_node
+            .iter()
+            .filter(|c| !matches!(c.kind(), "(" | ")" | ","))
+            .collect();
+        if positional.len() != 1 || !Self::is_inlinable_argument(&positional[0]) {
+            return None;
+        }
+        let arg_text = positional[0].text().ok()?;
+
+        let source = program.text().ok()?;
+        let inner_start = body.start_abs() + 1; // past the opening '{'
+        let stmts_before = &source[inner_start..return_stmt.start_abs()];
+        let return_expr_text = &source[return_expr.start_abs()..return_expr.end_abs()];
+
+        let pattern = regex::Regex::new(&format!(r"\b{}\b", regex::escape(param_name))).ok()?;
+        let replace_param = |text: &str| -> String {
+            pattern
+                .replace_all(text, |_: &regex::Captures| arg_text.to_string())
+                .into_owned()
+        };
+
+        let replacement = format!(
+            "{}{};",
+            replace_param(stmts_before),
+            replace_param(return_expr_text)
+        );
+
+        trace!(
+            "InlineSingleCallFunction: inlining single call to '{}' with literal argument",
+            fn_name
+        );
+        Some((stmt.start_abs(), replacement))
+    }
+}
+
+impl<'a> Rule<'a> for InlineSingleCallFunction {
+    type Language = ();
+
+    fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
+        match node.kind() {
+            "program" => {
+                self.source = node.text()?.to_string();
+                self.last_index = 0;
+                self.replacements.clear();
+
+                for child in node.iter() {
+                    if child.kind() == "function_declaration"
+                        && let Some((offset, replacement)) = Self::plan_inline(node, &child)
+                    {
+                        self.replacements.insert(offset, replacement);
+                    }
+                }
+            }
+            "expression_statement" => {
+                if let Some(replacement) = self.replacements.get(&node.start_abs()).cloned() {
+                    self.replace_node_with_text(node, &replacement);
+                    return Ok(false);
+                }
+            }
+            _ => {}
+        }
+        Ok(true)
+    }
+
+    fn leave(&mut self, _node: &Node<'a, Self::Language>) -> MinusOneResult<()> {
+        Ok(())
+    }
+}
+
 /// Rewrites simple augmented assignments into explicit binary assignments.
 ///
 /// # Example

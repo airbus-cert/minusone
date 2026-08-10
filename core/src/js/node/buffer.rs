@@ -411,7 +411,7 @@ impl<'a> RuleMut<'a> for BufferToString {
     }
 }
 
-fn normalize_encoding(input: &str) -> String {
+pub fn normalize_encoding(input: &str) -> String {
     input.trim().to_ascii_lowercase().replace(['-', '_'], "")
 }
 
@@ -540,7 +540,7 @@ fn decode_hex_node_style(input: &str) -> Vec<u8> {
     bytes
 }
 
-fn array_node_to_bytes(array_node: &Vec<JavaScript>) -> Vec<u8> {
+pub fn array_node_to_bytes(array_node: &Vec<JavaScript>) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(array_node.len());
 
     for item in array_node {
@@ -579,7 +579,7 @@ fn array_item_to_u8(value: &JavaScript) -> u8 {
     to_uint8(number)
 }
 
-fn to_uint8(n: f64) -> u8 {
+pub fn to_uint8(n: f64) -> u8 {
     if !n.is_finite() || n == 0.0 {
         return 0;
     }
