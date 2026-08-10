@@ -58,6 +58,31 @@ impl JavaScriptPrinter {
         clone.find(|c| !c.is_whitespace())
     }
 
+    fn peek_next_word(chars: &std::iter::Peekable<std::str::Chars<'_>>) -> Option<String> {
+        let mut clone = chars.clone();
+        let first = clone.find(|c| !c.is_whitespace())?;
+        if !first.is_ascii_alphabetic() {
+            return None;
+        }
+        let mut word = String::from(first);
+        for c in clone {
+            if !c.is_ascii_alphabetic() {
+                break;
+            }
+            word.push(c);
+        }
+        Some(word)
+    }
+
+    fn last_word(output: &str) -> Option<&str> {
+        let trimmed = output.trim_end_matches([' ', '\t']);
+        let start = trimmed
+            .rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+            .map_or(0, |i| i + trimmed[i..].chars().next().unwrap().len_utf8());
+        let word = &trimmed[start..];
+        (!word.is_empty()).then_some(word)
+    }
+
     fn is_control_line(line: &str) -> bool {
         let trimmed = line.trim_start();
         [
@@ -323,6 +348,9 @@ impl JavaScriptPrinter {
                 }
                 '(' => {
                     paren_depth += 1;
+                    if Self::last_word(&output) == Some("function") {
+                        Self::trim_trailing_spaces(&mut output);
+                    }
                     output.push('(');
                 }
                 ')' => {
@@ -345,6 +373,11 @@ impl JavaScriptPrinter {
                         }
                         output.push('{');
                         brace_inline_stack.push(true);
+                        if is_empty_block {
+                            while matches!(chars.peek(), Some(c) if c.is_whitespace()) {
+                                chars.next();
+                            }
+                        }
                     } else {
                         Self::trim_trailing_spaces(&mut output);
                         if !output.ends_with('\n') && !output.is_empty() {
@@ -372,7 +405,19 @@ impl JavaScriptPrinter {
                         if matches!(chars.peek(), Some(';')) {
                             continue;
                         }
-                        if chars.peek().is_some() {
+
+                        let same_line = matches!(
+                            Self::peek_next_word(&chars).as_deref(),
+                            Some("else") | Some("catch") | Some("finally")
+                        ) || Self::peek_next_non_whitespace_char(&chars)
+                            == Some('=');
+
+                        if same_line {
+                            while matches!(chars.peek(), Some(c) if c.is_whitespace()) {
+                                chars.next();
+                            }
+                            output.push(' ');
+                        } else if chars.peek().is_some() {
                             output.push('\n');
                             Self::write_indent(&mut output, indent_level, &self.indent);
                         }

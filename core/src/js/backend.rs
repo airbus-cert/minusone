@@ -241,26 +241,27 @@ fn lint_impl(
 ) -> MinusOneResult<String> {
     let mut linter = crate::js::linter::Linter::default();
     let reconstructed = crate::printer::code_string_with_mode(&mut linter, root, mode)?;
+    on_step("Linter", &reconstructed);
 
-    let printed = match mode {
-        PrinterMode::Unchanged => reconstructed,
-        PrinterMode::Pretty | PrinterMode::Compact => {
-            let source_tree =
-                build_javascript_tree_for_storage::<HashMapStorage<JavaScript>>(&reconstructed)?;
-            let mut printer = crate::js::printer::JavaScriptPrinter::default();
-            crate::printer::code_string_with_mode(&mut printer, &source_tree, mode)?
-        }
-    };
-    on_step("Printer", &printed);
-
-    // fallback to returning the printed output without cleaning if the clean pass fails
-    match clean_impl(printed.clone(), keep_dead_code, on_step) {
-        Ok(cleaned) => Ok(cleaned),
+    let cleaned = match clean_impl(reconstructed.clone(), keep_dead_code, on_step) {
+        Ok(cleaned) => cleaned,
         Err(e) => {
             error!(
                 "Clean pass failed during linting: {:?}. Returning linted output without cleaning.",
                 e
             );
+            reconstructed
+        }
+    };
+
+    match mode {
+        PrinterMode::Unchanged => Ok(cleaned),
+        PrinterMode::Pretty | PrinterMode::Compact => {
+            let source_tree =
+                build_javascript_tree_for_storage::<HashMapStorage<JavaScript>>(&cleaned)?;
+            let mut printer = crate::js::printer::JavaScriptPrinter::default();
+            let printed = crate::printer::code_string_with_mode(&mut printer, &source_tree, mode)?;
+            on_step("Printer", &printed);
             Ok(printed)
         }
     }
