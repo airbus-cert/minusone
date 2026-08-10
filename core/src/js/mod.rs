@@ -28,6 +28,7 @@ pub mod r#switch;
 pub mod ternary;
 mod tests;
 pub mod trace;
+pub mod typed_array;
 pub mod r#typeof;
 mod utils;
 pub mod var;
@@ -56,6 +57,7 @@ use self::regex::*;
 use self::specials::*;
 use self::string::*;
 use self::ternary::*;
+use self::typed_array::*;
 use self::r#typeof::*;
 use self::var::*;
 use crate::error::{Error, MinusOneResult};
@@ -276,9 +278,11 @@ impl_javascript_ruleset!(
     Ternary,        // Infer ternary operator with deterministic condition
     BufferFrom,     // Infer deterministic Buffer.from(...) calls
     BufferAlloc,    // Infer deterministic Buffer.alloc(...) calls
+    ParseUint8Array, // Infer new Uint8Array(...) calls, reduced to the Buffer representation
     Var,            // Track variable assignments and propagate known values to usage sites
     BufferIndex,    // Infer deterministic Buffer[index] reads/writes
     BufferToString, // Infer Buffer.toString(...) calls
+    TextDecoderDecode, // Infer new TextDecoder().decode(...) calls
     RegexExec,      // Infer deterministic regex test/exec calls
     FnCall,         // Resolve predictable function calls to their return values
     JsFuckLevelNine, // Resolve the JSFuck level-9 Function("return '\uXXXX'")() universal builder
