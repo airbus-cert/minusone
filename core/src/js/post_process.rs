@@ -65,6 +65,16 @@ fn is_write_target<T>(node: &Node<T>) -> bool {
             "formal_parameters" => {
                 return true;
             }
+            // `x` in `x.foo = 1` / `x[foo] = 1`: the base object of a member/subscript
+            "member_expression" | "subscript_expression" => {
+                if parent
+                    .named_child("object")
+                    .or_else(|| parent.child(0))
+                    .is_some_and(|object| object.id() == node.id())
+                {
+                    return is_write_target(&parent);
+                }
+            }
             _ => {}
         }
     }
@@ -195,8 +205,9 @@ impl<'a> Rule<'a> for ForToWhile {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                let base = node.start_abs();
+                self.source = " ".repeat(base) + node.text()?;
+                self.last_index = base;
             }
             "for_statement" => {
                 if let Some(replacement) = Self::for_statement_to_while_text(node) {
@@ -336,8 +347,9 @@ impl<'a> Rule<'a> for BracketToMember {
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         if node.kind() == "program" {
-            self.source = node.text()?.to_string();
-            self.last_index = 0;
+            let base = node.start_abs();
+            self.source = " ".repeat(base) + node.text()?;
+            self.last_index = base;
         }
         Ok(true)
     }
@@ -440,8 +452,9 @@ impl<'a> Rule<'a> for GlobalThisSimplifier {
 
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         if node.kind() == "program" {
-            self.source = node.text()?.to_string();
-            self.last_index = 0;
+            let base = node.start_abs();
+            self.source = " ".repeat(base) + node.text()?;
+            self.last_index = base;
         }
         Ok(true)
     }
@@ -738,6 +751,19 @@ impl RemoveUnused {
         None
     }
 
+    /// Resolves the identifier ultimately being written to by an assignment target:
+    /// `x` for `x`, and `X` for `X.foo` / `X[foo]` / `X.foo.bar` etc.
+    fn assignment_base_name(node: &Node<()>) -> Option<String> {
+        match node.kind() {
+            "identifier" => node.text().ok().map(|s| s.to_string()),
+            "member_expression" | "subscript_expression" => {
+                let object = node.named_child("object").or_else(|| node.child(0))?;
+                Self::assignment_base_name(&object)
+            }
+            _ => None,
+        }
+    }
+
     fn negate_condition_text(text: &str) -> String {
         let trimmed = text.trim();
         if trimmed.starts_with('(') && trimmed.ends_with(')') {
@@ -754,8 +780,9 @@ impl<'a> Rule<'a> for RemoveUnused {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                let base = node.start_abs();
+                self.source = " ".repeat(base) + node.text()?;
+                self.last_index = base;
             }
             // var x = ...; / let x = ...; / const x = ...;
             "variable_declaration" | "lexical_declaration" => {
@@ -800,9 +827,8 @@ impl<'a> Rule<'a> for RemoveUnused {
                     match child.kind() {
                         "assignment_expression" => {
                             if let Some(left) = child.child(0)
-                                && left.kind() == "identifier"
+                                && let Some(var_name) = Self::assignment_base_name(&left)
                             {
-                                let var_name = left.text()?.to_string();
                                 if self.rule.is_unused(&var_name) {
                                     if let Some(right) = child.child(2) {
                                         if Self::has_side_effects(&right) {
@@ -1180,8 +1206,9 @@ impl<'a> Rule<'a> for InlineIife {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                let base = node.start_abs();
+                self.source = " ".repeat(base) + node.text()?;
+                self.last_index = base;
             }
             "expression_statement" => {
                 if let Some(replacement) = Self::iife_to_body_text(node) {
@@ -1298,8 +1325,9 @@ impl<'a> Rule<'a> for ExpandAugmentedAssignment {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                let base = node.start_abs();
+                self.source = " ".repeat(base) + node.text()?;
+                self.last_index = base;
             }
             "augmented_assignment_expression" => {
                 if let Some(replacement) = Self::augmented_to_assignment_text(node) {
@@ -1450,8 +1478,9 @@ impl<'a> Rule<'a> for ReduceSequenceExpression {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                let base = node.start_abs();
+                self.source = " ".repeat(base) + node.text()?;
+                self.last_index = base;
             }
             "sequence_expression" => {
                 if let Some(replacement) = Self::reduce_sequence_text(node) {
@@ -1534,8 +1563,9 @@ impl<'a> Rule<'a> for SanitizeVarNames {
     fn enter(&mut self, node: &Node<'a, Self::Language>) -> MinusOneResult<bool> {
         match node.kind() {
             "program" => {
-                self.source = node.text()?.to_string();
-                self.last_index = 0;
+                let base = node.start_abs();
+                self.source = " ".repeat(base) + node.text()?;
+                self.last_index = base;
             }
             "identifier" | "member_identifier" | "property_identifier" => {
                 if let Some(text) = node.text().ok() {
