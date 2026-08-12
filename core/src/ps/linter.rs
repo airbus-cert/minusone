@@ -111,7 +111,8 @@ impl<'a> Rule<'a> for Linter {
                     if regex!(r"^[a-zA-Z0-9]+$").is_match(m) {
                         self.write(&m.clone().remove_tilt().uppercase_first());
                     } else {
-                        self.write(&format!("\"{}\"", m.replace('"', "`\"")));
+                        
+                        self.write(&format!("\"{}\"", escape_string(m)));
                     }
                     return Ok(false);
                 }
