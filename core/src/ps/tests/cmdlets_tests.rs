@@ -53,4 +53,20 @@ mod tests_ps_cmdlets {
             "Get-ChildItem -Path C:\\foo"
         );
     }
+
+    #[test]
+    fn test_backtick_in_command_name() {
+        assert_eq!(deobfuscate("Write-`Host \"Hi\""), "Write-Host \"Hi\"");
+        assert_eq!(deobfuscate("Wr`ite`-`H`o`st \"Hi\""), "Write-Host \"Hi\"");
+    }
+
+    #[test]
+    fn test_backtick_wildcard_cmdlet() {
+        assert_eq!(deobfuscate("g*t-ch`*ditem"), "Get-ChildItem");
+    }
+
+    #[test]
+    fn test_backtick_escape_sequence_is_not_a_cmdlet() {
+        assert_eq!(deobfuscate("Wri`te-Host"), "wri`te-host");
+    }
 }
