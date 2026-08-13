@@ -1,5 +1,6 @@
 use crate::ps::Powershell::{self, Raw};
 use crate::ps::Value::Str;
+use crate::ps::utils::string::unescape_backtick;
 use crate::regex::Regex;
 use crate::rule::RuleMut;
 use crate::tree::{ControlFlow, NodeMut};
@@ -67,7 +68,7 @@ pub fn resolved_command_name(
     if let Some(Raw(Str(name))) = node.data() {
         Ok(name.to_lowercase())
     } else {
-        Ok(node.text()?.to_lowercase())
+        Ok(unescape_backtick(node.text()?).to_lowercase())
     }
 }
 
@@ -92,8 +93,8 @@ impl<'a> RuleMut<'a> for WildcardCmdlet {
     ) -> crate::error::MinusOneResult<()> {
         let view = node.view();
         if view.kind() == "command_name"
-            && let Ok(text) = view.text()
-            && let Some(resolved) = resolve_wildcard_cmdlet(text)
+            && let Ok(text) = view.text().map(unescape_backtick)
+            && let Some(resolved) = resolve_wildcard_cmdlet(&text)
         {
             trace!("WildcardCmdlet (L): Resolved '{}' to '{}'", text, resolved);
             node.set(Raw(Str(resolved)));

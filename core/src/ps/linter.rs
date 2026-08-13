@@ -91,7 +91,7 @@ impl<'a> Rule<'a> for Linter {
                     self.write(resolved.as_str());
                     return Ok(false);
                 }
-                let re = Regex::new(r"([a-z]+)-([a-z]+)").unwrap();
+                let re = Regex::new(r"^([a-z]+)-([a-z]+)$").unwrap();
                 let name = crate::ps::cmdlets::resolved_command_name(node)?;
                 if let Some(m) = re.captures(name.as_str()) {
                     if let (Some(verb), Some(action)) = (m.get(1), m.get(2)) {
@@ -101,7 +101,7 @@ impl<'a> Rule<'a> for Linter {
                         return Ok(false);
                     }
                 } else {
-                    self.write(name.as_str());
+                    self.write(&escape_string(name.as_str()));
                     return Ok(false);
                 }
             }
