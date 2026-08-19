@@ -224,6 +224,14 @@ impl<'a> RuleMut<'a> for AddSubSpecials {
                     trace!("AddSubSpecials (L): '{}' + NaN => '{}NaN'", s, s);
                     node.reduce(Raw(Str(format!("{}NaN", s))));
                 }
+                (Some(NaN), Some(Iterator { .. })) => {
+                    trace!("AddSubSpecials (R): NaN + iterator => 'NaN[object Array Iterator]'");
+                    node.reduce(Raw(Str("NaN[object Array Iterator]".to_string())));
+                }
+                (Some(Iterator { .. }), Some(NaN)) => {
+                    trace!("AddSubSpecials (L): iterator + NaN => '[object Array Iterator]NaN'");
+                    node.reduce(Raw(Str("[object Array Iterator]NaN".to_string())));
+                }
                 _ => {}
             }
         }

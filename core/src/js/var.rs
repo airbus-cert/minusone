@@ -365,6 +365,13 @@ impl<'a> RuleMut<'a> for Var {
                 let scope = self.scope_manager.current();
                 capture_seed_result(|name| scope.get_var(name).cloned());
             }
+            "arrow_function"
+                if view
+                    .named_child("body")
+                    .is_some_and(|body| body.kind() != "statement_block") =>
+            {
+                self.scope_manager.leave_function();
+            }
             "for_statement" | "for_in_statement" => {
                 if let Some(final_vars) = take_for_loop_result(node.id()) {
                     set_inside_simulated_for(false);

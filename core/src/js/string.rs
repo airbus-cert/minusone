@@ -1023,7 +1023,7 @@ impl<'a> RuleMut<'a> for CharCodeAt {
 /// Recognizes the `String` constructor, either named directly (`String`) or
 /// reached the way pure JSFuck does — as the `constructor` of any string value,
 /// e.g. `''["constructor"]` or `([]+[])["constructor"]`.
-fn is_string_constructor(node: &Node<JavaScript>) -> bool {
+pub(crate) fn is_string_constructor(node: &Node<JavaScript>) -> bool {
     if node.text().map(|t| t == "String").unwrap_or(false) {
         return true;
     }
@@ -1108,14 +1108,14 @@ impl<'a> RuleMut<'a> for FromCharCode {
     }
 }
 
-fn to_uint16(n: f64) -> u16 {
+pub(crate) fn to_uint16(n: f64) -> u16 {
     if !n.is_finite() || n == 0.0 {
         return 0;
     }
     (n.trunc() as i64).rem_euclid(65536) as u16
 }
 
-fn js_to_number_for_from_char_code(value: &JavaScript) -> Option<f64> {
+pub(crate) fn js_to_number_for_from_char_code(value: &JavaScript) -> Option<f64> {
     match value {
         Raw(Num(n)) => Some(*n),
         Raw(Str(s)) => {

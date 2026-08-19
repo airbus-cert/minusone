@@ -385,7 +385,7 @@ impl ParseInt {
     }
 }
 
-fn to_int32(value: &JavaScript) -> i32 {
+pub(crate) fn to_int32(value: &JavaScript) -> i32 {
     let n = match value.as_js_num() {
         Raw(Num(n)) => n,
         NaN => f64::NAN,

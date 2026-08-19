@@ -351,18 +351,28 @@ impl FnCall {
     }
 
     // Prelude restricted to the declarations `body` can reach, transitively.
-    pub(crate) fn prelude_for(decls: &[(String, String)], body: &str) -> String {
+    pub(crate) fn prelude_for(
+        decls: &[(String, String)],
+        body: &str,
+        exclude: &[String],
+    ) -> String {
         if decls.is_empty() {
             return String::new();
         }
 
         let mut needed: HashSet<&str> = HashSet::new();
         let mut frontier = Self::identifier_tokens(body);
+        for name in exclude {
+            frontier.remove(name.as_str());
+        }
 
         while !frontier.is_empty() {
             let mut next = HashSet::new();
             for (name, src) in decls {
-                if needed.contains(name.as_str()) || !frontier.contains(name.as_str()) {
+                if needed.contains(name.as_str())
+                    || !frontier.contains(name.as_str())
+                    || exclude.iter().any(|e| e == name)
+                {
                     continue;
                 }
                 needed.insert(name.as_str());
@@ -387,7 +397,7 @@ impl FnCall {
         args: &[JavaScript],
         decls: &[(String, String)],
     ) -> Option<JavaScript> {
-        let mut program = Self::prelude_for(decls, &shape.body_inner);
+        let mut program = Self::prelude_for(decls, &shape.body_inner, &shape.params);
         if !program.is_empty() {
             program.push('\n');
         }
@@ -599,13 +609,6 @@ impl FnCall {
                         && let Some(value_node) = declarator
                             .named_child("value")
                             .or_else(|| declarator.child(2))
-                        && matches!(
-                            value_node.kind(),
-                            "function"
-                                | "function_expression"
-                                | "arrow_function"
-                                | "generator_function"
-                        )
                         && let Ok(value_src) = value_node.text()
                     {
                         decls.push((name.to_string(), format!("{keyword} {name} = {value_src};")));
