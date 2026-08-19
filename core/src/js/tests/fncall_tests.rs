@@ -201,11 +201,11 @@ mod test_fncall {
             ("b".to_string(), "function b(y) { return y; }".to_string()),
         ];
 
-        let prelude = FnCall::prelude_for(&decls, "return a(1);");
+        let prelude = FnCall::prelude_for(&decls, "return a(1);", &[]);
         assert!(prelude.contains("function a"));
         assert!(!prelude.contains("function b"));
 
-        assert_eq!(FnCall::prelude_for(&decls, "return 1;"), "");
+        assert_eq!(FnCall::prelude_for(&decls, "return 1;", &[]), "");
     }
 
     #[test]
@@ -223,7 +223,7 @@ mod test_fncall {
         ];
 
         // The body only names `b`, but `b` reaches `a`.
-        let prelude = FnCall::prelude_for(&decls, "return b(1);");
+        let prelude = FnCall::prelude_for(&decls, "return b(1);", &[]);
         assert!(prelude.contains("function a"));
         assert!(prelude.contains("function b"));
         assert!(!prelude.contains("function c"));

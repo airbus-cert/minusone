@@ -1,9 +1,11 @@
 use crate::error::MinusOneResult;
 use crate::js::JavaScript::*;
-use crate::js::Value::{Bool, Str};
+use crate::js::Value::{Bool, Num, Str};
 use crate::js::array::flatten_array;
 use crate::js::build_javascript_tree;
+use crate::js::integer::to_int32;
 use crate::js::strategy::JavaScriptStrategy;
+use crate::js::string::{is_string_constructor, js_to_number_for_from_char_code, to_uint16};
 use crate::js::subprogram::{build_and_reduce, enter_map_filter, take_seed_result, with_seed};
 use crate::js::utils::{get_positional_arguments, is_write_target, method_name};
 use crate::js::{JavaScript, JavaScriptRuleSet};
@@ -314,6 +316,145 @@ impl ArrayMapFilter {
         None
     }
 
+    fn fast_eval(node: &Node<JavaScript>, param: &str, current: &JavaScript) -> Option<JavaScript> {
+        if node.kind() == "identifier" && node.text().ok() == Some(param) {
+            return Some(current.clone());
+        }
+        if let Some(data) = node.data() {
+            return Some(data.clone());
+        }
+
+        match node.kind() {
+            "parenthesized_expression" => {
+                let inner = node.iter().find(|c| !matches!(c.kind(), "(" | ")"))?;
+                Self::fast_eval(&inner, param, current)
+            }
+            "unary_expression" => {
+                let op_node = node.child(0)?;
+                let op = op_node.text().ok()?;
+                let operand = Self::fast_eval(&node.child(1)?, param, current)?;
+                match op {
+                    "-" => match operand.as_js_num() {
+                        Raw(Num(n)) => Some(Raw(Num(-n))),
+                        NaN => Some(NaN),
+                        _ => None,
+                    },
+                    "+" => match operand.as_js_num() {
+                        n @ (Raw(Num(_)) | NaN) => Some(n),
+                        _ => None,
+                    },
+                    "~" => Some(Raw(Num(!to_int32(&operand) as f64))),
+                    _ => None,
+                }
+            }
+            "binary_expression" => {
+                let left = Self::fast_eval(&node.child(0)?, param, current)?;
+                let op_node = node.child(1)?;
+                let op = op_node.text().ok()?;
+                let right = Self::fast_eval(&node.child(2)?, param, current)?;
+                match op {
+                    "+" => match (&left, &right) {
+                        (Raw(Num(a)), Raw(Num(b))) => Some(Raw(Num(a + b))),
+                        _ => None,
+                    },
+                    "-" => match (&left, &right) {
+                        (Raw(Num(a)), Raw(Num(b))) => Some(Raw(Num(a - b))),
+                        _ => None,
+                    },
+                    "*" | "/" | "%" => {
+                        let (a, b) = (left.as_js_num(), right.as_js_num());
+                        if a == NaN || b == NaN {
+                            return Some(NaN);
+                        }
+                        let (Raw(Num(a)), Raw(Num(b))) = (a, b) else {
+                            return None;
+                        };
+                        Some(Raw(Num(match op {
+                            "*" => a * b,
+                            "/" => a / b,
+                            _ => a % b,
+                        })))
+                    }
+                    "^" | "|" | "&" => {
+                        let (a, b) = (to_int32(&left), to_int32(&right));
+                        Some(Raw(Num((match op {
+                            "^" => a ^ b,
+                            "|" => a | b,
+                            _ => a & b,
+                        }) as f64)))
+                    }
+                    "<<" | ">>" | ">>>" => {
+                        let a = to_int32(&left);
+                        let shift = (to_int32(&right) as u32) % 32;
+                        let result = match op {
+                            "<<" => a.wrapping_shl(shift),
+                            ">>" => a.wrapping_shr(shift),
+                            _ => (a as u32).wrapping_shr(shift) as i32,
+                        };
+                        Some(Raw(Num(result as f64)))
+                    }
+                    _ => None,
+                }
+            }
+            "call_expression" => {
+                let callee = node.named_child("function").or_else(|| node.child(0))?;
+                if method_name(&callee)? != "fromCharCode" {
+                    return None;
+                }
+                let object = callee.child(0).or_else(|| callee.named_child("object"))?;
+                if !is_string_constructor(&object) {
+                    return None;
+                }
+                let positional = get_positional_arguments(node.named_child("arguments"));
+                let mut code_units = Vec::with_capacity(positional.len());
+                for arg in positional {
+                    let value = Self::fast_eval(&arg, param, current)?;
+                    let num = js_to_number_for_from_char_code(&value)?;
+                    code_units.push(to_uint16(num));
+                }
+                let mut out = String::new();
+                for ch in std::char::decode_utf16(code_units) {
+                    out.push(ch.ok()?);
+                }
+                Some(Raw(Str(out)))
+            }
+            _ => None,
+        }
+    }
+
+    fn try_fast_path(
+        kind: MapFilterKind,
+        input: &[JavaScript],
+        cb: &Node<JavaScript>,
+    ) -> Option<Vec<JavaScript>> {
+        if cb.kind() != "arrow_function" {
+            return None;
+        }
+        let param = cb.named_child("parameter")?;
+        if param.kind() != "identifier" {
+            return None;
+        }
+        let param = param.text().ok()?;
+        let body = cb.named_child("body")?;
+        if body.kind() == "statement_block" {
+            return None;
+        }
+
+        let mut out = Vec::with_capacity(input.len());
+        for element in input {
+            let value = Self::fast_eval(&body, param, element)?;
+            match kind {
+                MapFilterKind::Map => out.push(value),
+                MapFilterKind::Filter => {
+                    if value.as_bool() {
+                        out.push(element.clone());
+                    }
+                }
+            }
+        }
+        Some(out)
+    }
+
     fn apply_callback(
         kind: MapFilterKind,
         input: &[JavaScript],
@@ -323,11 +464,49 @@ impl ArrayMapFilter {
             return Some(vec![]);
         }
 
+        if let Some(fast) = Self::try_fast_path(kind, input, cb) {
+            return Some(fast);
+        }
+
         let callback = Self::resolve_callback(cb)?;
 
+        if let Callback::UserFunction {
+            params,
+            body_source,
+            free_var_bindings,
+        } = &callback
+        {
+            let cache_key = format!(
+                "{}|{}|{}|{}|{}",
+                matches!(kind, MapFilterKind::Map) as u8,
+                Array(input.to_vec()),
+                params.join(","),
+                free_var_bindings,
+                body_source
+            );
+
+            if let Some(cached) = MAP_FILTER_CACHE.with(|c| c.borrow().get(&cache_key).cloned()) {
+                return Some(cached);
+            }
+
+            let result = Self::apply_callback_with(kind, input, &callback);
+            if let Some(values) = &result {
+                MAP_FILTER_CACHE.with(|c| c.borrow_mut().insert(cache_key, values.clone()));
+            }
+            return result;
+        }
+
+        Self::apply_callback_with(kind, input, &callback)
+    }
+
+    fn apply_callback_with(
+        kind: MapFilterKind,
+        input: &[JavaScript],
+        callback: &Callback,
+    ) -> Option<Vec<JavaScript>> {
         let mut out = Vec::with_capacity(input.len());
         for (index, element) in input.iter().enumerate() {
-            let value = match &callback {
+            let value = match callback {
                 Callback::Native(conversion) => conversion.apply(element),
                 Callback::UserFunction {
                     params,
@@ -354,6 +533,10 @@ impl ArrayMapFilter {
 
         Some(out)
     }
+}
+
+thread_local! {
+    static MAP_FILTER_CACHE: RefCell<HashMap<String, Vec<JavaScript>>> = RefCell::new(HashMap::new());
 }
 
 impl<'a> RuleMut<'a> for ArrayMapFilter {
