@@ -20,4 +20,5 @@ mod printer_tests;
 mod regex_tests;
 mod specials_tests;
 mod string_tests;
+mod typed_array_tests;
 mod var_tests;

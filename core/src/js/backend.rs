@@ -80,6 +80,15 @@ fn remove_extra_impl(
     }
     on_step("InlineIife", &current);
 
+    // inline single-parameter functions with exactly one literal-argument call site
+    {
+        let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
+        let mut inline_single_call = InlineSingleCallFunction::default();
+        tree.apply(&mut inline_single_call)?;
+        current = inline_single_call.clear()?;
+    }
+    on_step("InlineSingleCallFunction", &current);
+
     // rewrite augmented assignments to plain assignments for easier follow-up processing
     {
         let tree = build_javascript_tree_for_storage::<EmptyStorage>(&current)?;
