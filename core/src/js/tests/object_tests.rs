@@ -182,4 +182,64 @@ mod test_object {
             "console.log('false0function Number() { [native code] }');"
         );
     }
+
+    // issue #256 (1)
+    #[test]
+    fn test_array_push_then_length_not_inlined() {
+        assert_eq!(
+            deobfuscate("const a = []; a.push(1); console.log(a.length);"),
+            "const a = []; a.push(1); console.log(a.length);"
+        );
+    }
+
+    #[test]
+    fn test_array_pop_then_length_not_inlined() {
+        assert_eq!(
+            deobfuscate("const a = [1, 2]; a.pop(); console.log(a.length);"),
+            "const a = [1, 2]; a.pop(); console.log(a.length);"
+        );
+    }
+
+    #[test]
+    fn test_array_sort_then_read_not_inlined() {
+        assert_eq!(
+            deobfuscate("const a = [3, 1, 2]; a.sort(); console.log(a[0]);"),
+            "const a = [3, 1, 2]; a.sort(); console.log(a[0]);"
+        );
+    }
+
+    #[test]
+    fn test_array_push_then_print_not_inlined() {
+        assert_eq!(
+            deobfuscate("const a = [1, 2]; a.push(3); console.log(a);"),
+            "const a = [1, 2]; a.push(3); console.log(a);"
+        );
+    }
+
+    #[test]
+    fn test_array_push_in_function_not_inlined() {
+        assert_eq!(
+            deobfuscate("const a = [1, 2]; function f() { a.push(3); } f(); console.log(a);"),
+            "const a = [1, 2]; function f() { a.push(3); } f(); console.log(a);"
+        );
+    }
+
+    // issue #256 (2)
+    #[test]
+    fn test_object_non_identifier_key_stays_quoted() {
+        let out = deobfuscate("const o = { \"a-b\": 1 }; console.log(JSON.stringify(o));");
+        assert!(
+            out.contains("'a-b'") || out.contains("\"a-b\""),
+            "key `a-b` lost its quotes: {out}"
+        );
+    }
+
+    #[test]
+    fn test_object_numeric_negative_key_stays_quoted() {
+        let out = deobfuscate("const o = { \"-1\": 1 }; console.log(o);");
+        assert!(
+            out.contains("'-1'") || out.contains("\"-1\""),
+            "key `-1` lost its quotes: {out}"
+        );
+    }
 }

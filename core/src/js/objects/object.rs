@@ -5,7 +5,7 @@ use crate::js::functions::function::function_value_from_node;
 use crate::js::globals::inject_js_globals;
 use crate::js::r#loop::loop_invariant_get;
 use crate::js::objects::objectify::as_object;
-use crate::js::utils::{get_positional_arguments, is_write_target};
+use crate::js::utils::*;
 use crate::rule::RuleMut;
 use crate::scope::ScopeManager;
 use crate::tree::{ControlFlow, Node, NodeMut};
@@ -493,6 +493,25 @@ impl<'a> RuleMut<'a> for ObjectField {
 
                 if let Some(access) = Self::extract_member_access(&view) {
                     if access.keys.is_empty() {
+                        return Ok(());
+                    }
+
+                    // a tracked array which is being muted is no longer known
+                    if access.keys.len() == 1
+                        && let Some(base_name) = &access.base_name
+                        && matches!(
+                            self.scope_manager.current().get_var(base_name),
+                            Some(Array(_))
+                        )
+                        && is_mutating_array_method(&access.keys[0])
+                        && is_callee_of_call(&view)
+                    {
+                        trace!(
+                            "ObjectVar (L): forgetting array '{}' after mutating call .{}()",
+                            base_name, access.keys[0]
+                        );
+                        self.scope_manager
+                            .forget_everywhere(base_name, node.is_ongoing_transaction());
                         return Ok(());
                     }
 

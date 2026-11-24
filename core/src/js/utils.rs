@@ -156,6 +156,29 @@ pub fn is_write_target(node: &Node<JavaScript>) -> bool {
     false
 }
 
+pub fn is_mutating_array_method(name: &str) -> bool {
+    matches!(
+        name,
+        "pop"
+            | "push"
+            | "shift"
+            | "unshift"
+            | "splice"
+            | "sort"
+            | "reverse"
+            | "fill"
+            | "copyWithin"
+    )
+}
+
+pub fn is_callee_of_call(node: &Node<JavaScript>) -> bool {
+    node.parent()
+        .filter(|p| p.kind() == "call_expression")
+        .and_then(|p| p.named_child("function").or_else(|| p.child(0)))
+        .map(|callee| callee.start_abs() == node.start_abs() && callee.end_abs() == node.end_abs())
+        .unwrap_or(false)
+}
+
 pub fn js_index_from_optional_arg(value: Option<&JavaScript>) -> i64 {
     match value {
         None => 0,

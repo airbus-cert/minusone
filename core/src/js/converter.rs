@@ -44,7 +44,7 @@ impl Display for JavaScript {
                 None => {
                     let obj_str = map
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .map(|(k, v)| format!("{}: {}", format_object_key(k), v))
                         .collect::<Vec<String>>()
                         .join(", ");
                     write!(f, "{{{}}}", obj_str)
@@ -277,5 +277,24 @@ fn to_js_scientific(n: f64) -> String {
         format!("{}{}e+{}", sign, mantissa, exp)
     } else {
         format!("{}{}e{}", sign, mantissa, exp)
+    }
+}
+
+fn format_object_key(key: &str) -> String {
+    let is_identifier = key
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$')
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+    let is_index = !key.is_empty()
+        && key.chars().all(|c| c.is_ascii_digit())
+        && (key == "0" || !key.starts_with('0'));
+
+    if is_identifier || is_index {
+        key.to_string()
+    } else {
+        escape_js_string(key)
     }
 }
